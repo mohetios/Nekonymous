@@ -28,6 +28,8 @@ import {
   NICKNAME_SAVED_MESSAGE,
   NICKNAME_TEXT_ONLY_MESSAGE,
   NoUserFoundMessage,
+  OWNER_PAUSED_NOTE,
+  RECIPIENT_PAUSED_MESSAGE,
   RATE_LIMIT_MESSAGE,
   SELF_MESSAGE_DISABLE_MESSAGE,
   StartConversationMessage,
@@ -74,11 +76,12 @@ export const handleStartCommand = async (
         statsModel
       );
 
+      const welcome = WelcomeMessage.replace(
+        "UUID_USER_URL",
+        `https://t.me/nekonymous_bot?start=${user.userUUID}`
+      );
       await ctx.reply(
-        WelcomeMessage.replace(
-          "UUID_USER_URL",
-          `https://t.me/nekonymous_bot?start=${user.userUUID}`
-        ),
+        user.paused ? `${OWNER_PAUSED_NOTE}\n${welcome}` : welcome,
         { reply_markup: mainMenu }
       );
     } catch (error) {
@@ -117,6 +120,16 @@ export const handleStartCommand = async (
   const otherUser = await userModel.get(otherUserId);
   if (otherUser?.blockList.includes(currentUserId.toString())) {
     await ctx.reply(USER_IS_BLOCKED_MESSAGE);
+    return;
+  }
+
+  if (otherUser?.paused) {
+    await ctx.reply(
+      RECIPIENT_PAUSED_MESSAGE.replace(
+        "USER_NAME",
+        otherUser.userName ?? "این کاربر"
+      )
+    );
     return;
   }
 
@@ -163,7 +176,7 @@ export const handleMessage = async (
     inbox,
   };
 
-  if (await handleMenuCommand(ctx, currentUser.userUUID)) {
+  if (await handleMenuCommand(ctx, currentUser)) {
     return;
   }
 
@@ -232,6 +245,21 @@ export const handleMessage = async (
   const recipient = await userModel.get(recipientId.toString());
   if (recipient?.blockList.includes(from.id.toString())) {
     await ctx.reply(USER_IS_BLOCKED_MESSAGE);
+    await userModel.updateField(
+      from.id.toString(),
+      "currentConversation",
+      undefined
+    );
+    return;
+  }
+
+  if (recipient?.paused) {
+    await ctx.reply(
+      RECIPIENT_PAUSED_MESSAGE.replace(
+        "USER_NAME",
+        recipient.userName ?? "این کاربر"
+      )
+    );
     await userModel.updateField(
       from.id.toString(),
       "currentConversation",

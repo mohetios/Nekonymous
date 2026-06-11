@@ -5,6 +5,8 @@ export interface User {
   userName: string;
   userUUID: string;
   blockList: string[];
+  /** When true, the anonymous link rejects new senders until resumed. */
+  paused?: boolean;
   lastMessage?: number;
   /** Recipient-only labels keyed by opaque sender alias (HKDF). */
   contactLabels?: Record<string, string>;

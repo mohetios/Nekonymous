@@ -1,11 +1,11 @@
 import type { Context } from "grammy";
 import type { Environment, User } from "../types";
 import {
+  buildSettingsMenu,
   confirmClearMenu,
   isMenuLabel,
   MENU,
   mainMenu,
-  settingsMenu,
 } from "../utils/constant";
 import type { KVModel } from "../utils/kv-storage";
 import { logBotError } from "../utils/logs";
@@ -17,6 +17,8 @@ import {
   SETTINGS_EDIT_NAME_MESSAGE,
   SETTINGS_HOME_MESSAGE,
   SETTINGS_CANCEL_DRAFT_MESSAGE,
+  SETTINGS_PAUSE_ON_MESSAGE,
+  SETTINGS_RESUME_MESSAGE,
   SETTINGS_NAME_INVALID_MESSAGE,
   SETTINGS_NAME_SAVED_MESSAGE,
   SETTINGS_NAME_TEXT_ONLY_MESSAGE,
@@ -39,14 +41,29 @@ export type SettingsDeps = {
 const botLink = (userUUID: string): string =>
   `https://t.me/nekonymous_bot?start=${userUUID}`;
 
+const formatSettingsHome = (user: User): string => {
+  const paused = !!user.paused;
+  return SETTINGS_HOME_MESSAGE.replace("USER_NAME", user.userName)
+    .replace("PAUSE_STATUS", paused ? "متوقف ⏸" : "فعال ✓")
+    .replace(
+      "PAUSE_ACTION_LABEL",
+      paused ? MENU.resumeInbox : MENU.pauseInbox
+    )
+    .replace(
+      "PAUSE_ACTION_DESC",
+      paused
+        ? "فعال‌سازی مجدد لینک برای دریافت پیام‌های جدید."
+        : "موقتاً جلوگیری از دریافت پیام ناشناس از طریق لینک."
+    );
+};
+
 const showSettingsHome = async (
   ctx: Context,
   user: User
 ): Promise<void> => {
-  await ctx.reply(
-    SETTINGS_HOME_MESSAGE.replace("USER_NAME", user.userName),
-    { reply_markup: settingsMenu }
-  );
+  await ctx.reply(formatSettingsHome(user), {
+    reply_markup: buildSettingsMenu(!!user.paused),
+  });
 };
 
 export const handleSettingsCommand = async (
@@ -85,7 +102,7 @@ export const handlePendingSettingsInput = async (
   const text = ctx.message?.text;
   if (!text) {
     await ctx.reply(SETTINGS_NAME_TEXT_ONLY_MESSAGE, {
-      reply_markup: settingsMenu,
+      reply_markup: buildSettingsMenu(!!user.paused),
     });
     return true;
   }
@@ -100,14 +117,16 @@ export const handlePendingSettingsInput = async (
   }
 
   if (checkRateLimit(user.lastMessage)) {
-    await ctx.reply(RATE_LIMIT_MESSAGE, { reply_markup: settingsMenu });
+    await ctx.reply(RATE_LIMIT_MESSAGE, {
+      reply_markup: buildSettingsMenu(!!user.paused),
+    });
     return true;
   }
 
   const displayName = sanitizeDisplayName(text);
   if (!displayName) {
     await ctx.reply(SETTINGS_NAME_INVALID_MESSAGE, {
-      reply_markup: settingsMenu,
+      reply_markup: buildSettingsMenu(!!user.paused),
     });
     return true;
   }
@@ -124,13 +143,16 @@ export const handlePendingSettingsInput = async (
       "lastMessage",
       Date.now()
     );
+    const updated = await deps.userModel.get(userId.toString());
     await ctx.reply(
       SETTINGS_NAME_SAVED_MESSAGE.replace("NAME", displayName),
-      { reply_markup: settingsMenu }
+      { reply_markup: buildSettingsMenu(!!updated?.paused) }
     );
   } catch (error) {
     logBotError("handlePendingSettingsInput", error);
-    await ctx.reply(HuhMessage, { reply_markup: settingsMenu });
+    await ctx.reply(HuhMessage, {
+      reply_markup: buildSettingsMenu(!!user.paused),
+    });
   }
 
   return true;
@@ -198,7 +220,26 @@ export const handleSettingsMenu = async (
         undefined
       );
       await ctx.reply(SETTINGS_CANCEL_DRAFT_MESSAGE, {
-        reply_markup: settingsMenu,
+        reply_markup: buildSettingsMenu(!!user.paused),
+      });
+      return true;
+
+    case MENU.pauseInbox:
+      await deps.userModel.updateField(userId.toString(), "paused", true);
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await ctx.reply(SETTINGS_PAUSE_ON_MESSAGE, {
+        reply_markup: buildSettingsMenu(true),
+      });
+      return true;
+
+    case MENU.resumeInbox:
+      await deps.userModel.updateField(userId.toString(), "paused", false);
+      await ctx.reply(SETTINGS_RESUME_MESSAGE, {
+        reply_markup: buildSettingsMenu(false),
       });
       return true;
 
@@ -259,7 +300,7 @@ export const handleSettingsMenu = async (
           undefined
         );
         await ctx.reply(SETTINGS_CLEAR_DATA_CANCELLED_MESSAGE, {
-          reply_markup: settingsMenu,
+          reply_markup: buildSettingsMenu(!!user.paused),
         });
         return true;
       }

@@ -1,5 +1,10 @@
 import { InlineKeyboard, Keyboard, type Context } from "grammy";
-import { ABOUT_PRIVACY_COMMAND_MESSAGE, USER_LINK_MESSAGE } from "./messages";
+import type { User } from "../types";
+import {
+  ABOUT_PRIVACY_COMMAND_MESSAGE,
+  OWNER_PAUSED_NOTE,
+  USER_LINK_MESSAGE,
+} from "./messages";
 import { assertCallbackData } from "./telegram-limits";
 import { escapeMarkdownV2 } from "./tools";
 
@@ -9,6 +14,8 @@ export const MENU = {
   settings: "تنظیمات",
   editName: "ویرایش نام نمایشی",
   cancelDraft: "لغو پیام ناتمام",
+  pauseInbox: "توقف دریافت پیام",
+  resumeInbox: "از سرگیری دریافت پیام",
   clearData: "پاک کردن همه داده‌ها",
   back: "بازگشت به منو",
   confirmClear: "بله، همه را پاک کن",
@@ -34,14 +41,17 @@ export const mainMenu = new Keyboard()
   .text(MENU.settings)
   .resized();
 
-export const settingsMenu = new Keyboard()
-  .text(MENU.editName)
-  .row()
-  .text(MENU.cancelDraft)
-  .text(MENU.clearData)
-  .row()
-  .text(MENU.back)
-  .resized();
+export const buildSettingsMenu = (paused: boolean): Keyboard =>
+  new Keyboard()
+    .text(MENU.editName)
+    .row()
+    .text(paused ? MENU.resumeInbox : MENU.pauseInbox)
+    .row()
+    .text(MENU.cancelDraft)
+    .text(MENU.clearData)
+    .row()
+    .text(MENU.back)
+    .resized();
 
 export const confirmClearMenu = new Keyboard()
   .text(MENU.confirmClear)
@@ -51,22 +61,22 @@ export const confirmClearMenu = new Keyboard()
 
 export const handleMenuCommand = async (
   ctx: Context,
-  userUUID: string
+  user: User
 ): Promise<boolean> => {
   const msgPayload = ctx.message?.text;
 
   switch (msgPayload) {
-    case MENU.link:
+    case MENU.link: {
+      const linkText = USER_LINK_MESSAGE.replace(
+        "UUID_USER_URL",
+        `https://t.me/nekonymous_bot?start=${user.userUUID}`
+      );
       await ctx.reply(
-        USER_LINK_MESSAGE.replace(
-          "UUID_USER_URL",
-          `https://t.me/nekonymous_bot?start=${userUUID}`
-        ),
-        {
-          reply_markup: mainMenu,
-        }
+        user.paused ? `${OWNER_PAUSED_NOTE}\n${linkText}` : linkText,
+        { reply_markup: mainMenu }
       );
       break;
+    }
     case MENU.about:
       await ctx.reply(escapeMarkdownV2(ABOUT_PRIVACY_COMMAND_MESSAGE), {
         reply_markup: mainMenu,
