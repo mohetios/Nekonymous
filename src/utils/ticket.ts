@@ -43,6 +43,19 @@ const importHkdfKey = (appSecureKey: string): Promise<CryptoKey> =>
     ["deriveKey", "deriveBits"]
   );
 
+let cachedHkdfKey: CryptoKey | null = null;
+let cachedHkdfKeySource: string | null = null;
+
+const getHkdfKeyMaterial = async (appSecureKey: string): Promise<CryptoKey> => {
+  if (cachedHkdfKey && cachedHkdfKeySource === appSecureKey) {
+    return cachedHkdfKey;
+  }
+
+  cachedHkdfKey = await importHkdfKey(appSecureKey);
+  cachedHkdfKeySource = appSecureKey;
+  return cachedHkdfKey;
+};
+
 const hkdfParams = (ticketId: string, info: Uint8Array) => ({
   name: "HKDF" as const,
   hash: "SHA-256" as const,
@@ -59,18 +72,13 @@ export const generateTicketId = (): string => {
   return bytesToBase64Url(entropy);
 };
 
-/**
- * KV lookup key derived separately from the AES key (domain-separated HKDF).
- */
-/**
- * Opaque per-recipient sender handle for contact labels (domain-separated HKDF).
- */
+/** Opaque per-recipient sender handle for contact labels (domain-separated HKDF). */
 export const getSenderAlias = async (
   recipientId: number,
   senderId: number,
   appSecureKey: string
 ): Promise<string> => {
-  const keyMaterial = await importHkdfKey(appSecureKey);
+  const keyMaterial = await getHkdfKeyMaterial(appSecureKey);
   const bits = await crypto.subtle.deriveBits(
     {
       name: "HKDF",
@@ -84,11 +92,10 @@ export const getSenderAlias = async (
   return bytesToBase64Url(new Uint8Array(bits));
 };
 
-export const getConversationId = async (
-  ticketId: string,
-  appSecureKey: string
+const deriveConversationId = async (
+  keyMaterial: CryptoKey,
+  ticketId: string
 ): Promise<string> => {
-  const keyMaterial = await importHkdfKey(appSecureKey);
   const bits = await crypto.subtle.deriveBits(
     hkdfParams(ticketId, CONVERSATION_INFO),
     keyMaterial,
@@ -97,18 +104,53 @@ export const getConversationId = async (
   return bytesToBase64Url(new Uint8Array(bits));
 };
 
-const deriveAesKey = async (
-  ticketId: string,
-  appSecureKey: string
-): Promise<CryptoKey> => {
-  const keyMaterial = await importHkdfKey(appSecureKey);
-  return crypto.subtle.deriveKey(
+const deriveAesKeyFromMaterial = (
+  keyMaterial: CryptoKey,
+  ticketId: string
+): Promise<CryptoKey> =>
+  crypto.subtle.deriveKey(
     hkdfParams(ticketId, AES_INFO),
     keyMaterial,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"]
   );
+
+const deriveAesKey = async (
+  ticketId: string,
+  appSecureKey: string
+): Promise<CryptoKey> =>
+  deriveAesKeyFromMaterial(await getHkdfKeyMaterial(appSecureKey), ticketId);
+
+const sealPayload = async (
+  aesKey: CryptoKey,
+  payload: string
+): Promise<string> => {
+  const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    aesKey,
+    textEncoder.encode(payload)
+  );
+
+  return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(encrypted))}`;
+};
+
+export const encryptConversationPayload = async (
+  ticketId: string,
+  payload: string,
+  appSecureKey: string
+): Promise<{ conversationId: string; ciphertext: string }> => {
+  const keyMaterial = await getHkdfKeyMaterial(appSecureKey);
+  const [conversationId, aesKey] = await Promise.all([
+    deriveConversationId(keyMaterial, ticketId),
+    deriveAesKeyFromMaterial(keyMaterial, ticketId),
+  ]);
+
+  return {
+    conversationId,
+    ciphertext: await sealPayload(aesKey, payload),
+  };
 };
 
 const parseCiphertext = (
@@ -133,21 +175,12 @@ const parseCiphertext = (
  * Encrypts a conversation payload with AES-256-GCM (random 12-byte IV per call).
  * Wire format: `{iv_base64url}.{ciphertext_base64url}`
  */
+/** Re-encrypts a payload when only ciphertext is needed (e.g. clearing KV after delivery). */
 export const encryptedPayload = async (
   ticketId: string,
   payload: string,
   appSecureKey: string
-): Promise<string> => {
-  const aesKey = await deriveAesKey(ticketId, appSecureKey);
-  const iv = crypto.getRandomValues(new Uint8Array(GCM_IV_BYTES));
-  const encrypted = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv },
-    aesKey,
-    textEncoder.encode(payload)
-  );
-
-  return `${bytesToBase64Url(iv)}.${bytesToBase64Url(new Uint8Array(encrypted))}`;
-};
+): Promise<string> => sealPayload(await deriveAesKey(ticketId, appSecureKey), payload);
 
 /** Used by inbox delivery — decrypts a payload from `encryptedPayload`. */
 export const decryptPayload = async (

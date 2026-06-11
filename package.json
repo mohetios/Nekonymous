@@ -22,7 +22,7 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "knip": "knip",
-    "test:crypto": "node tools/verify-crypto.mjs",
+    "test:crypto": "node --experimental-strip-types tools/verify-crypto.ts",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm run test:crypto"
   },
   "dependencies": {

@@ -172,8 +172,8 @@ Encryption is ticket-based. Read `src/utils/ticket.ts` before changing storage o
 Flow:
 
 1. `generateTicketId()` on send.
-2. `await getConversationId(ticketId, APP_SECURE_KEY)` → KV key.
-3. `await encryptedPayload(ticketId, json, APP_SECURE_KEY)` → stored in `conversation` KV namespace.
+2. `await encryptConversationPayload(ticketId, json, APP_SECURE_KEY)` → KV key + ciphertext in one step.
+3. Ciphertext stored in `conversation` KV namespace; same blob copied to the inbox DO.
 4. Inbox DO stores `{ ref, ticketId, conversationId, ciphertext }` until delivery — not plaintext in Telegram APIs.
 5. On `/inbox`, decrypt from DO ciphertext, send through `sendDecryptedMessage`, clear `payload` in KV, mark entry `delivered` in DO (keep `ref` for callbacks).
 

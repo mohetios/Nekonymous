@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "project": ["src/**/*.ts", "tools/**/*.{js,mjs}"],
+  "project": ["src/**/*.ts", "tools/**/*.{js,mjs,ts}"],
   "ignoreIssues": {
     "src/bot/inboxDU.ts": ["unlisted"]
   },

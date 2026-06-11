@@ -22,6 +22,7 @@ import {
 } from "../utils/messages";
 import { getSenderAlias } from "../utils/ticket";
 import { checkRateLimit, escapeHtml, withHtml } from "../utils/tools";
+import { scheduleWork } from "../utils/worker";
 
 type ActionContext = {
   userModel: KVModel<User>;
@@ -115,7 +116,7 @@ export const handleReplyAction = async (
       parent_message_id: callbackMessageId,
       reply_to_message_id: conversation.connection.parent_message_id,
     });
-    await incrementStat(statsModel, "newConversation");
+    await scheduleWork(ctx, incrementStat(statsModel, "newConversation"));
 
     const replyPrompt = senderLabel
       ? REPLAY_TO_NICKNAME_MESSAGE.replace("NICKNAME", escapeHtml(senderLabel))
@@ -177,7 +178,7 @@ export const handleBlockAction = async (
       conversation.connection.from.toString(),
       true
     );
-    await incrementStat(statsModel, "blockedUsers");
+    await scheduleWork(ctx, incrementStat(statsModel, "blockedUsers"));
 
     await ctx.api.sendMessage(
       currentUserId,
@@ -249,7 +250,7 @@ export const handleUnblockAction = async (
       "blockList",
       senderId
     );
-    await incrementStat(statsModel, "unblockedUsers");
+    await scheduleWork(ctx, incrementStat(statsModel, "unblockedUsers"));
 
     await ctx.api.sendMessage(
       currentUserId,

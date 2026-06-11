@@ -2,6 +2,7 @@ import { Bot, type Context } from "grammy";
 import type { Message } from "grammy/types";
 import type { Environment, User } from "../types";
 import { KVModel } from "../utils/kv-storage";
+import { deferForUpdate, type NekoContext } from "../utils/worker";
 import {
   handleBlockAction,
   handleNicknameAction,
@@ -23,7 +24,17 @@ const isCommandMessage = (message: Message): boolean =>
     (entity) => entity.type === "bot_command" && entity.offset === 0
   ) === true;
 
+let cachedBot: { key: string; bot: Bot } | null = null;
+
+const botCacheKey = (env: Environment): string =>
+  `${env.SECRET_TELEGRAM_API_TOKEN}\0${env.BOT_INFO}\0${env.APP_SECURE_KEY}`;
+
 export const createBot = (env: Environment) => {
+  const cacheKey = botCacheKey(env);
+  if (cachedBot?.key === cacheKey) {
+    return cachedBot.bot;
+  }
+
   const {
     SECRET_TELEGRAM_API_TOKEN,
     NekonymousKV,
@@ -34,6 +45,14 @@ export const createBot = (env: Environment) => {
 
   const bot = new Bot(SECRET_TELEGRAM_API_TOKEN, {
     botInfo: JSON.parse(BOT_INFO) as BotConfig["botInfo"],
+  });
+
+  bot.use(async (ctx, next) => {
+    const defer = deferForUpdate(ctx.update.update_id);
+    if (defer) {
+      (ctx as NekoContext).deferWork = defer;
+    }
+    await next();
   });
 
   const userModel = new KVModel<User>("user", NekonymousKV);
@@ -106,5 +125,6 @@ export const createBot = (env: Environment) => {
   bot.callbackQuery(/^ubl:([a-f0-9]{8})$/, onInboxCallback(handleUnblockAction));
   bot.callbackQuery(/^nnk:([a-f0-9]{8})$/, onInboxCallback(handleNicknameAction));
 
+  cachedBot = { key: cacheKey, bot };
   return bot;
 };

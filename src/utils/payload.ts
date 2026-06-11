@@ -1,6 +1,40 @@
 import type { Message } from "grammy/types";
 import type { Conversation } from "../types";
 
+const toTelegramUserId = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^\d+$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+export const parseConversation = (raw: string): Conversation | null => {
+  try {
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object") {
+      return null;
+    }
+
+    const record = data as Conversation;
+    const from = toTelegramUserId(record.connection?.from);
+    const to = toTelegramUserId(record.connection?.to);
+    if (from === null || to === null) {
+      return null;
+    }
+
+    return {
+      ...record,
+      connection: { ...record.connection, from, to },
+    };
+  } catch {
+    return null;
+  }
+};
+
 export const applyMessagePayload = (
   conversation: Conversation,
   message: Message

@@ -92,7 +92,8 @@ export const handleSettingsCommand = async (
       from.first_name,
       deps.userModel,
       deps.userUUIDtoId,
-      deps.statsModel
+      deps.statsModel,
+      ctx
     );
     await showSettingsHome(ctx, user);
   } catch (error) {
@@ -145,21 +146,14 @@ export const handlePendingSettingsInput = async (
   }
 
   try {
-    await deps.userModel.updateField(userId.toString(), "userName", displayName);
-    await deps.userModel.updateField(
-      userId.toString(),
-      "pendingSettings",
-      undefined
-    );
-    await deps.userModel.updateField(
-      userId.toString(),
-      "lastMessage",
-      Date.now()
-    );
-    const updated = await deps.userModel.get(userId.toString());
+    await deps.userModel.updateFields(userId.toString(), {
+      userName: displayName,
+      pendingSettings: undefined,
+      lastMessage: Date.now(),
+    });
     await ctx.reply(
       SETTINGS_NAME_SAVED_MESSAGE.replace("NAME", escapeHtml(displayName)),
-      withHtml({ reply_markup: buildSettingsMenu(!!updated?.paused) })
+      withHtml({ reply_markup: buildSettingsMenu(!!user.paused) })
     );
   } catch (error) {
     logBotError("handlePendingSettingsInput", error);
@@ -184,16 +178,10 @@ export const handleSettingsMenu = async (
 
   switch (text) {
     case MENU.settings:
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
-      await deps.userModel.updateField(
-        userId.toString(),
-        "pendingSettings",
-        undefined
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        currentConversation: undefined,
+        pendingSettings: undefined,
+      });
       await showSettingsHome(ctx, {
         ...user,
         currentConversation: undefined,
@@ -202,30 +190,18 @@ export const handleSettingsMenu = async (
       return true;
 
     case MENU.back:
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
-      await deps.userModel.updateField(
-        userId.toString(),
-        "pendingSettings",
-        undefined
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        currentConversation: undefined,
+        pendingSettings: undefined,
+      });
       await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
       return true;
 
     case MENU.editName:
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
-      await deps.userModel.updateField(
-        userId.toString(),
-        "pendingSettings",
-        "editName"
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        currentConversation: undefined,
+        pendingSettings: "editName",
+      });
       await ctx.reply(
         SETTINGS_EDIT_NAME_MESSAGE,
         withHtml({ reply_markup: buildSettingsMenu(!!user.paused) })
@@ -233,16 +209,10 @@ export const handleSettingsMenu = async (
       return true;
 
     case MENU.cancelDraft:
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
-      await deps.userModel.updateField(
-        userId.toString(),
-        "pendingSettings",
-        undefined
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        currentConversation: undefined,
+        pendingSettings: undefined,
+      });
       await ctx.reply(
         SETTINGS_CANCEL_DRAFT_MESSAGE,
         withHtml({ reply_markup: mainMenu })
@@ -250,12 +220,10 @@ export const handleSettingsMenu = async (
       return true;
 
     case MENU.pauseInbox:
-      await deps.userModel.updateField(userId.toString(), "paused", true);
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        paused: true,
+        currentConversation: undefined,
+      });
       await ctx.reply(
         SETTINGS_PAUSE_ON_MESSAGE,
         withHtml({ reply_markup: buildSettingsMenu(true) })
@@ -299,12 +267,10 @@ export const handleSettingsMenu = async (
       }
 
       try {
-        await deps.userModel.updateField(userId.toString(), "blockList", []);
-        await deps.userModel.updateField(
-          userId.toString(),
-          "pendingSettings",
-          undefined
-        );
+        await deps.userModel.updateFields(userId.toString(), {
+          blockList: [],
+          pendingSettings: undefined,
+        });
         await ctx.reply(
           SETTINGS_CLEAR_BLOCKS_DONE_MESSAGE,
           withHtml({ reply_markup: buildSettingsMenu(!!user.paused) })
@@ -318,16 +284,10 @@ export const handleSettingsMenu = async (
       return true;
 
     case MENU.clearData:
-      await deps.userModel.updateField(
-        userId.toString(),
-        "currentConversation",
-        undefined
-      );
-      await deps.userModel.updateField(
-        userId.toString(),
-        "pendingSettings",
-        "confirmClearData"
-      );
+      await deps.userModel.updateFields(userId.toString(), {
+        currentConversation: undefined,
+        pendingSettings: "confirmClearData",
+      });
       await ctx.reply(
         SETTINGS_CLEAR_DATA_WARNING_MESSAGE,
         withHtml({ reply_markup: confirmClearMenu })
@@ -352,7 +312,8 @@ export const handleSettingsMenu = async (
           ctx.from?.first_name,
           deps.userModel,
           deps.userUUIDtoId,
-          deps.statsModel
+          deps.statsModel,
+          ctx
         );
         await ctx.reply(
           SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(

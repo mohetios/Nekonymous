@@ -48,8 +48,8 @@ import { applyMessagePayload } from "../utils/payload";
 import { hasDeliverablePayload, sendDecryptedMessage } from "../utils/sender";
 import {
   encryptedPayload,
+  encryptConversationPayload,
   generateTicketId,
-  getConversationId,
 } from "../utils/ticket";
 import {
   checkRateLimit,
@@ -58,6 +58,7 @@ import {
   withHtml,
 } from "../utils/tools";
 import { ensureUser } from "../utils/user";
+import { scheduleWork } from "../utils/worker";
 
 export const handleStartCommand = async (
   ctx: Context,
@@ -79,7 +80,8 @@ export const handleStartCommand = async (
         from.first_name,
         userModel,
         userUUIDtoId,
-        statsModel
+        statsModel,
+        ctx
       );
 
       const welcome = WelcomeMessage.replace(
@@ -108,7 +110,8 @@ export const handleStartCommand = async (
     from.first_name,
     userModel,
     userUUIDtoId,
-    statsModel
+    statsModel,
+    ctx
   );
 
   if (checkRateLimit(currentUser.lastMessage)) {
@@ -174,7 +177,8 @@ export const handleMessage = async (
     from.first_name,
     userModel,
     userUUIDtoId,
-    statsModel
+    statsModel,
+    ctx
   );
 
   const settingsDeps = {
@@ -219,12 +223,10 @@ export const handleMessage = async (
         pendingNickname,
         nickname
       );
-      await userModel.updateField(
-        from.id.toString(),
-        "currentConversation",
-        undefined
-      );
-      await userModel.updateField(from.id.toString(), "lastMessage", Date.now());
+      await userModel.updateFields(from.id.toString(), {
+        currentConversation: undefined,
+        lastMessage: Date.now(),
+      });
       await ctx.reply(
         nickname
           ? NICKNAME_SAVED_MESSAGE.replace("NAME", escapeHtml(nickname))
@@ -256,11 +258,9 @@ export const handleMessage = async (
   const recipient = await userModel.get(recipientId.toString());
   if (recipient?.blockList.includes(from.id.toString())) {
     await ctx.reply(USER_IS_BLOCKED_MESSAGE);
-    await userModel.updateField(
-      from.id.toString(),
-      "currentConversation",
-      undefined
-    );
+    await userModel.updateFields(from.id.toString(), {
+      currentConversation: undefined,
+    });
     return;
   }
 
@@ -272,11 +272,9 @@ export const handleMessage = async (
       ),
       withHtml()
     );
-    await userModel.updateField(
-      from.id.toString(),
-      "currentConversation",
-      undefined
-    );
+    await userModel.updateFields(from.id.toString(), {
+      currentConversation: undefined,
+    });
     return;
   }
 
@@ -294,44 +292,49 @@ export const handleMessage = async (
 
     applyMessagePayload(conversation, message);
 
-    const conversationId = await getConversationId(ticketId, appSecureKey);
-    const ciphertext = await encryptedPayload(
+    const payloadJson = JSON.stringify(conversation);
+    const { conversationId, ciphertext } = await encryptConversationPayload(
       ticketId,
-      JSON.stringify(conversation),
+      payloadJson,
       appSecureKey
     );
 
     await conversationModel.saveText(conversationId, ciphertext);
 
-    const addResponse = await addInboxEntry(inbox, Number(recipientId), {
+    const addResult = await addInboxEntry(inbox, Number(recipientId), {
       ticketId,
       conversationId,
       ciphertext,
     });
 
-    if (!addResponse.ok) {
+    if (!addResult.ok) {
       await conversationModel.remove(conversationId);
       await ctx.reply(
-        addResponse.status === 429 ? INBOX_FULL_MESSAGE : HuhMessage,
+        addResult.status === 429 ? INBOX_FULL_MESSAGE : HuhMessage,
         { reply_to_message_id: conversation.connection.parent_message_id }
       );
       return;
     }
 
-    const pending = await listPendingInbox(inbox, Number(recipientId));
+    const pendingCount = addResult.pendingCount ?? 1;
 
     await ctx.reply(MESSAGE_SENT_MESSAGE, {
       reply_to_message_id: conversation.connection.parent_message_id,
     });
     await ctx.api.sendMessage(
       Number(recipientId),
-      NEW_INBOX_MESSAGE.replace("COUNT", convertToPersianNumbers(pending.length)),
+      NEW_INBOX_MESSAGE.replace(
+        "COUNT",
+        convertToPersianNumbers(pendingCount)
+      ),
       withHtml()
     );
 
-    await userModel.updateField(from.id.toString(), "currentConversation", undefined);
-    await userModel.updateField(from.id.toString(), "lastMessage", Date.now());
-    await incrementStat(statsModel, "newConversation");
+    await userModel.updateFields(from.id.toString(), {
+      currentConversation: undefined,
+      lastMessage: Date.now(),
+    });
+    await scheduleWork(ctx, incrementStat(statsModel, "newConversation"));
   } catch (error) {
     logBotError("handleMessage", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });
@@ -400,27 +403,25 @@ export const handleInboxCommand = async (
           senderLabel
         );
 
-        try {
-          await ctx.api.sendMessage(
-            decrypted.connection.from,
-            YOUR_MESSAGE_SEEN_MESSAGE,
-            decrypted.connection.parent_message_id
-              ? { reply_to_message_id: decrypted.connection.parent_message_id }
-              : undefined
-          );
-        } catch (error) {
-          logBotError("handleInboxCommand:seen", error);
-        }
-
-        await conversationModel.saveText(
-          entry.conversationId,
-          await encryptedPayload(
-            entry.ticketId,
-            JSON.stringify({ connection: decrypted.connection, payload: {} }),
-            appSecureKey
-          )
+        const clearedCiphertext = encryptedPayload(
+          entry.ticketId,
+          JSON.stringify({ connection: decrypted.connection, payload: {} }),
+          appSecureKey
         );
-        await markInboxDelivered(inbox, from.id, entry.ref);
+
+        await Promise.all([
+          ctx.api
+            .sendMessage(
+              decrypted.connection.from,
+              YOUR_MESSAGE_SEEN_MESSAGE,
+              decrypted.connection.parent_message_id
+                ? { reply_to_message_id: decrypted.connection.parent_message_id }
+                : undefined
+            )
+            .catch((error) => logBotError("handleInboxCommand:seen", error)),
+          conversationModel.saveText(entry.conversationId, await clearedCiphertext),
+          markInboxDelivered(inbox, from.id, entry.ref),
+        ]);
         delivered += 1;
       } catch (error) {
         failed += 1;

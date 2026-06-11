@@ -90,9 +90,8 @@ export const setContactLabel = async (
 
   const nextLabels =
     Object.keys(labels).length > 0 ? labels : undefined;
-  await userModel.updateField(
-    recipientId.toString(),
-    "contactLabels",
-    nextLabels
-  );
+  await userModel.save(recipientId.toString(), {
+    ...user,
+    contactLabels: nextLabels,
+  });
 };

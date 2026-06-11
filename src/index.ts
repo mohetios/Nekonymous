@@ -7,6 +7,10 @@ import { HomePageContent } from "./front/home";
 import pageLayout from "./front/layout";
 import type { Environment } from "./types";
 import { Router } from "./utils/router";
+import {
+  registerUpdateDefer,
+  unregisterUpdateDefer,
+} from "./utils/worker";
 
 // INBOX DURABLE OBJECTS
 export { InboxDurableObject };
@@ -60,16 +64,23 @@ router.post(
 
 router.post(
   "/bot",
-  async (request: Request, env: Environment, _ctx: ExecutionContext) => {
+  async (request: Request, env: Environment, executionCtx: ExecutionContext) => {
     try {
       // Validate the request method; it should be POST for webhooks
       if (request.method === "POST") {
-        // Initialize the bot with the provided environment configuration
-        const bot = createBot(env);
+        const update = await request.clone().json<{ update_id: number }>();
+        registerUpdateDefer(update.update_id, (promise) =>
+          executionCtx.waitUntil(promise)
+        );
 
-        return webhookCallback(bot, "cloudflare-mod", {
-          secretToken: env.BOT_SECRET_KEY,
-        })(request);
+        try {
+          const bot = createBot(env);
+          return await webhookCallback(bot, "cloudflare-mod", {
+            secretToken: env.BOT_SECRET_KEY,
+          })(request);
+        } finally {
+          unregisterUpdateDefer(update.update_id);
+        }
       } else {
         return new Response("Invalid request method", { status: 405 });
       }

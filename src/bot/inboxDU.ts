@@ -64,7 +64,8 @@ export class InboxDurableObject extends DurableObject<Environment> {
     });
 
     await this.writeInbox(inbox);
-    return new Response("OK", { status: 200 });
+    const pendingCount = inbox.filter((entry) => !entry.delivered).length;
+    return Response.json({ pendingCount });
   }
 
   private async listInbox(): Promise<Response> {

@@ -38,6 +38,20 @@ export class KVModel<T = unknown> {
     return this.kv.get(this.key(id));
   }
 
+  async updateFields(id: string, fields: Partial<T>): Promise<void> {
+    const record = await this.get(id);
+    if (!record || typeof record !== "object" || record === null) {
+      throw new Error(`Record with ID ${id} not found.`);
+    }
+
+    const mutableRecord = record as Record<keyof T, unknown>;
+    for (const [field, value] of Object.entries(fields) as [keyof T, unknown][]) {
+      mutableRecord[field] = value;
+    }
+
+    await this.save(id, record);
+  }
+
   async updateField(
     id: string,
     field: keyof T,

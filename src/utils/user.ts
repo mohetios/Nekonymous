@@ -1,7 +1,9 @@
+import type { Context } from "grammy";
 import type { Environment, User } from "../types";
 import type { KVModel } from "./kv-storage";
 import { purgeInbox } from "./inbox";
 import { incrementStat } from "./logs";
+import { scheduleWork } from "./worker";
 
 const DISPLAY_NAME_MAX_CHARS = 64;
 
@@ -43,7 +45,8 @@ export const ensureUser = async (
   firstName: string | undefined,
   userModel: KVModel<User>,
   userUUIDtoId: KVModel<string>,
-  statsModel: KVModel<number>
+  statsModel: KVModel<number>,
+  ctx?: Context
 ): Promise<User> => {
   const existing = await userModel.get(userId.toString());
   if (existing) {
@@ -51,20 +54,17 @@ export const ensureUser = async (
   }
 
   const userUUID = generateUserLinkId();
-  await userUUIDtoId.save(userUUID, userId.toString());
-  await userModel.save(userId.toString(), {
+  const created: User = {
     userUUID,
     userName: firstName ?? "بدون نام!",
     blockList: [],
     lastMessage: Date.now(),
     currentConversation: {},
-  });
-  await incrementStat(statsModel, "newUser");
+  };
 
-  const created = await userModel.get(userId.toString());
-  if (!created) {
-    throw new Error(`Failed to create user ${userId}`);
-  }
+  await userUUIDtoId.save(userUUID, userId.toString());
+  await userModel.save(userId.toString(), created);
+  await scheduleWork(ctx, incrementStat(statsModel, "newUser"));
 
   return created;
 };

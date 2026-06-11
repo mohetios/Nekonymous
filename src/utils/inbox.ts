@@ -1,40 +1,7 @@
 import type { Conversation, Environment, InboxMessage } from "../types";
 import type { KVModel } from "./kv-storage";
+import { parseConversation } from "./payload";
 import { decryptPayload } from "./ticket";
-
-const toTelegramUserId = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isSafeInteger(value)) {
-    return value;
-  }
-  if (typeof value === "string" && /^\d+$/.test(value)) {
-    const parsed = Number(value);
-    return Number.isSafeInteger(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const parseConversation = (raw: string): Conversation | null => {
-  try {
-    const data: unknown = JSON.parse(raw);
-    if (!data || typeof data !== "object") {
-      return null;
-    }
-
-    const record = data as Conversation;
-    const from = toTelegramUserId(record.connection?.from);
-    const to = toTelegramUserId(record.connection?.to);
-    if (from === null || to === null) {
-      return null;
-    }
-
-    return {
-      ...record,
-      connection: { ...record.connection, from, to },
-    };
-  } catch {
-    return null;
-  }
-};
 
 export const generateInboxRef = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
@@ -54,15 +21,33 @@ export const listPendingInbox = async (
   return response.json<InboxMessage[]>();
 };
 
+export type AddInboxResult = {
+  ok: boolean;
+  status: number;
+  pendingCount?: number;
+};
+
 export const addInboxEntry = async (
   inbox: Environment["INBOX_DO"],
   recipientId: number,
   entry: Pick<InboxMessage, "ticketId" | "conversationId" | "ciphertext">
-): Promise<Response> =>
-  inboxStub(inbox, recipientId).fetch("https://inbox/add", {
+): Promise<AddInboxResult> => {
+  const response = await inboxStub(inbox, recipientId).fetch("https://inbox/add", {
     method: "POST",
     body: JSON.stringify(entry),
   });
+
+  if (!response.ok) {
+    return { ok: false, status: response.status };
+  }
+
+  const body = await response.json<{ pendingCount: number }>();
+  return {
+    ok: true,
+    status: response.status,
+    pendingCount: body.pendingCount,
+  };
+};
 
 export const purgeInbox = async (
   inbox: Environment["INBOX_DO"],
