@@ -1,3 +1,4 @@
+/** Strings with HTML tags must be sent via `replyHtml` / `withHtml` (parse_mode HTML). */
 export const SETTINGS_HOME_MESSAGE = `<b>تنظیمات</b>
 
 نام نمایشی: <b>USER_NAME</b>

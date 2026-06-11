@@ -1,3 +1,4 @@
+/** Strings with HTML tags must be sent via `replyHtml` / `withHtml` (parse_mode HTML). */
 export const WelcomeMessage = `<b>نِکونیموس</b> — سرویس پیام ناشناس در تلگرام
 
 <b>لینک شخصی شما:</b>
