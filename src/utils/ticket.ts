@@ -5,6 +5,7 @@ const AES_INFO = new TextEncoder().encode("nekonymous:aes:v1");
 const CONVERSATION_INFO = new TextEncoder().encode(
   "nekonymous:conversation:v1"
 );
+const SENDER_ALIAS_BITS = 128;
 
 const textEncoder = new TextEncoder();
 
@@ -61,6 +62,28 @@ export const generateTicketId = (): string => {
 /**
  * KV lookup key derived separately from the AES key (domain-separated HKDF).
  */
+/**
+ * Opaque per-recipient sender handle for contact labels (domain-separated HKDF).
+ */
+export const getSenderAlias = async (
+  recipientId: number,
+  senderId: number,
+  appSecureKey: string
+): Promise<string> => {
+  const keyMaterial = await importHkdfKey(appSecureKey);
+  const bits = await crypto.subtle.deriveBits(
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: textEncoder.encode(recipientId.toString()),
+      info: textEncoder.encode(`nekonymous:label:v1:${senderId}`),
+    },
+    keyMaterial,
+    SENDER_ALIAS_BITS
+  );
+  return bytesToBase64Url(new Uint8Array(bits));
+};
+
 export const getConversationId = async (
   ticketId: string,
   appSecureKey: string

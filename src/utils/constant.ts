@@ -7,6 +7,7 @@ const INBOX_CALLBACK = {
   reply: (ref: string) => `rpl:${ref}`,
   block: (ref: string) => `blk:${ref}`,
   unblock: (ref: string) => `ubl:${ref}`,
+  nickname: (ref: string) => `nnk:${ref}`,
 } as const;
 
 // Main menu keyboard used across various commands
@@ -54,11 +55,15 @@ export const createMessageKeyboard = (
     ? INBOX_CALLBACK.unblock(inboxRef)
     : INBOX_CALLBACK.block(inboxRef);
   const replyData = INBOX_CALLBACK.reply(inboxRef);
+  const nicknameData = INBOX_CALLBACK.nickname(inboxRef);
 
   assertCallbackData(blockData);
   assertCallbackData(replyData);
+  assertCallbackData(nicknameData);
 
   return new InlineKeyboard()
     .text(isBlocked ? "آنبلاک" : "بلاک", blockData)
-    .text("پاسخ", replyData);
+    .text("پاسخ", replyData)
+    .row()
+    .text("نام مستعار", nicknameData);
 };

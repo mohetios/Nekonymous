@@ -6,10 +6,14 @@ export interface User {
   userUUID: string;
   blockList: string[];
   lastMessage?: number;
+  /** Recipient-only labels keyed by opaque sender alias (HKDF). */
+  contactLabels?: Record<string, string>;
   currentConversation?: {
     to?: number;
     reply_to_message_id?: number;
     parent_message_id?: number;
+    /** Awaiting nickname text for this sender alias. */
+    pendingNickname?: string;
   };
 }
 

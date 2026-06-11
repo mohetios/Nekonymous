@@ -51,6 +51,34 @@ export const REPLAY_TO_MESSAGE = `
 پیام شما مستقیماً به فرستنده ارسال خواهد شد.
 `;
 
+export const REPLAY_TO_NICKNAME_MESSAGE = `
+در حال پاسخ به NICKNAME هستید.
+پاسخ خود را بنویسید:
+پیام شما مستقیماً به فرستنده ارسال خواهد شد.
+`;
+
+export const NICKNAME_PROMPT_MESSAGE = `
+نام مستعار برای این فرستنده را بنویسید.
+نام فعلی: CURRENT_NICK
+برای حذف نام، «حذف» یا «−» را ارسال کنید.
+`;
+
+export const NICKNAME_SAVED_MESSAGE = `
+نام مستعار «NAME» ذخیره شد.
+`;
+
+export const NICKNAME_REMOVED_MESSAGE = `
+نام مستعار حذف شد.
+`;
+
+export const NICKNAME_LIMIT_MESSAGE = `
+حداکثر تعداد نام‌های مستعار پر شده است.
+`;
+
+export const NICKNAME_TEXT_ONLY_MESSAGE = `
+لطفاً فقط متن برای نام مستعار بفرستید.
+`;
+
 export const USER_IS_BLOCKED_MESSAGE = `
 شما بلاک شده‌اید و نمی‌توانید با این کاربر ارتباط برقرار کنید.
 ارتباط شما با این کاربر محدود شده است.

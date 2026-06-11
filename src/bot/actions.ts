@@ -1,19 +1,26 @@
 import type { Context } from "grammy";
 import type { Environment, User } from "../types";
 import { createMessageKeyboard } from "../utils/constant";
+import {
+  getContactLabelForSender,
+  lookupContactLabel,
+} from "../utils/contact";
 import type { KVModel } from "../utils/kv-storage";
 import { loadConversationForAction } from "../utils/inbox";
 import { incrementStat } from "../utils/logs";
 import {
   HuhMessage,
+  NICKNAME_PROMPT_MESSAGE,
   NoConversationFoundMessage,
   RATE_LIMIT_MESSAGE,
   REPLAY_TO_MESSAGE,
+  REPLAY_TO_NICKNAME_MESSAGE,
   SELF_MESSAGE_DISABLE_MESSAGE,
   USER_BLOCKED_MESSAGE,
   USER_IS_BLOCKED_MESSAGE,
   USER_UNBLOCKED_MESSAGE,
 } from "../utils/messages";
+import { getSenderAlias } from "../utils/ticket";
 import { checkRateLimit } from "../utils/tools";
 
 type ActionContext = {
@@ -96,6 +103,13 @@ export const handleReplyAction = async (
       return;
     }
 
+    const senderLabel = await getContactLabelForSender(
+      currentUserId,
+      conversation.connection.from,
+      currentUser?.contactLabels,
+      appSecureKey
+    );
+
     await userModel.updateField(currentUserId.toString(), "currentConversation", {
       to: conversation.connection.from,
       parent_message_id: callbackMessageId,
@@ -103,7 +117,11 @@ export const handleReplyAction = async (
     });
     await incrementStat(statsModel, "newConversation");
 
-    await ctx.reply(REPLAY_TO_MESSAGE, {
+    const replyPrompt = senderLabel
+      ? REPLAY_TO_NICKNAME_MESSAGE.replace("NICKNAME", senderLabel)
+      : REPLAY_TO_MESSAGE;
+
+    await ctx.reply(replyPrompt, {
       reply_markup: { force_reply: true },
       reply_to_message_id: callbackMessageId,
     });
@@ -240,6 +258,76 @@ export const handleUnblockAction = async (
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
       reply_markup: createMessageKeyboard(entry.ref, false),
     });
+  } catch {
+    await ctx.reply(HuhMessage);
+  } finally {
+    await ctx.answerCallbackQuery();
+  }
+};
+
+export const handleNicknameAction = async (
+  ctx: Context,
+  userModel: KVModel<User>,
+  conversationModel: KVModel<string>,
+  statsModel: KVModel<number>,
+  inbox: Environment["INBOX_DO"],
+  appSecureKey: string
+): Promise<void> => {
+  const deps: ActionContext = {
+    userModel,
+    conversationModel,
+    statsModel,
+    inbox,
+    appSecureKey,
+  };
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
+  const currentUserId = ctx.from?.id;
+
+  if (callbackMessageId === undefined || currentUserId === undefined) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const loaded = await loadAction(ctx, deps);
+  if (!loaded) {
+    await ctx.reply(NoConversationFoundMessage);
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  const { conversation } = loaded;
+  if (!isRecipient(conversation.connection.to, currentUserId)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  try {
+    const currentUser = await userModel.get(currentUserId.toString());
+    if (checkRateLimit(currentUser?.lastMessage)) {
+      await ctx.reply(RATE_LIMIT_MESSAGE);
+      return;
+    }
+
+    const senderAlias = await getSenderAlias(
+      currentUserId,
+      conversation.connection.from,
+      appSecureKey
+    );
+    const currentNick =
+      lookupContactLabel(currentUser?.contactLabels, senderAlias) ?? "—";
+
+    await userModel.updateField(currentUserId.toString(), "currentConversation", {
+      pendingNickname: senderAlias,
+      parent_message_id: callbackMessageId,
+    });
+
+    await ctx.reply(
+      NICKNAME_PROMPT_MESSAGE.replace("CURRENT_NICK", currentNick),
+      {
+        reply_markup: { force_reply: true },
+        reply_to_message_id: callbackMessageId,
+      }
+    );
   } catch {
     await ctx.reply(HuhMessage);
   } finally {

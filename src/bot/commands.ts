@@ -19,6 +19,10 @@ import {
   INBOX_FULL_MESSAGE,
   MESSAGE_SENT_MESSAGE,
   NEW_INBOX_MESSAGE,
+  NICKNAME_LIMIT_MESSAGE,
+  NICKNAME_REMOVED_MESSAGE,
+  NICKNAME_SAVED_MESSAGE,
+  NICKNAME_TEXT_ONLY_MESSAGE,
   NoUserFoundMessage,
   RATE_LIMIT_MESSAGE,
   SELF_MESSAGE_DISABLE_MESSAGE,
@@ -27,6 +31,12 @@ import {
   WelcomeMessage,
   YOUR_MESSAGE_SEEN_MESSAGE,
 } from "../utils/messages";
+import {
+  ContactLabelLimitError,
+  getContactLabelForSender,
+  sanitizeNickname,
+  setContactLabel,
+} from "../utils/contact";
 import { applyMessagePayload } from "../utils/payload";
 import { hasDeliverablePayload, sendDecryptedMessage } from "../utils/sender";
 import {
@@ -146,6 +156,49 @@ export const handleMessage = async (
     return;
   }
 
+  const pendingNickname = currentUser.currentConversation?.pendingNickname;
+  if (pendingNickname) {
+    if (!message.text) {
+      await ctx.reply(NICKNAME_TEXT_ONLY_MESSAGE, { reply_markup: mainMenu });
+      return;
+    }
+
+    if (checkRateLimit(currentUser.lastMessage)) {
+      await ctx.reply(RATE_LIMIT_MESSAGE);
+      return;
+    }
+
+    try {
+      const nickname = sanitizeNickname(message.text);
+      await setContactLabel(
+        userModel,
+        from.id,
+        pendingNickname,
+        nickname
+      );
+      await userModel.updateField(
+        from.id.toString(),
+        "currentConversation",
+        undefined
+      );
+      await userModel.updateField(from.id.toString(), "lastMessage", Date.now());
+      await ctx.reply(
+        nickname
+          ? NICKNAME_SAVED_MESSAGE.replace("NAME", nickname)
+          : NICKNAME_REMOVED_MESSAGE,
+        { reply_markup: mainMenu }
+      );
+    } catch (error) {
+      if (error instanceof ContactLabelLimitError) {
+        await ctx.reply(NICKNAME_LIMIT_MESSAGE, { reply_markup: mainMenu });
+      } else {
+        logBotError("handleMessage:nickname", error);
+        await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+      }
+    }
+    return;
+  }
+
   const recipientId = currentUser.currentConversation?.to;
   if (!recipientId) {
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });
@@ -245,6 +298,8 @@ export const handleInboxCommand = async (
       return;
     }
 
+    const owner = await userModel.get(from.id.toString());
+    const aliasCache = new Map<number, string>();
     let delivered = 0;
     let failed = 0;
 
@@ -266,13 +321,24 @@ export const handleInboxCommand = async (
           continue;
         }
 
-        const owner = await userModel.get(from.id.toString());
         const senderId = decrypted.connection.from.toString();
         const isBlocked = !!owner?.blockList.includes(senderId);
+        const senderLabel = await getContactLabelForSender(
+          from.id,
+          decrypted.connection.from,
+          owner?.contactLabels,
+          appSecureKey,
+          aliasCache
+        );
 
-        await sendDecryptedMessage(ctx, decrypted, {
-          reply_markup: createMessageKeyboard(entry.ref, isBlocked),
-        });
+        await sendDecryptedMessage(
+          ctx,
+          decrypted,
+          {
+            reply_markup: createMessageKeyboard(entry.ref, isBlocked),
+          },
+          senderLabel
+        );
 
         try {
           await ctx.api.sendMessage(

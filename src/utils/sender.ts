@@ -1,5 +1,10 @@
 import type { Context } from "grammy";
 import type { Conversation } from "../types";
+import {
+  buildDeliveryHeader,
+  buildDeliveryHeaderLine,
+  buildDeliveryHeaderMarkdown,
+} from "./contact";
 import { UnsupportedMessageTypeMessage } from "./messages";
 import {
   TELEGRAM_CAPTION_MAX,
@@ -62,10 +67,37 @@ const captionForMarkdown = (caption: string | undefined) => {
   return escapeMarkdownV2(truncateUtf8(caption, TELEGRAM_CAPTION_MAX));
 };
 
+const captionWithLabel = (
+  senderLabel: string | undefined,
+  caption: string | undefined
+): { caption?: string; parse_mode?: "MarkdownV2" } => {
+  if (!senderLabel) {
+    const formatted = captionForMarkdown(caption);
+    return formatted
+      ? { caption: formatted, parse_mode: "MarkdownV2" }
+      : {};
+  }
+
+  const header = buildDeliveryHeaderMarkdown(senderLabel);
+  const body = caption ? escapeMarkdownV2(truncateUtf8(caption, TELEGRAM_CAPTION_MAX)) : "";
+  return {
+    caption: truncateUtf8(`${header}${body}`, TELEGRAM_CAPTION_MAX),
+    parse_mode: "MarkdownV2",
+  };
+};
+
+const sendLabelLine = async (
+  ctx: Context,
+  senderLabel: string
+): Promise<void> => {
+  await ctx.reply(buildDeliveryHeaderLine(senderLabel));
+};
+
 export const sendDecryptedMessage = async (
   ctx: Context,
   decryptedMessage: Conversation,
-  replyOptions: ReplyOptions
+  replyOptions: ReplyOptions,
+  senderLabel?: string
 ): Promise<void> => {
   const chatId = ctx.chat?.id;
   if (!chatId) {
@@ -77,28 +109,23 @@ export const sendDecryptedMessage = async (
   }
 
   switch (decryptedMessage.payload.message_type) {
-    case "text":
-      await sendWithKeyboardFallback(
-        (options) =>
-          ctx.reply(
-            truncateUtf8(
-              decryptedMessage.payload.message_text!,
-              TELEGRAM_MESSAGE_TEXT_MAX
-            ),
-            options
-          ),
-        replyOptions
-      );
+    case "text": {
+      const body = decryptedMessage.payload.message_text!;
+      const text = senderLabel
+        ? truncateUtf8(
+            `${buildDeliveryHeader(senderLabel)}${body}`,
+            TELEGRAM_MESSAGE_TEXT_MAX
+          )
+        : truncateUtf8(body, TELEGRAM_MESSAGE_TEXT_MAX);
+      await sendWithKeyboardFallback((options) => ctx.reply(text, options), replyOptions);
       break;
+    }
     case "photo":
       await sendWithKeyboardFallback(
         (options) =>
           ctx.api.sendPhoto(chatId, decryptedMessage.payload.photo_id!, {
             ...options,
-            caption: captionForMarkdown(decryptedMessage.payload.caption),
-            parse_mode: decryptedMessage.payload.caption
-              ? "MarkdownV2"
-              : undefined,
+            ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
           }),
         replyOptions
       );
@@ -108,10 +135,7 @@ export const sendDecryptedMessage = async (
         (options) =>
           ctx.api.sendVideo(chatId, decryptedMessage.payload.video_id!, {
             ...options,
-            caption: captionForMarkdown(decryptedMessage.payload.caption),
-            parse_mode: decryptedMessage.payload.caption
-              ? "MarkdownV2"
-              : undefined,
+            ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
           }),
         replyOptions
       );
@@ -124,10 +148,7 @@ export const sendDecryptedMessage = async (
             decryptedMessage.payload.animation_id!,
             {
               ...options,
-              caption: captionForMarkdown(decryptedMessage.payload.caption),
-              parse_mode: decryptedMessage.payload.caption
-                ? "MarkdownV2"
-                : undefined,
+              ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
             }
           ),
         replyOptions
@@ -138,15 +159,15 @@ export const sendDecryptedMessage = async (
         (options) =>
           ctx.api.sendDocument(chatId, decryptedMessage.payload.document_id!, {
             ...options,
-            caption: captionForMarkdown(decryptedMessage.payload.caption),
-            parse_mode: decryptedMessage.payload.caption
-              ? "MarkdownV2"
-              : undefined,
+            ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
           }),
         replyOptions
       );
       break;
     case "sticker":
+      if (senderLabel) {
+        await sendLabelLine(ctx, senderLabel);
+      }
       await sendWithKeyboardFallback(
         (options) =>
           ctx.api.sendSticker(
@@ -162,15 +183,15 @@ export const sendDecryptedMessage = async (
         (options) =>
           ctx.api.sendVoice(chatId, decryptedMessage.payload.voice_id!, {
             ...options,
-            caption: captionForMarkdown(decryptedMessage.payload.caption),
-            parse_mode: decryptedMessage.payload.caption
-              ? "MarkdownV2"
-              : undefined,
+            ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
           }),
         replyOptions
       );
       break;
     case "video_note":
+      if (senderLabel) {
+        await sendLabelLine(ctx, senderLabel);
+      }
       await sendWithKeyboardFallback(
         (options) =>
           ctx.api.sendVideoNote(
@@ -186,10 +207,7 @@ export const sendDecryptedMessage = async (
         (options) =>
           ctx.api.sendAudio(chatId, decryptedMessage.payload.audio_id!, {
             ...options,
-            caption: captionForMarkdown(decryptedMessage.payload.caption),
-            parse_mode: decryptedMessage.payload.caption
-              ? "MarkdownV2"
-              : undefined,
+            ...captionWithLabel(senderLabel, decryptedMessage.payload.caption),
           }),
         replyOptions
       );

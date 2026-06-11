@@ -4,6 +4,7 @@ import type { Environment, User } from "../types";
 import { KVModel } from "../utils/kv-storage";
 import {
   handleBlockAction,
+  handleNicknameAction,
   handleReplyAction,
   handleUnblockAction,
 } from "./actions";
@@ -93,6 +94,7 @@ export const createBot = (env: Environment) => {
   bot.callbackQuery(/^rpl:([a-f0-9]{8})$/, onInboxCallback(handleReplyAction));
   bot.callbackQuery(/^blk:([a-f0-9]{8})$/, onInboxCallback(handleBlockAction));
   bot.callbackQuery(/^ubl:([a-f0-9]{8})$/, onInboxCallback(handleUnblockAction));
+  bot.callbackQuery(/^nnk:([a-f0-9]{8})$/, onInboxCallback(handleNicknameAction));
 
   return bot;
 };

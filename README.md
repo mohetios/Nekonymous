@@ -15,7 +15,7 @@ Everything lives in one Worker (`src/index.ts`). Telegram talks to the Worker ov
 | HTTP edge | Cloudflare Worker | Routes, webhook, static HTML, ops cleanup |
 | Bot runtime | [Grammy](https://grammy.dev/) | Telegram updates, commands, keyboards |
 | User & metadata | Cloudflare **KV** | Profiles, UUID map, encrypted conversation blobs, stats |
-| Inbox queue | **Durable Object** per recipient | Pending messages + callback refs for reply/block |
+| Inbox queue | **Durable Object** per recipient | Pending messages + callback refs for reply/block/nickname |
 | Crypto | Web Crypto API | HKDF-SHA-256 key derivation, AES-256-GCM |
 
 ```mermaid
@@ -57,7 +57,7 @@ flowchart TB
 
 | KV key | Example | Contents |
 |--------|---------|----------|
-| `user:{telegramId}` | `user:123456` | Name, link UUID, block list, draft conversation |
+| `user:{telegramId}` | `user:123456` | Name, link UUID, block list, contact labels, draft conversation |
 | `userUUIDtoId:{uuid}` | `userUUIDtoId:abc…` | Shareable link token → Telegram user ID |
 | `conversation:{id}` | `conversation:xY…` | Encrypted JSON (connection + payload or metadata-only after read) |
 | `stats:*` | `stats:newUser:2026-06-11` | Daily counters for the home page |
@@ -75,7 +75,8 @@ Each anonymous message uses a fresh random **ticket** (256-bit, base64url):
 1. **Ticket** — capability handle; stored in the recipient's inbox DO.
 2. **Conversation ID** — HKDF-derived KV key (domain-separated from the AES key).
 3. **Ciphertext** — AES-256-GCM in KV and copied into the DO entry until delivery (`iv.ciphertext`, base64url).
-4. **Ref** — 8 hex chars for Telegram inline buttons (`rpl:`, `blk:`, `ubl:` prefixes, under the 64-byte callback limit).
+4. **Ref** — 8 hex chars for Telegram inline buttons (`rpl:`, `blk:`, `ubl:`, `nnk:` prefixes, under the 64-byte callback limit).
+5. **Sender alias** — HKDF-derived opaque key per recipient+sender pair; keys `contactLabels` on the recipient profile (nickname text only, never in ciphertext or DO).
 
 ### Data flows
 
@@ -88,15 +89,19 @@ Each anonymous message uses a fresh random **ticket** (256-bit, base64url):
 #### Read inbox (`/inbox`)
 
 1. Bot lists **pending** (undelivered) DO entries.
-2. Decrypts from DO ciphertext, delivers to Telegram with reply/block keyboard.
+2. Decrypts from DO ciphertext, delivers to Telegram with reply/block/nickname keyboard (shows saved nickname in the message when set).
 3. Notifies sender that the message was seen.
 4. Clears payload in KV (keeps `connection` for reply/block), marks entry `delivered` in DO (drops ciphertext, keeps `ref`).
 
-#### Reply / block
+#### Reply / block / nickname
 
-1. Recipient taps inline button (`rpl:{ref}` etc.).
+1. Recipient taps inline button (`rpl:{ref}`, `blk:{ref}`, `ubl:{ref}`, or `nnk:{ref}`).
 2. Bot loads DO entry by `ref`, decrypts connection metadata from KV.
-3. Reply sets a new draft conversation; block updates `blockList` in KV.
+3. **Reply** sets a new draft conversation (prompt includes nickname when set).
+4. **Block** / **unblock** updates `blockList` in KV.
+5. **Nickname** prompts for a label, stores it in `contactLabels[senderAlias]` on the recipient's `user` record. Senders never see nicknames; labels are not stored in conversation ciphertext or the inbox DO.
+
+Nicknames are per recipient and per anonymous sender. The same person can have different labels for different users. Up to 200 labels per account (32 characters each). Remove a label by sending `حذف`, `−`, or `-`.
 
 ### Code map
 
@@ -108,11 +113,12 @@ src/
 ├── bot/
 │   ├── bot.ts            Grammy wiring
 │   ├── commands.ts       /start, /inbox, outbound messages
-│   ├── actions.ts        Inline reply / block / unblock
+│   ├── actions.ts        Inline reply / block / unblock / nickname
 │   └── inboxDU.ts        Per-user inbox (Durable Object)
 ├── front/                Public HTML
 └── utils/
-    ├── ticket.ts         HKDF + AES-GCM
+    ├── ticket.ts         HKDF + AES-GCM, sender alias derivation
+    ├── contact.ts        Nickname sanitize, lookup, save
     ├── inbox.ts          Inbox DO client + decrypt helpers
     ├── kv-storage.ts     KVModel wrapper
     ├── user.ts           ensureUser()
@@ -129,7 +135,8 @@ src/
 - **Webhook auth** — `BOT_SECRET_KEY` must match Telegram `secret_token`.
 - **Rate limit** — 5 seconds between link opens and sends.
 - **Inbox cap** — 50 pending messages per recipient DO.
-- **Callbacks** — Only `connection.to` may reply or block using a ticket ref.
+- **Callbacks** — Only `connection.to` may reply, block, or set a nickname using a ticket ref.
+- **Contact labels** — Up to 200 nicknames per user; opaque alias keys (HKDF), plain label text on the recipient profile only.
 
 ---
 
@@ -137,7 +144,7 @@ src/
 
 1. **Get your link** — `/start` returns your personal `t.me/...?start=…` URL.
 2. **Receive anonymously** — Others open your link and send; you read via `/inbox`.
-3. **Reply or block** — Use **پاسخ** / **بلاک** on each delivered message.
+3. **Reply, block, or label** — Use **پاسخ** / **بلاک** / **نام مستعار** on each delivered message. Nicknames appear on future messages from that sender (e.g. `📩 از علی:`) and in the reply prompt; only you see them.
 4. **Protection** — Rate limits, self-message blocking, and per-sender block lists.
 
 ---
@@ -209,5 +216,6 @@ Calls `POST /admin/cleanup` to delete all `conversation:*` KV keys and purge inb
 - **Webhook** — Requests must include `X-Telegram-Bot-Api-Secret-Token: BOT_SECRET_KEY`.
 - **Ticket auth** — Reply/block callbacks resolve through the recipient's inbox DO; `connection.to` is verified server-side.
 - **Payload lifecycle** — Message content is cleared from KV after inbox delivery; connection metadata remains for threading.
+- **Contact labels** — Stored on the recipient's user record, keyed by HKDF sender alias (not raw Telegram IDs in the label map). Never sent to the sender or written into encrypted conversation blobs.
 
 See [AGENTS.md](AGENTS.md) for contributor conventions.
