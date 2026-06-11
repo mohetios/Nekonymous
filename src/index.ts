@@ -1,3 +1,4 @@
+import { handleAdminCleanup } from "./admin/cleanup";
 import { webhookCallback } from "grammy";
 import { createBot } from "./bot/bot";
 import { InboxDurableObject } from "./bot/inboxDU";
@@ -44,10 +45,6 @@ router.get(
         "content-type": "text/html;charset=UTF-8",
       },
     });
-
-    // return new HTMLResponse(
-    //   pageLayout("درباره", env.BOT_NAME, AboutPageContent)
-    // );
   }
 );
 
@@ -55,6 +52,12 @@ router.get(
  * Define the bot webhook route.
  * This handles incoming webhook requests from Telegram to the bot.
  */
+router.post(
+  "/admin/cleanup",
+  (request: Request, env: Environment, _ctx: ExecutionContext) =>
+    handleAdminCleanup(request, env)
+);
+
 router.post(
   "/bot",
   async (request: Request, env: Environment, _ctx: ExecutionContext) => {
