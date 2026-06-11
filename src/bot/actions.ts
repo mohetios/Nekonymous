@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
 import type { Environment, User } from "../types";
-import { createMessageKeyboard } from "../utils/constant";
+import { buildDraftMenu, createMessageKeyboard } from "../utils/constant";
 import {
   getContactLabelForSender,
   lookupContactLabel,
@@ -121,13 +121,7 @@ export const handleReplyAction = async (
       ? REPLAY_TO_NICKNAME_MESSAGE.replace("NICKNAME", escapeHtml(senderLabel))
       : REPLAY_TO_MESSAGE;
 
-    await ctx.reply(
-      replyPrompt,
-      withHtml({
-        reply_markup: { force_reply: true as const },
-        reply_to_message_id: callbackMessageId,
-      })
-    );
+    await ctx.reply(replyPrompt, withHtml({ reply_markup: buildDraftMenu() }));
   } catch {
     await ctx.reply(HuhMessage);
   } finally {
@@ -330,10 +324,7 @@ export const handleNicknameAction = async (
 
     await ctx.reply(
       NICKNAME_PROMPT_MESSAGE.replace("CURRENT_NICK", escapeHtml(currentNick)),
-      withHtml({
-        reply_markup: { force_reply: true as const },
-        reply_to_message_id: callbackMessageId,
-      })
+      withHtml({ reply_markup: buildDraftMenu() })
     );
   } catch {
     await ctx.reply(HuhMessage);

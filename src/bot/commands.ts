@@ -5,6 +5,7 @@ import {
   handleSettingsMenu,
 } from "./settings";
 import {
+  buildDraftMenu,
   createMessageKeyboard,
   handleMenuCommand,
   mainMenu,
@@ -144,7 +145,7 @@ export const handleStartCommand = async (
       "USER_NAME",
       escapeHtml(otherUser?.userName ?? "کاربر")
     ),
-    withHtml()
+    withHtml({ reply_markup: buildDraftMenu() })
   );
 
   await userModel.updateField(currentUserId.toString(), "currentConversation", {
@@ -200,7 +201,7 @@ export const handleMessage = async (
     if (!message.text) {
       await ctx.reply(
         NICKNAME_TEXT_ONLY_MESSAGE,
-        withHtml({ reply_markup: mainMenu })
+        withHtml({ reply_markup: buildDraftMenu() })
       );
       return;
     }

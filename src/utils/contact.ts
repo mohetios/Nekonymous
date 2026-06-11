@@ -7,7 +7,7 @@ const CONTACT_LABELS_MAX = 200;
 const NICKNAME_MAX_CHARS = 32;
 
 export const buildDeliveryHeaderLine = (nickname: string): string =>
-  `📩 از ${nickname}:`;
+  `💬 از ${nickname}:`;
 
 export const buildDeliveryHeader = (nickname: string): string =>
   `${buildDeliveryHeaderLine(nickname)}\n\n`;

@@ -54,7 +54,7 @@ const botLink = (userUUID: string): string =>
 const formatSettingsHome = (user: User): string => {
   const paused = !!user.paused;
   return SETTINGS_HOME_MESSAGE.replace("USER_NAME", escapeHtml(user.userName))
-    .replace("PAUSE_STATUS", paused ? "متوقف ⏸" : "فعال ✓")
+    .replace("PAUSE_STATUS", paused ? "🔕 خاموش" : "🔔 روشن")
     .replace(
       "PAUSE_ACTION_LABEL",
       paused ? MENU.resumeInbox : MENU.pauseInbox
@@ -184,24 +184,34 @@ export const handleSettingsMenu = async (
 
   switch (text) {
     case MENU.settings:
-      if (user.pendingSettings) {
-        await deps.userModel.updateField(
-          userId.toString(),
-          "pendingSettings",
-          undefined
-        );
-      }
-      await showSettingsHome(ctx, user);
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await deps.userModel.updateField(
+        userId.toString(),
+        "pendingSettings",
+        undefined
+      );
+      await showSettingsHome(ctx, {
+        ...user,
+        currentConversation: undefined,
+        pendingSettings: undefined,
+      });
       return true;
 
     case MENU.back:
-      if (user.pendingSettings) {
-        await deps.userModel.updateField(
-          userId.toString(),
-          "pendingSettings",
-          undefined
-        );
-      }
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await deps.userModel.updateField(
+        userId.toString(),
+        "pendingSettings",
+        undefined
+      );
       await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
       return true;
 
@@ -218,7 +228,7 @@ export const handleSettingsMenu = async (
       );
       await ctx.reply(
         SETTINGS_EDIT_NAME_MESSAGE,
-        withHtml({ reply_markup: { force_reply: true as const } })
+        withHtml({ reply_markup: buildSettingsMenu(!!user.paused) })
       );
       return true;
 
@@ -235,7 +245,7 @@ export const handleSettingsMenu = async (
       );
       await ctx.reply(
         SETTINGS_CANCEL_DRAFT_MESSAGE,
-        withHtml({ reply_markup: buildSettingsMenu(!!user.paused) })
+        withHtml({ reply_markup: mainMenu })
       );
       return true;
 

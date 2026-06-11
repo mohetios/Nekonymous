@@ -9,19 +9,26 @@ import { assertCallbackData } from "./telegram-limits";
 import { withHtml } from "./tools";
 
 export const MENU = {
-  about: "درباره و حریم خصوصی",
-  link: "دریافت لینک",
-  settings: "تنظیمات",
-  editName: "نام نمایشی",
-  cancelDraft: "لغو پیام ناتمام",
-  pauseInbox: "توقف دریافت",
-  resumeInbox: "فعال‌سازی دریافت",
-  clearBlockList: "حذف بلاک‌ها",
-  clearData: "پاک کردن حساب",
-  back: "بازگشت",
-  confirmClear: "بله، همه را پاک کن",
-  confirmClearBlocks: "بله، بلاک‌ها را پاک کن",
-  cancel: "انصراف",
+  about: "🛡️ درباره و حریم خصوصی",
+  link: "🔗 دریافت لینک",
+  settings: "⚙️ تنظیمات",
+  editName: "✏️ نام نمایشی",
+  cancelDraft: "↩️ لغو پیام ناتمام",
+  pauseInbox: "🔕 توقف دریافت",
+  resumeInbox: "🔔 فعال‌سازی دریافت",
+  clearBlockList: "🔓 حذف بلاک‌ها",
+  clearData: "🗑️ پاک کردن حساب",
+  back: "🏠 بازگشت",
+  confirmClear: "🗑️ بله، پاک کن",
+  confirmClearBlocks: "🔓 بله، آنبلاک همه",
+  cancel: "❌ انصراف",
+} as const;
+
+const INBOX_BUTTON = {
+  block: "🚫 بلاک",
+  unblock: "🔓 آنبلاک",
+  reply: "💬 پاسخ",
+  nickname: "🏷️ نام مستعار",
 } as const;
 
 const MENU_LABELS = new Set<string>(Object.values(MENU));
@@ -42,6 +49,15 @@ export const mainMenu = new Keyboard()
   .row()
   .text(MENU.settings)
   .resized();
+
+/** Shown while composing, replying, or naming — always offers a way out. */
+export const buildDraftMenu = (): Keyboard =>
+  new Keyboard()
+    .text(MENU.cancelDraft)
+    .text(MENU.settings)
+    .row()
+    .text(MENU.back)
+    .resized();
 
 /**
  * Grouped settings keyboard (RTL: first button = right on screen).
@@ -118,8 +134,8 @@ export const createMessageKeyboard = (
   assertCallbackData(nicknameData);
 
   return new InlineKeyboard()
-    .text(isBlocked ? "آنبلاک" : "بلاک", blockData)
-    .text("پاسخ", replyData)
+    .text(isBlocked ? INBOX_BUTTON.unblock : INBOX_BUTTON.block, blockData)
+    .text(INBOX_BUTTON.reply, replyData)
     .row()
-    .text("نام مستعار", nicknameData);
+    .text(INBOX_BUTTON.nickname, nicknameData);
 };
