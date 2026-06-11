@@ -54,7 +54,7 @@ const botLink = (userUUID: string): string =>
 const formatSettingsHome = (user: User): string => {
   const paused = !!user.paused;
   return SETTINGS_HOME_MESSAGE.replace("USER_NAME", escapeHtml(user.userName))
-    .replace("PAUSE_STATUS", paused ? "🔕 خاموش" : "🔔 روشن")
+    .replace("PAUSE_STATUS", paused ? "غیرفعال" : "فعال")
     .replace(
       "PAUSE_ACTION_LABEL",
       paused ? MENU.resumeInbox : MENU.pauseInbox
@@ -62,8 +62,8 @@ const formatSettingsHome = (user: User): string => {
     .replace(
       "PAUSE_ACTION_DESC",
       paused
-        ? "لینکت رو دوباره روشن می‌کنه."
-        : "موقتاً پیام جدید نمی‌رسه."
+        ? "فعال‌سازی دریافت پیام‌های جدید"
+        : "توقف موقت دریافت پیام‌های جدید"
     );
 };
 

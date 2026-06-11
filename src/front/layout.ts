@@ -17,12 +17,12 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
         rel="stylesheet"
       />
       <title>${title}</title>
-      <meta name="description" content="ربات ${BOT_NAME} یک ابزار امن و خصوصی برای ارسال پیام‌های ناشناس است که حریم خصوصی شما را تضمین می‌کند." />
+      <meta name="description" content="${BOT_NAME} — ربات پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
       <meta name="keywords" content="ربات ناشناس, امنیت, پیام ناشناس, حریم خصوصی, ${BOT_NAME}" />
       <meta name="robots" content="index, follow" />
       <meta name="author" content="ربات ${BOT_NAME}" />
       <meta property="og:title" content="${title}" />
-      <meta property="og:description" content="با استفاده از ربات ${BOT_NAME} می‌توانید به صورت کاملاً امن و بدون افشای هویت خود با دیگر کاربران ارتباط برقرار کنید." />
+      <meta property="og:description" content="${BOT_NAME} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
       <meta property="og:type" content="website" />
       <meta property="og:url" content="https://example.com" />
       <meta property="og:image" content="https://example.com/path-to-your-image.jpg" />
@@ -30,7 +30,7 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
       <meta property="og:site_name" content="${BOT_NAME}" />
       <meta name="twitter:card" content="summary_large_image" />
       <meta name="twitter:title" content="${title}" />
-      <meta name="twitter:description" content="با استفاده از ربات ${BOT_NAME} می‌توانید به صورت کاملاً امن و بدون افشای هویت خود با دیگر کاربران ارتباط برقرار کنید." />
+      <meta name="twitter:description" content="${BOT_NAME} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
       <meta name="twitter:image" content="https://example.com/path-to-your-image.jpg" />
       <meta name="twitter:site" content="@YourTwitterHandle" />
       <link rel="canonical" href="https://example.com" />

@@ -22,7 +22,7 @@ router.get(
   "/",
   async (_request: Request, env: Environment, _ctx: ExecutionContext) => {
     const content = await HomePageContent(env);
-    const html = pageLayout("ارسال پیام تلگرام ناشناس", env.BOT_NAME, content);
+    const html = pageLayout("پیام ناشناس تلگرام", env.BOT_NAME, content);
     return new Response(html, {
       headers: {
         "content-type": "text/html;charset=UTF-8",
