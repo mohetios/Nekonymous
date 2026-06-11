@@ -14,7 +14,7 @@ export class Router {
     this.addRoute("POST", path, handler);
   }
 
-  addRoute(method: string, path: string, handler: Handler): void {
+  private addRoute(method: string, path: string, handler: Handler): void {
     const pathRegex = new RegExp(`^${path.replace(/:[^\s/]+/g, "([\\w-]+)")}$`);
     this.routes.push({ method, path: pathRegex, handler });
   }

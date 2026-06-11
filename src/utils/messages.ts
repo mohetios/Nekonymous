@@ -103,6 +103,10 @@ export const RATE_LIMIT_MESSAGE = `
 لطفاً چند ثانیه صبر کنید و سپس دوباره تلاش کنید.
 `;
 
+export const INBOX_FULL_MESSAGE = `
+صندوق ورودی این کاربر پر است. لطفاً بعداً دوباره تلاش کنید.
+`;
+
 export const SELF_MESSAGE_DISABLE_MESSAGE = `
 شما نمی‌توانید به خودتان پیام ناشناس ارسال کنید!
 `;

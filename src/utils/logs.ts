@@ -1,6 +1,10 @@
 import type { KVModel } from "./kv-storage";
 import { convertToPersianNumbers } from "./tools";
 
+export const logBotError = (context: string, error: unknown): void => {
+  console.error(`[${context}]`, error);
+};
+
 /**
  * Increments a stat by a given amount in the KV store.
  *
