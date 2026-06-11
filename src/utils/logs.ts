@@ -1,26 +1,70 @@
 import type { KVModel } from "./kv-storage";
 import { convertToPersianNumbers } from "./tools";
 
+const TOTAL_STAT_BASES = new Set(["newUser", "newConversation"]);
+
+const totalStatKey = (statKey: string): string => `total:${statKey}`;
+
 export const logBotError = (context: string, error: unknown): void => {
   console.error(`[${context}]`, error);
 };
 
+const sumDailyPrefix = async (
+  statsModel: KVModel<number>,
+  prefix: string
+): Promise<number> => {
+  const { values } = await statsModel.list({ prefix });
+  let total = 0;
+  for (const value of values) {
+    if (value) {
+      total += value;
+    }
+  }
+  return total;
+};
+
+const readOrBackfillTotal = async (
+  statsModel: KVModel<number>,
+  totalKey: string,
+  dailyPrefix: string
+): Promise<number> => {
+  const cached = await statsModel.get(totalKey);
+  if (cached !== null) {
+    return cached;
+  }
+
+  const total = await sumDailyPrefix(statsModel, dailyPrefix);
+  await statsModel.save(totalKey, total);
+  return total;
+};
+
 /**
- * Increments a stat by a given amount in the KV store.
- *
- * @param {KVModel<number>} statsModel - The stats KV model instance.
- * @param {string} statKey - The key for the statistic to increment.
- * @param {number} amount - The amount by which to increment the stat.
+ * Increments a daily stat and, for homepage totals, the matching running total key.
  */
 export const incrementStat = async (
   statsModel: KVModel<number>,
   statKey: string,
   amount: number = 1
-) => {
-  const today = new Date().toISOString().split("T")[0]; // Get only the date part
-  const fullStatKey = `${statKey}:${today}`;
-  const currentValue = (await statsModel.get(fullStatKey)) || 0;
-  await statsModel.save(fullStatKey, currentValue + amount);
+): Promise<void> => {
+  const today = new Date().toISOString().split("T")[0];
+  const dailyKey = `${statKey}:${today}`;
+
+  if (!TOTAL_STAT_BASES.has(statKey)) {
+    const currentValue = (await statsModel.get(dailyKey)) || 0;
+    await statsModel.save(dailyKey, currentValue + amount);
+    return;
+  }
+
+  const runningKey = totalStatKey(statKey);
+  const [dailyValue, runningValue] = await Promise.all([
+    statsModel.get(dailyKey),
+    statsModel.get(runningKey),
+  ]);
+
+  await Promise.all([
+    statsModel.save(dailyKey, (dailyValue || 0) + amount),
+    statsModel.save(runningKey, (runningValue || 0) + amount),
+  ]);
 };
 
 export const getTotalStats = async (
@@ -29,35 +73,17 @@ export const getTotalStats = async (
   conversationsCount: string;
   usersCount: string;
 }> => {
-  let totalConversationsCount = 0;
-  let totalUsersCount = 0;
-
-  // List all keys with the prefix 'newConversation:'
-  const conversationKeys = await statsModel.list({
-    prefix: "newConversation:",
-  });
-  for (const key of conversationKeys.keys) {
-    const value = await statsModel.get(
-      key.name.replace(`${statsModel.namespace}:`, "")
-    );
-    if (value) {
-      totalConversationsCount += value;
-    }
-  }
-
-  // List all keys with the prefix 'newUser:'
-  const userKeys = await statsModel.list({ prefix: "newUser:" });
-  for (const key of userKeys.keys) {
-    const value = await statsModel.get(
-      key.name.replace(`${statsModel.namespace}:`, "")
-    );
-    if (value) {
-      totalUsersCount += value;
-    }
-  }
+  const [usersCount, conversationsCount] = await Promise.all([
+    readOrBackfillTotal(statsModel, totalStatKey("newUser"), "newUser:"),
+    readOrBackfillTotal(
+      statsModel,
+      totalStatKey("newConversation"),
+      "newConversation:"
+    ),
+  ]);
 
   return {
-    conversationsCount: convertToPersianNumbers(totalConversationsCount),
-    usersCount: convertToPersianNumbers(totalUsersCount),
+    conversationsCount: convertToPersianNumbers(conversationsCount),
+    usersCount: convertToPersianNumbers(usersCount),
   };
 };
