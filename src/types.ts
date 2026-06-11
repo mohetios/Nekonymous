@@ -14,8 +14,11 @@ export interface User {
 }
 
 export interface InboxMessage {
-  timestamp: number;
+  ref: string;
   ticketId: string;
+  conversationId: string;
+  ciphertext?: string;
+  delivered?: boolean;
 }
 
 /**

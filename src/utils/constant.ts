@@ -1,6 +1,13 @@
 import { InlineKeyboard, Keyboard, type Context } from "grammy";
 import { ABOUT_PRIVACY_COMMAND_MESSAGE, USER_LINK_MESSAGE } from "./messages";
+import { assertCallbackData } from "./telegram-limits";
 import { escapeMarkdownV2 } from "./tools";
+
+const INBOX_CALLBACK = {
+  reply: (ref: string) => `rpl:${ref}`,
+  block: (ref: string) => `blk:${ref}`,
+  unblock: (ref: string) => `ubl:${ref}`,
+} as const;
 
 // Main menu keyboard used across various commands
 export const mainMenu = new Keyboard()
@@ -8,13 +15,6 @@ export const mainMenu = new Keyboard()
   .text("دریافت لینک")
   .resized();
 
-/**
- * Handles menu-related commands such as "دریافت لینک", "درباره", etc.
- *
- * @param {Context} ctx - The context of the current Telegram update.
- * @param {string} userUUID - The UUID of the current user.
- * @returns {Promise<boolean>} - Returns true if a command was successfully handled, otherwise false.
- */
 export const handleMenuCommand = async (
   ctx: Context,
   userUUID: string
@@ -46,23 +46,19 @@ export const handleMenuCommand = async (
   return true;
 };
 
-/**
- * Creates an inline keyboard with options to reply or block/unblock a user.
- *
- * This function generates an inline keyboard that allows users to either reply to a message
- * or block/unblock the sender, depending on the current blocked status.
- *
- * @param {string} ticketId - The unique ID of the conversation or message.
- * @param {boolean} isBlocked - Indicates whether the user is currently blocked.
- * @returns {InlineKeyboard} - The generated inline keyboard.
- */
 export const createMessageKeyboard = (
-  ticketId: string,
+  inboxRef: string,
   isBlocked: boolean
-): InlineKeyboard =>
-  new InlineKeyboard()
-    .text(
-      isBlocked ? "آنبلاک" : "بلاک",
-      isBlocked ? `unblock_${ticketId}` : `block_${ticketId}`
-    )
-    .text("پاسخ", `reply_${ticketId}`);
+): InlineKeyboard => {
+  const blockData = isBlocked
+    ? INBOX_CALLBACK.unblock(inboxRef)
+    : INBOX_CALLBACK.block(inboxRef);
+  const replyData = INBOX_CALLBACK.reply(inboxRef);
+
+  assertCallbackData(blockData);
+  assertCallbackData(replyData);
+
+  return new InlineKeyboard()
+    .text(isBlocked ? "آنبلاک" : "بلاک", blockData)
+    .text("پاسخ", replyData);
+};

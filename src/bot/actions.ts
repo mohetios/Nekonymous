@@ -1,7 +1,8 @@
 import type { Context } from "grammy";
-import type { Conversation, User } from "../types";
+import type { Environment, User } from "../types";
 import { createMessageKeyboard } from "../utils/constant";
 import type { KVModel } from "../utils/kv-storage";
+import { loadConversationForAction } from "../utils/inbox";
 import { incrementStat } from "../utils/logs";
 import {
   HuhMessage,
@@ -13,97 +14,93 @@ import {
   USER_IS_BLOCKED_MESSAGE,
   USER_UNBLOCKED_MESSAGE,
 } from "../utils/messages";
-import { decryptPayload, getConversationId } from "../utils/ticket";
 import { checkRateLimit } from "../utils/tools";
 
-/**
- * Handles the reply action triggered from an inline keyboard.
- * This function manages the process when a user clicks on the "reply" button in an inline keyboard.
- * It verifies the conversation context and initiates a reply by linking it to the correct conversation.
- *
- * @param {Context} ctx - The context of the current Telegram update.
- * @param {KVModel<User>} userModel - KVModel instance for managing user data.
- * @param {KVModel<string>} conversationModel - KVModel instance for managing encrypted conversation data.
- * @param {KVModel<number>} statsModel - KVModel instance for managing stats data.
- * @param {string} APP_SECURE_KEY - The application-specific secure key.
- */
+type ActionContext = {
+  userModel: KVModel<User>;
+  conversationModel: KVModel<string>;
+  statsModel: KVModel<number>;
+  inbox: Environment["INBOX_DO"];
+  appSecureKey: string;
+};
+
+const isRecipient = (to: number, userId: number): boolean => to === userId;
+
+const loadAction = async (ctx: Context, deps: ActionContext) => {
+  const ref = ctx.match?.[1];
+  const userId = ctx.from?.id;
+  if (!ref || userId === undefined) {
+    return null;
+  }
+
+  return loadConversationForAction(
+    deps.inbox,
+    userId,
+    ref,
+    deps.appSecureKey,
+    deps.conversationModel
+  );
+};
+
 export const handleReplyAction = async (
   ctx: Context,
   userModel: KVModel<User>,
   conversationModel: KVModel<string>,
   statsModel: KVModel<number>,
-  APP_SECURE_KEY: string
+  inbox: Environment["INBOX_DO"],
+  appSecureKey: string
 ): Promise<void> => {
-  const ticketId = ctx.match?.[1];
-  const currentUserId = ctx.from?.id;
+  const deps: ActionContext = {
+    userModel,
+    conversationModel,
+    statsModel,
+    inbox,
+    appSecureKey,
+  };
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
+  const currentUserId = ctx.from?.id;
 
-  if (
-    !ticketId ||
-    currentUserId === undefined ||
-    callbackMessageId === undefined
-  ) {
+  if (callbackMessageId === undefined || currentUserId === undefined) {
     await ctx.answerCallbackQuery();
     return;
   }
 
-  // Retrieve the conversation data
-  const conversationId = await getConversationId(ticketId, APP_SECURE_KEY);
-  const conversationData = await conversationModel.get(conversationId);
-
-  if (!conversationData) {
+  const loaded = await loadAction(ctx, deps);
+  if (!loaded) {
     await ctx.reply(NoConversationFoundMessage);
     await ctx.answerCallbackQuery();
     return;
   }
 
-  const rawConversation = await decryptPayload(
-    ticketId,
-    conversationData,
-    APP_SECURE_KEY
-  );
-  const parentConversation = JSON.parse(rawConversation) as Conversation;
+  const { conversation } = loaded;
+  if (!isRecipient(conversation.connection.to, currentUserId)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
 
   try {
-    const otherUser = await userModel.get(
-      parentConversation.connection.from.toString()
-    );
-
-    // disable self message
-    if (
-      parentConversation.connection.from.toString() === currentUserId.toString()
-    ) {
+    if (conversation.connection.from === currentUserId) {
       await ctx.reply(SELF_MESSAGE_DISABLE_MESSAGE);
       return;
     }
-    // Check rate limit
+
     const currentUser = await userModel.get(currentUserId.toString());
     if (checkRateLimit(currentUser?.lastMessage)) {
       await ctx.reply(RATE_LIMIT_MESSAGE);
       return;
     }
 
-    // Check if the other user has blocked the current user
-    if (otherUser?.blockList.includes(currentUserId.toString())) {
+    const sender = await userModel.get(conversation.connection.from.toString());
+    if (sender?.blockList.includes(currentUserId.toString())) {
       await ctx.reply(USER_IS_BLOCKED_MESSAGE);
-      await ctx.answerCallbackQuery();
       return;
     }
 
-    const conversation = {
-      to: parentConversation.connection.from,
+    await userModel.updateField(currentUserId.toString(), "currentConversation", {
+      to: conversation.connection.from,
       parent_message_id: callbackMessageId,
-      reply_to_message_id: parentConversation.connection.parent_message_id,
-    };
-
-    // Update the user's current conversation
-    await userModel.updateField(
-      currentUserId.toString(),
-      "currentConversation",
-      conversation
-    );
-
-    // Increment the reply stat
+      reply_to_message_id: conversation.connection.parent_message_id,
+    });
     await incrementStat(statsModel, "newConversation");
 
     await ctx.reply(REPLAY_TO_MESSAGE, {
@@ -117,77 +114,61 @@ export const handleReplyAction = async (
   }
 };
 
-/**
- * Handles the block action triggered from an inline keyboard.
- * This function adds a user to the block list when the "block" button is clicked.
- * It ensures that further communication from the blocked user is prevented until they are unblocked.
- *
- * @param {Context} ctx - The context of the current Telegram update.
- * @param {KVModel<User>} userModel - KVModel instance for managing user data.
- * @param {KVModel<string>} conversationModel - KVModel instance for managing encrypted conversation data.
- * @param {KVModel<number>} statsModel - KVModel instance for managing stats data.
- * @param {string} APP_SECURE_KEY - The application-specific secure key.
- */
 export const handleBlockAction = async (
   ctx: Context,
   userModel: KVModel<User>,
   conversationModel: KVModel<string>,
   statsModel: KVModel<number>,
-  APP_SECURE_KEY: string
+  inbox: Environment["INBOX_DO"],
+  appSecureKey: string
 ): Promise<void> => {
-  const ticketId = ctx.match?.[1];
+  const deps: ActionContext = {
+    userModel,
+    conversationModel,
+    statsModel,
+    inbox,
+    appSecureKey,
+  };
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const currentUserId = ctx.from?.id;
   const chatId = ctx.chat?.id;
-  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
 
   if (
-    !ticketId ||
+    callbackMessageId === undefined ||
     currentUserId === undefined ||
-    chatId === undefined ||
-    callbackMessageId === undefined
+    chatId === undefined
   ) {
     await ctx.answerCallbackQuery();
     return;
   }
 
-  // Retrieve the conversation data
-  const conversationId = await getConversationId(ticketId, APP_SECURE_KEY);
-  const conversationData = await conversationModel.get(conversationId);
-
-  if (!conversationData) {
+  const loaded = await loadAction(ctx, deps);
+  if (!loaded) {
     await ctx.reply(HuhMessage);
     await ctx.answerCallbackQuery();
     return;
   }
 
-  const rawConversation = await decryptPayload(
-    ticketId,
-    conversationData,
-    APP_SECURE_KEY
-  );
-  const parentConversation = JSON.parse(rawConversation) as Conversation;
+  const { entry, conversation } = loaded;
+  if (!isRecipient(conversation.connection.to, currentUserId)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
 
   try {
-    // Block the user
     await userModel.updateField(
       currentUserId.toString(),
       "blockList",
-      parentConversation.connection.from.toString(),
+      conversation.connection.from.toString(),
       true
     );
-
-    // Increment the blocked user stat
     await incrementStat(statsModel, "blockedUsers");
 
-    // Send confirmation to the user
     await ctx.api.sendMessage(currentUserId, USER_BLOCKED_MESSAGE, {
       reply_to_message_id: callbackMessageId,
     });
-
-    // Update the reply markup to reflect the block
-    const replyKeyboard = createMessageKeyboard(ticketId, true);
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-      reply_markup: replyKeyboard,
+      reply_markup: createMessageKeyboard(entry.ref, true),
     });
   } catch {
     await ctx.reply(HuhMessage);
@@ -196,87 +177,69 @@ export const handleBlockAction = async (
   }
 };
 
-/**
- * Handles the unblock action triggered from an inline keyboard.
- * This function removes a user from the block list when the "unblock" button is clicked,
- * allowing communication to resume between the two users.
- *
- * @param {Context} ctx - The context of the current Telegram update.
- * @param {KVModel<User>} userModel - KVModel instance for managing user data.
- * @param {KVModel<string>} conversationModel - KVModel instance for managing encrypted conversation data.
- * @param {KVModel<number>} statsModel - KVModel instance for managing stats data.
- * @param {string} APP_SECURE_KEY - The application-specific secure key.
- */
 export const handleUnblockAction = async (
   ctx: Context,
   userModel: KVModel<User>,
   conversationModel: KVModel<string>,
   statsModel: KVModel<number>,
-  APP_SECURE_KEY: string
+  inbox: Environment["INBOX_DO"],
+  appSecureKey: string
 ): Promise<void> => {
-  const ticketId = ctx.match?.[1];
+  const deps: ActionContext = {
+    userModel,
+    conversationModel,
+    statsModel,
+    inbox,
+    appSecureKey,
+  };
+  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const currentUserId = ctx.from?.id;
   const chatId = ctx.chat?.id;
-  const callbackMessageId = ctx.callbackQuery?.message?.message_id;
 
   if (
-    !ticketId ||
+    callbackMessageId === undefined ||
     currentUserId === undefined ||
-    chatId === undefined ||
-    callbackMessageId === undefined
+    chatId === undefined
   ) {
     await ctx.answerCallbackQuery();
     return;
   }
 
-  // Retrieve the conversation data
-  const conversationId = await getConversationId(ticketId, APP_SECURE_KEY);
-  const conversationData = await conversationModel.get(conversationId);
-
-  if (!conversationData) {
+  const loaded = await loadAction(ctx, deps);
+  if (!loaded) {
     await ctx.reply(HuhMessage);
     await ctx.answerCallbackQuery();
     return;
   }
 
-  const rawConversation = await decryptPayload(
-    ticketId,
-    conversationData,
-    APP_SECURE_KEY
-  );
-  const parentConversation = JSON.parse(rawConversation) as Conversation;
+  const { entry, conversation } = loaded;
+  if (!isRecipient(conversation.connection.to, currentUserId)) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
 
   try {
     const currentUser = await userModel.get(currentUserId.toString());
+    const senderId = conversation.connection.from.toString();
 
-    if (
-      currentUser?.blockList.includes(
-        parentConversation.connection.from.toString()
-      )
-    ) {
-      // Unblock the user
-      await userModel.popItemFromField(
-        currentUserId.toString(),
-        "blockList",
-        parentConversation.connection.from.toString()
-      );
-
-      // Increment the unblocked user stat
-      await incrementStat(statsModel, "unblockedUsers");
-
-      // Send confirmation to the user
-      await ctx.api.sendMessage(currentUserId, USER_UNBLOCKED_MESSAGE, {
-        reply_to_message_id: callbackMessageId,
-      });
-
-      // Update the reply markup to reflect the unblock
-      const replyKeyboard = createMessageKeyboard(ticketId, false);
-      await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-        reply_markup: replyKeyboard,
-      });
-    } else {
+    if (!currentUser?.blockList.includes(senderId)) {
       await ctx.reply(HuhMessage);
+      return;
     }
+
+    await userModel.popItemFromField(
+      currentUserId.toString(),
+      "blockList",
+      senderId
+    );
+    await incrementStat(statsModel, "unblockedUsers");
+
+    await ctx.api.sendMessage(currentUserId, USER_UNBLOCKED_MESSAGE, {
+      reply_to_message_id: callbackMessageId,
+    });
+    await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
+      reply_markup: createMessageKeyboard(entry.ref, false),
+    });
   } catch {
     await ctx.reply(HuhMessage);
   } finally {
