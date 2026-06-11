@@ -3,6 +3,7 @@ import { webhookCallback } from "grammy";
 import { createBot } from "./bot/bot";
 import { InboxSqliteDurableObject } from "./bot/inboxDU";
 import { AboutPageContent } from "./front/about";
+import { TechnicalPageContent } from "./front/technical";
 import { HomePageContent } from "./front/home";
 import pageLayout from "./front/layout";
 import type { Environment } from "./types";
@@ -44,6 +45,19 @@ router.get(
   (_request: Request, env: Environment, _ctx: ExecutionContext) => {
     const content = AboutPageContent();
     const html = pageLayout("درباره", env.BOT_NAME, content);
+    return new Response(html, {
+      headers: {
+        "content-type": "text/html;charset=UTF-8",
+      },
+    });
+  }
+);
+
+router.get(
+  "/about/technical",
+  (_request: Request, env: Environment, _ctx: ExecutionContext) => {
+    const content = TechnicalPageContent();
+    const html = pageLayout("معماری فنی", env.BOT_NAME, content);
     return new Response(html, {
       headers: {
         "content-type": "text/html;charset=UTF-8",

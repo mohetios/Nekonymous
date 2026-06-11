@@ -182,7 +182,8 @@ export const handleMessage = async (
   userUUIDtoId: KVModel<string>,
   inbox: Environment["INBOX_DO"],
   statsModel: KVModel<number>,
-  appSecureKey: string
+  appSecureKey: string,
+  publicSiteUrl?: string
 ): Promise<void> => {
   const from = ctx.from;
   const message = ctx.message;
@@ -204,6 +205,7 @@ export const handleMessage = async (
     userUUIDtoId,
     statsModel,
     inbox,
+    publicSiteUrl,
   };
 
   if (await handleMenuCommand(ctx, currentUser)) {

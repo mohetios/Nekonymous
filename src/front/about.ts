@@ -31,6 +31,23 @@ export const AboutPageContent = () => `
       داده‌ها در KV و Durable Objects نگه‌داری می‌شن؛ پیام‌ها در حالت رمزشده.
     </p>
 
+    <div class="bg-slate-50 border border-slate-200 rounded-lg p-5 mt-6 mb-6">
+      <h3 class="text-lg font-semibold mb-2">برای کاربران پیشرفته</h3>
+      <p class="leading-relaxed mb-3">
+        معماری، جریان داده، قرارداد KV/DO، چرخهٔ رمزنگاری و محدودیت‌های عملیاتی
+        در راهنمای فنی آمده است.
+      </p>
+      <a
+        href="/about/technical"
+        class="inline-block bg-slate-800 text-white text-sm font-medium py-2 px-4 rounded-md hover:bg-slate-900 transition"
+      >
+        📐 راهنمای معماری فنی
+      </a>
+      <p class="text-sm text-gray-500 mt-3">
+        در ربات: <strong>تنظیمات → 📐 معماری فنی</strong>
+      </p>
+    </div>
+
     <h2 class="text-2xl font-semibold mt-8 mb-4">متن‌باز</h2>
     <p class="text-lg leading-relaxed mb-4">
       کد منبع روی

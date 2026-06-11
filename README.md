@@ -1,240 +1,349 @@
 # Nekonymous
 
-**Nekonymous** (نِکونیموس) is a Persian-first anonymous messaging bot for Telegram. Each user gets a personal link; anyone who opens it can send them a message without showing their name or username. Replies stay anonymous in both directions. The bot runs as a single [Cloudflare Worker](https://developers.cloudflare.com/workers/) with encrypted storage at the edge.
+**Nekonymous** (نِکونیموس) is a Persian-first anonymous messaging bot for Telegram. Each user gets a personal link; anyone who opens it can send them a message without showing their Telegram username. Replies stay anonymous in both directions.
+
+The app is a single [Cloudflare Worker](https://developers.cloudflare.com/workers/): signed Telegram webhook, encrypted KV storage, and one **SQLite Durable Object** inbox per recipient.
 
 ---
 
 ## Architecture
 
-### What runs where
+### Design principles
 
-Everything lives in one Worker (`src/index.ts`). Telegram talks to the Worker over a signed webhook; users can also open lightweight HTML pages on the same domain.
+| Concern | Approach |
+|---------|----------|
+| Hot path | One Worker isolate; Grammy bot instance cached per isolate; HKDF key material cached per `APP_SECURE_KEY` |
+| User state | KV JSON records (`user`, `userUUIDtoId`, `stats`) — eventually consistent, fine for profiles |
+| Inbox ordering | **Durable Object per recipient** — serializes enqueue/deliver; not stored in KV |
+| Message bodies | AES-256-GCM ciphertext in KV **and** copied into the DO until delivery (see lifecycle below) |
+| Side effects | Homepage stats increments deferred with `ctx.waitUntil` so the webhook ACK stays fast |
+
+### What runs where
 
 | Layer | Technology | Role |
 |-------|------------|------|
-| HTTP edge | Cloudflare Worker | Routes, webhook, static HTML, ops cleanup |
-| Bot runtime | [Grammy](https://grammy.dev/) | Telegram updates, commands, keyboards |
-| User & metadata | Cloudflare **KV** | Profiles, UUID map, encrypted conversation blobs, stats |
-| Inbox queue | **Durable Object** per recipient | Pending messages + callback refs for reply/block/nickname |
-| Crypto | Web Crypto API | HKDF-SHA-256 key derivation, AES-256-GCM |
+| HTTP edge | Cloudflare Worker (`src/index.ts`) | Router, webhook, static HTML, admin cleanup |
+| Bot runtime | [Grammy](https://grammy.dev/) (`src/bot/`) | Commands, reply keyboards, inline callbacks |
+| Profiles & ciphertext | Cloudflare **KV** | Users, UUID map, encrypted conversations, stats |
+| Inbox queue | **`InboxSqliteDurableObject`** | One DO per recipient Telegram ID; SQLite `inbox_entries` |
+| Crypto | Web Crypto API | HKDF-SHA-256 + AES-256-GCM (`src/utils/ticket.ts`) |
 
 ```mermaid
 flowchart TB
   subgraph clients [Clients]
-    TG[Telegram users]
+    TG[Telegram]
     WEB[Browser]
   end
 
-  subgraph worker [Cloudflare Worker]
-    IDX[index.ts]
-    BOT[bot/]
-    CRYPTO[ticket.ts]
-    IDX --> BOT
-    BOT --> CRYPTO
+  subgraph worker [Worker isolate]
+    IDX[index.ts router]
+    WH["POST /bot\nregisterUpdateDefer"]
+    BOT[createBot cache]
+    WH --> BOT
+    IDX --> WH
   end
 
-  subgraph storage [Storage]
-    KV[(KV)]
-    DO[(Inbox DO)]
+  subgraph kv [KV NekonymousKV]
+    U[user:telegramId]
+    MAP[userUUIDtoId:uuid]
+    CONV[conversation:hkdfId]
+    ST[stats daily + totals]
   end
 
-  TG -->|POST /bot| IDX
+  subgraph do [Durable Object per recipient]
+    SQL[(inbox_entries SQLite)]
+  end
+
+  TG -->|webhook| IDX
   WEB -->|GET / /about| IDX
-  BOT --> KV
-  BOT --> DO
+  BOT --> U
+  BOT --> MAP
+  BOT --> CONV
+  BOT --> ST
+  BOT -->|stub fetch /add /list …| SQL
 ```
 
 ### HTTP surface
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/` | Landing page and aggregate stats |
-| `GET` | `/about` | About and privacy copy |
-| `POST` | `/bot` | Telegram webhook (`BOT_SECRET_KEY` header) |
-| `POST` | `/admin/cleanup` | Ops: purge all inbox DOs + wipe KV (`user`, `conversation`, `userUUIDtoId`, `stats`) — `Authorization: Bearer BOT_SECRET_KEY` |
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `GET` | `/` | — | Landing page; reads `stats:total:*` (lazy backfill from daily keys) |
+| `GET` | `/about` | — | About / privacy (static HTML) |
+| `GET` | `/about/technical` | — | Advanced architecture guide (Persian, for operators/devs) |
+| `POST` | `/bot` | `X-Telegram-Bot-Api-Secret-Token: BOT_SECRET_KEY` | Telegram webhook |
+| `POST` | `/admin/cleanup` | `Authorization: Bearer BOT_SECRET_KEY` | Ops: purge all inbox DOs + wipe KV namespaces |
 
-### Storage layout
+### Webhook request path
 
-| KV key | Example | Contents |
-|--------|---------|----------|
-| `user:{telegramId}` | `user:123456` | Name, link UUID, block list, contact labels, draft conversation |
-| `userUUIDtoId:{uuid}` | `userUUIDtoId:abc…` | Shareable link token → Telegram user ID |
-| `conversation:{id}` | `conversation:xY…` | Encrypted JSON (connection + payload or metadata-only after read) |
-| `stats:*` | `stats:newUser:2026-06-11`, `stats:total:newUser` | Daily counters + running totals for the home page |
+1. `index.ts` parses `update_id`, registers a `waitUntil` defer for that update.
+2. `createBot(env)` returns a cached Grammy instance (keyed by token + bot info + secure key).
+3. Middleware attaches `ctx.deferWork` so handlers can call `scheduleWork()` for non-blocking KV stats writes.
+4. Handler runs (`commands.ts`, `actions.ts`, `settings.ts`); Telegram gets the HTTP response.
+5. Deferred promises (e.g. `incrementStat`) complete in the background.
 
-| Durable Object | One per | Contents |
-|----------------|---------|----------|
-| `InboxSqliteDurableObject` | recipient Telegram ID | SQLite table `inbox_entries` (per-message rows; cap 50) |
+---
 
-**Anonymity:** Recipients do not see sender usernames in Telegram. The operator can map UUIDs to Telegram IDs and decrypt bodies with `APP_SECURE_KEY` — this is a hosted relay, not E2E encryption.
+## Storage
 
-### Message ticket model
+### KV namespaces (`KVModel` prefix)
 
-Each anonymous message uses a fresh random **ticket** (256-bit, base64url):
+| Key pattern | Type | Contents |
+|-------------|------|----------|
+| `user:{telegramId}` | JSON `User` | Display name, link UUID, `blockList`, `contactLabels`, `paused`, draft `currentConversation`, `pendingSettings` |
+| `userUUIDtoId:{uuid}` | string | Shareable 22-char link token → owner Telegram ID |
+| `conversation:{conversationId}` | opaque text | AES ciphertext (`saveText` / `getText` — never `JSON.parse`) |
+| `stats:newUser:YYYY-MM-DD` | number | Daily new registrations |
+| `stats:newConversation:YYYY-MM-DD` | number | Daily new anonymous sends |
+| `stats:total:newUser` | number | Running total for homepage |
+| `stats:total:newConversation` | number | Running total for homepage |
 
-1. **Ticket** — capability handle; stored in the recipient's inbox DO.
-2. **Conversation ID** — HKDF-derived KV key (domain-separated from the AES key).
-3. **Ciphertext** — AES-256-GCM in KV and copied into the DO entry until delivery (`iv.ciphertext`, base64url).
-4. **Ref** — 8 hex chars for Telegram inline buttons (`rpl:`, `blk:`, `ubl:`, `nnk:` prefixes, under the 64-byte callback limit).
-5. **Sender alias** — HKDF-derived opaque key per recipient+sender pair; keys `contactLabels` on the recipient profile (nickname text only, never in ciphertext or DO).
+### Inbox Durable Object (`InboxSqliteDurableObject`)
 
-### Data flows
+- **Instance key:** `idFromName(recipientTelegramId)`
+- **Storage:** SQLite table `inbox_entries` (schema v1 in `_sql_schema_migrations`)
+- **Cap:** 50 rows total per inbox (`429` on `/add` when full)
 
-#### Send message
+| Column | Purpose |
+|--------|---------|
+| `ref` | 8 hex chars — Telegram inline callback handle (`rpl:`, `blk:`, `ubl:`, `nnk:`) |
+| `ticket_id` | Random 256-bit ticket (base64url) — HKDF salt for this message |
+| `conversation_id` | HKDF-derived KV key for the ciphertext blob |
+| `ciphertext` | Copy of encrypted payload while **pending**; `NULL` after delivery |
+| `delivered` | `0` = pending queue; `1` = delivered (ref kept for callbacks) |
+| `created_at` | Insert order for FIFO delivery |
 
-1. Sender opens a `/start {uuid}` deep link (22-char base64url token).
-2. Bot encrypts conversation JSON via `encryptConversationPayload` → saves to KV → enqueues in recipient's inbox DO (with ciphertext copy).
-3. Sender gets confirmation; recipient gets an inbox count notification (`pendingCount` from DO `/add`).
+**DO routes** (via `src/utils/inbox.ts` stub):
 
-#### Read inbox (`/inbox`)
+| Method | Path | Response |
+|--------|------|----------|
+| `POST` | `/add` | `{ pendingCount }` or `429` if full |
+| `GET` | `/list` | Pending entries with ciphertext only |
+| `GET` | `/entry?ref=` | Single row (any delivery state) |
+| `POST` | `/mark-delivered` | Clears `ciphertext`, sets `delivered = 1` |
+| `DELETE` | `/purge` | Wipes SQL + `storage.deleteAll()` |
 
-1. Bot lists **pending** (undelivered) DO entries.
-2. Decrypts from DO ciphertext, delivers to Telegram with reply/block/nickname keyboard (shows saved nickname in the message when set).
-3. Notifies sender that the message was seen.
-4. Clears payload in KV (keeps `connection` for reply/block), marks entry `delivered` in DO (drops ciphertext, keeps `ref`).
+### Message ticket & encryption
 
-#### Reply / block / nickname
+Each anonymous message gets a fresh **ticket** (`generateTicketId`, 32 random bytes → base64url).
 
-1. Recipient taps inline button (`rpl:{ref}`, `blk:{ref}`, `ubl:{ref}`, or `nnk:{ref}`).
-2. Bot loads DO entry by `ref`, decrypts connection metadata from KV.
-3. **Reply** sets a new draft conversation (prompt includes nickname when set).
-4. **Block** / **unblock** updates `blockList` in KV.
-5. **Nickname** prompts for a label, stores it in `contactLabels[senderAlias]` on the recipient's `user` record. Senders never see nicknames; labels are not stored in conversation ciphertext or the inbox DO.
+From one `encryptConversationPayload(ticketId, json, APP_SECURE_KEY)` call:
 
-Nicknames are per recipient and per anonymous sender. The same person can have different labels for different users. Up to 200 labels per account (32 characters each). Remove a label by sending `حذف`, `−`, or `-`.
+| Output | Derivation | Stored where |
+|--------|------------|--------------|
+| `conversationId` | HKDF info `nekonymous:conversation:v1` | KV key `conversation:{id}` |
+| `ciphertext` | AES-256-GCM, wire `iv.ciphertext` (base64url) | KV + DO row until delivery |
+| `ticketId` | Random opaque handle | DO row only |
+| `ref` | 4 random bytes → 8 hex | DO row; inline keyboard callbacks |
 
-### Code map
+**Sender alias** (nicknames): HKDF info `nekonymous:label:v1:{senderId}` with recipient-scoped salt → opaque key in `user.contactLabels`. Plain nickname text never goes into ciphertext or the DO.
+
+**Anonymity:** Recipients do not see sender Telegram usernames. The operator can map UUIDs to Telegram IDs and decrypt with `APP_SECURE_KEY` — hosted relay, not E2E.
+
+### Ciphertext lifecycle (dual store)
+
+```
+SEND
+  KV  conversation:{id}  ← full ciphertext (connection + payload)
+  DO  inbox_entries     ← copy of same ciphertext, delivered=0
+
+/inbox DELIVER
+  DO  decrypt from row ciphertext → Telegram
+  KV  re-encrypt with empty payload (connection metadata only)
+  DO  mark-delivered → ciphertext=NULL, delivered=1, ref kept
+
+CALLBACK (reply / block / nickname)
+  DO  /entry?ref= → ticketId + conversationId
+  KV  getText(conversationId) → decrypt connection from KV
+```
+
+Callbacks after delivery always read **KV**, not DO ciphertext (already cleared). The DO row remains as a stable `ref` → `conversationId` index.
+
+---
+
+## Data flows
+
+### 1. Owner registration (`/start` without payload)
+
+1. `ensureUser` creates `user:{id}` + `userUUIDtoId:{uuid}` if missing.
+2. Welcome message includes `buildUserDeepLink(userUUID)`.
+3. `incrementStat(newUser)` scheduled via `waitUntil`.
+
+### 2. Visitor opens link (`/start {uuid}`)
+
+1. Validate link ID format (`isUserLinkId`, 20–24 char base64url).
+2. Resolve owner: `userUUIDtoId.get(uuid)` → `user:{ownerId}`.
+3. Checks: not self, not blocked, owner not `paused`.
+4. Show compose prompt with `publicDisplayName(owner)` (reserved menu words → «کاربر»).
+5. Set visitor `currentConversation.to = ownerId` in KV.
+
+### 3. Send anonymous message
+
+1. Visitor sends text/media while `currentConversation.to` is set.
+2. Build `Conversation` JSON → `encryptConversationPayload`.
+3. `conversationModel.saveText(conversationId, ciphertext)`.
+4. `addInboxEntry` → DO `POST /add` (returns `pendingCount`).
+5. On `429` inbox full: **delete** the KV conversation key (no orphan blob).
+6. Confirm to sender; notify recipient with pending count.
+7. Clear visitor draft; `incrementStat(newConversation)` deferred.
+
+**Pause rule:** New sends via link respect `recipient.paused`. **Thread replies** (`reply_to_message_id` set from inbox **پاسخ**) bypass pause.
+
+### 4. Read inbox (`/inbox`)
+
+1. `GET /list` on recipient's DO — pending rows with ciphertext.
+2. For each entry: decrypt DO ciphertext → `sendDecryptedMessage` (nickname header if set).
+3. Notify sender «seen» (best-effort `sendMessage` to `connection.from`).
+4. Re-encrypt KV with empty `payload` (`encryptedPayload`); `mark-delivered` on DO.
+5. Inline keyboard on delivered message: **پاسخ** / **بلاک** / **🏷️ نام مستعار**.
+
+### 5. Inline actions (`rpl:` / `blk:` / `ubl:` / `nnk:`)
+
+1. `loadConversationForAction`: DO `/entry?ref=` + KV `getText(conversationId)`.
+2. Verify `connection.to ===` current user.
+3. **Reply** — set `currentConversation` with `reply_to_message_id` for threading; draft menu shown.
+4. **Block / unblock** — push/pop `blockList` on recipient's `user` record.
+5. **Nickname** — set `pendingNickname` to sender alias; next text updates `contactLabels`.
+
+### 6. Settings & account lifecycle
+
+| Action | Effect |
+|--------|--------|
+| Edit display name | `sanitizeDisplayName` rejects menu labels; saved on `user.userName` |
+| Pause inbox | `user.paused = true`; rejects new link opens, not thread replies |
+| Clear block list | Empties `blockList` after confirmation |
+| Delete account | Remove UUID map, `purge` inbox DO, delete `user` record; fresh `/start` issues new link |
+
+---
+
+## Bot surface (Grammy)
+
+| Input | Handler |
+|-------|---------|
+| `/start` | `commands.handleStartCommand` |
+| `/inbox` | `commands.handleInboxCommand` |
+| `/settings` | `settings.handleSettingsCommand` |
+| Reply keyboard (link, about, settings, draft cancel…) | `constant` + `settings` |
+| Text/media while drafting | `commands.handleMessage` |
+| `rpl:` / `blk:` / `ubl:` / `nnk:` callbacks | `actions.*` |
+
+---
+
+## Code map
 
 ```
 src/
-├── index.ts              Worker entry, routes, DO export, deferred stats wiring
-├── types.ts              User, Conversation, Environment
-├── admin/cleanup.ts      Full KV + inbox purge endpoint
+├── index.ts                 Routes, webhook defer registry, DO export
+├── types.ts                 User, Conversation, InboxMessage, Environment
+├── admin/cleanup.ts         POST /admin/cleanup
 ├── bot/
-│   ├── bot.ts            Grammy wiring, bot instance cache
-│   ├── commands.ts       /start, /inbox, outbound messages
-│   ├── actions.ts        Inline reply / block / unblock / nickname
-│   ├── settings.ts       /settings, display name, pause, account delete
-│   └── inboxDU.ts        InboxSqliteDurableObject (SQLite inbox)
-├── front/                Public HTML
+│   ├── bot.ts               createBot(), handler registration, bot cache
+│   ├── commands.ts          /start, /inbox, outbound send
+│   ├── actions.ts           Inline reply / block / unblock / nickname
+│   ├── settings.ts          /settings, pause, name edit, account delete
+│   └── inboxDU.ts           InboxSqliteDurableObject
+├── front/                   RTL Persian HTML (/, /about)
 └── utils/
-    ├── ticket.ts         HKDF + AES-GCM, encryptConversationPayload
-    ├── contact.ts        Nickname sanitize, lookup, save
-    ├── inbox.ts          Inbox DO client + decrypt helpers
-    ├── kv-storage.ts     KVModel wrapper
-    ├── user.ts           ensureUser, deep links, display-name guards
-    ├── payload.ts        Conversation JSON parse
-    ├── worker.ts         scheduleWork / waitUntil for stats
-    ├── logs.ts           Daily + running homepage stats
-    ├── sender.ts         Deliver decrypted media to Telegram
-    ├── telegram-limits.ts  Callback size, text/caption truncation
-    ├── messages.ts       Persian bot copy
-    ├── messages-settings.ts  Settings menu copy
-    ├── constant.ts       Keyboards, reserved display-name checks
-    └── tools.ts          Rate limit, HTML helpers, Persian digits
+    ├── ticket.ts            HKDF, encryptConversationPayload, decrypt
+    ├── inbox.ts             DO stub client, loadConversationForAction
+    ├── kv-storage.ts        KVModel
+    ├── user.ts              ensureUser, deep links, display-name guards
+    ├── contact.ts           Nickname aliases (HKDF sender handle)
+    ├── payload.ts           parseConversation
+    ├── sender.ts            Deliver decrypted media to Telegram
+    ├── worker.ts            scheduleWork / waitUntil bridge
+    ├── logs.ts              Stats increment + homepage totals
+    ├── messages*.ts         Persian copy
+    ├── constant.ts          Keyboards, isReservedDisplayName
+    └── tools.ts               Rate limit, replyHtml, Persian digits
 
 tools/
-├── cleanup.mjs           Ops CLI → POST /admin/cleanup
-└── verify-crypto.ts      Crypto smoke tests (pnpm test:crypto)
+├── cleanup.mjs              CLI → POST /admin/cleanup
+└── verify-crypto.ts         pnpm test:crypto
 ```
 
-### Operational limits
+---
 
-- **Webhook auth** — `BOT_SECRET_KEY` must match Telegram `secret_token`.
-- **Rate limit** — 5 seconds between link opens and sends.
-- **Inbox cap** — 50 pending messages per recipient DO.
-- **Callbacks** — Only `connection.to` may reply, block, or set a nickname using a ticket ref.
-- **Contact labels** — Up to 200 nicknames per user; opaque alias keys (HKDF), plain label text on the recipient profile only.
-- **Display names** — Menu button labels (e.g. plain «تنظیمات») cannot be saved as a public name; senders see a safe fallback («کاربر») when the owner has no valid name.
-- **Pause inbox** — Recipients can stop **new** link messages via settings; thread replies from an existing conversation still work.
+## Operational limits
+
+| Limit | Value |
+|-------|-------|
+| Webhook secret | `BOT_SECRET_KEY` = Telegram `secret_token` |
+| Send / link rate | 5 s per user (`lastMessage`) |
+| Inbox queue | 50 entries per recipient DO |
+| Contact nicknames | 200 per user, 32 chars each |
+| Callback auth | Only `connection.to` may act on a `ref` |
+| Display names | Menu button text cannot be saved; public fallback «کاربر» |
+| Pause | Blocks new link sends; inbox thread replies still allowed |
 
 ---
 
-## How It Works (user view)
+## How it works (user view)
 
-1. **Get your link** — `/start` or **🔗 دریافت لینک** returns your personal `t.me/...?start=…` URL.
-2. **Receive anonymously** — Others open your link and send; you read via `/inbox`.
-3. **Reply, block, or label** — Use **پاسخ** / **بلاک** / **🏷️ نام مستعار** on each delivered message. Nicknames appear on future messages from that sender (e.g. `📩 از علی:`) and in the reply prompt; only you see them.
-4. **Settings** — `/settings` or **⚙️ تنظیمات**: edit display name, pause/resume receiving, clear block list, or delete account and get a fresh link.
-5. **Protection** — Rate limits, self-message blocking, and per-sender block lists.
+1. **Get your link** — `/start` or **🔗 دریافت لینک**.
+2. **Receive anonymously** — Others open your link and send; you read with `/inbox`.
+3. **Reply, block, or label** — **پاسخ** / **بلاک** / **🏷️ نام مستعار** on delivered messages. Nicknames are private to you.
+4. **Settings** — `/settings` or **⚙️ تنظیمات**: name, pause/resume, clear blocks, delete account, **📐 معماری فنی**.
+5. **While composing** — Draft keyboard: **↩️ لغو** · **⚙️ تنظیمات** · **🏠 بازگشت**.
 
 ---
 
-## Getting Started
+## Getting started
 
 ### Prerequisites
 
-- **Node.js** 22+
-- **pnpm** 9+
-- **Cloudflare account** (Workers, KV, Durable Objects)
-- **`wrangler.toml`** or **`wrangler.jsonc`** in the project root (gitignored locally; copy from `wrangler.jsonc.example`)
+- Node.js 22+, pnpm 9+
+- Cloudflare account (Workers, KV, Durable Objects)
+- `wrangler.toml` or `wrangler.jsonc` (gitignored locally — copy from `wrangler.jsonc.example`)
 
-### Install
+### Install & secrets
 
 ```bash
 pnpm install
 ```
 
-### Secrets
+Copy `.env.example` → `.dev.vars` and set:
 
-Copy `.env.example` to `.dev.vars` and fill in:
+| Variable | Purpose |
+|----------|---------|
+| `SECRET_TELEGRAM_API_TOKEN` | @BotFather token |
+| `BOT_SECRET_KEY` | Webhook `secret_token` + admin cleanup bearer |
+| `APP_SECURE_KEY` | Message encryption IKM (≥32 bytes entropy) |
+| `BOT_INFO` | JSON from `getMe` |
+| `BOT_NAME` | Public HTML title |
 
-- `SECRET_TELEGRAM_API_TOKEN` — from @BotFather
-- `BOT_SECRET_KEY` — random string for webhook validation
-- `APP_SECURE_KEY` — long random string for message encryption
-- `BOT_INFO` — JSON `result` from `getMe`
-- `BOT_NAME` — shown on public pages
-
-Set the same values as Wrangler secrets for production (`wrangler secret put …`).
+Mirror these as Wrangler secrets in production.
 
 ### Wrangler / Durable Objects
 
-Copy `wrangler.jsonc.example` to `wrangler.jsonc` (or merge into your `wrangler.toml`) and set your KV namespace id.
+Copy `wrangler.jsonc.example`, set your KV namespace id, and deploy.
 
-The inbox uses a **SQLite-backed** `InboxSqliteDurableObject`. New projects: `new_sqlite_classes` in migrations. Existing KV `InboxDurableObject` deployments need `deleted_classes` + `new_sqlite_classes` (see `wrangler.toml`).
+New projects use `new_sqlite_classes: ["InboxSqliteDurableObject"]`. Upgrading from the legacy KV-array `InboxDurableObject` requires a two-step migration: `deleted_classes` then `new_sqlite_classes` (see local `wrangler.toml` history if applicable).
 
-### Local worker
-
-```bash
-pnpm dev
-```
-
-Runs Wrangler on port 8787. Telegram will not reach a local worker unless you point the bot webhook at a public URL yourself.
-
-### Quality checks
+### Dev, check, deploy
 
 ```bash
-pnpm check
+pnpm dev      # wrangler dev --local --port 8787
+pnpm check    # typecheck + lint + knip + crypto tests
+pnpm deploy   # production (CI also deploys on push to master)
 ```
 
-Runs typecheck, lint, knip, and crypto roundtrip tests. CI runs this on every push and pull request.
-
-### Deploy
-
-```bash
-pnpm deploy
-```
-
-Pushes to `master` also deploy via GitHub Actions (`CF_API_TOKEN`, `CF_ACCOUNT_ID`, `CF_ZONE_ID`).
-
-### Ops cleanup (full reset)
+### Ops cleanup (destructive)
 
 ```bash
 WORKER_URL=https://your-worker.example.com BOT_SECRET_KEY=... pnpm cleanup
 ```
 
-Calls `POST /admin/cleanup`: purges every inbox Durable Object for known users, then deletes all KV under `conversation:`, `user:`, `userUUIDtoId:`, and `stats:`. **Destructive** — users must `/start` again and share new links.
-
-See [docs/migration-plan.md](docs/migration-plan.md) for optional storage evolution (stats totals, SQLite inbox — both shipped).
+Purges every inbox DO for known users, then deletes all KV under `conversation:`, `user:`, `userUUIDtoId:`, and `stats:`. Users must `/start` again and share new links.
 
 ---
 
-## Security Overview
+## Security overview
 
-- **Encryption at rest** — AES-256-GCM; per-ticket keys via HKDF-SHA-256 (`APP_SECURE_KEY` + ticket salt).
-- **Webhook** — Requests must include `X-Telegram-Bot-Api-Secret-Token: BOT_SECRET_KEY`.
-- **Ticket auth** — Reply/block callbacks resolve through the recipient's inbox DO; `connection.to` is verified server-side.
-- **Payload lifecycle** — Message content is cleared from KV after inbox delivery; connection metadata remains for threading.
-- **Contact labels** — Stored on the recipient's user record, keyed by HKDF sender alias (not raw Telegram IDs in the label map). Never sent to the sender or written into encrypted conversation blobs.
+- **Encryption at rest** — AES-256-GCM; per-ticket keys via HKDF-SHA-256.
+- **Webhook** — `X-Telegram-Bot-Api-Secret-Token` required on `POST /bot`.
+- **Callback refs** — Resolved through recipient's DO + KV; `connection.to` verified server-side.
+- **Payload lifecycle** — Plaintext bodies cleared from KV after delivery; connection metadata re-encrypted for callbacks.
+- **Labels** — Nicknames on recipient profile only; keyed by opaque HKDF alias, not sender Telegram ID in the map.
+- **No secrets in logs** — Never log `ticketId`, `APP_SECURE_KEY`, decrypted payloads, or tokens.
 
-See [AGENTS.md](AGENTS.md) for contributor conventions.
+Further contributor rules: [AGENTS.md](AGENTS.md). Optional storage evolution notes: [docs/migration-plan.md](docs/migration-plan.md).

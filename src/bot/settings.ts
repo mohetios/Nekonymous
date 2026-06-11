@@ -1,4 +1,4 @@
-import type { Context } from "grammy";
+import { InlineKeyboard, type Context } from "grammy";
 import type { Environment, User } from "../types";
 import {
   buildSettingsMenu,
@@ -27,7 +27,9 @@ import {
   SETTINGS_NAME_INVALID_MESSAGE,
   SETTINGS_NAME_SAVED_MESSAGE,
   SETTINGS_NAME_TEXT_ONLY_MESSAGE,
+  TECHNICAL_ABOUT_MESSAGE,
 } from "../utils/messages-settings";
+import { technicalAboutUrl } from "../utils/site";
 import { HuhMessage, RATE_LIMIT_MESSAGE } from "../utils/messages";
 import {
   checkRateLimit,
@@ -48,6 +50,35 @@ export type SettingsDeps = {
   userUUIDtoId: KVModel<string>;
   statsModel: KVModel<number>;
   inbox: Environment["INBOX_DO"];
+  publicSiteUrl?: string;
+};
+
+const formatTechnicalAboutMessage = (publicSiteUrl?: string): string => {
+  const url = technicalAboutUrl(publicSiteUrl);
+  const webLine = url
+    ? `<b>مستند کامل:</b>\n<a href="${escapeHtml(url)}">${escapeHtml(url)}</a>`
+    : `<b>مستند کامل:</b> مسیر <code>/about/technical</code> روی دامنهٔ همین Worker.`;
+
+  return TECHNICAL_ABOUT_MESSAGE.replace("WEB_LINK_LINE", webLine);
+};
+
+const showTechnicalAbout = async (
+  ctx: Context,
+  deps: SettingsDeps,
+  user: User
+): Promise<void> => {
+  const url = technicalAboutUrl(deps.publicSiteUrl);
+  const keyboard = url
+    ? new InlineKeyboard().url("مشاهده در وب", url)
+    : undefined;
+
+  await ctx.reply(
+    formatTechnicalAboutMessage(deps.publicSiteUrl),
+    withHtml({
+      reply_markup: keyboard ?? buildSettingsMenu(!!user.paused),
+      link_preview_options: url ? { is_disabled: true } : undefined,
+    })
+  );
 };
 
 const formatSettingsHome = (user: User): string => {
@@ -197,6 +228,10 @@ export const handleSettingsMenu = async (
         pendingSettings: undefined,
       });
       await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
+      return true;
+
+    case MENU.technical:
+      await showTechnicalAbout(ctx, deps, user);
       return true;
 
     case MENU.editName:

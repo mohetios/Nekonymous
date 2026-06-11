@@ -41,6 +41,7 @@ export const createBot = (env: Environment) => {
     BOT_INFO,
     APP_SECURE_KEY,
     INBOX_DO,
+    PUBLIC_SITE_URL,
   } = env;
 
   const bot = new Bot(SECRET_TELEGRAM_API_TOKEN, {
@@ -80,6 +81,7 @@ export const createBot = (env: Environment) => {
       userUUIDtoId,
       statsModel,
       inbox: INBOX_DO,
+      publicSiteUrl: PUBLIC_SITE_URL,
     })
   );
 
@@ -95,7 +97,8 @@ export const createBot = (env: Environment) => {
       userUUIDtoId,
       INBOX_DO,
       statsModel,
-      APP_SECURE_KEY
+      APP_SECURE_KEY,
+      PUBLIC_SITE_URL
     );
   });
 

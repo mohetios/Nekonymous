@@ -19,6 +19,7 @@ export const MENU = {
   resumeInbox: "🔔 فعال‌سازی دریافت",
   clearBlockList: "🔓 حذف بلاک‌ها",
   clearData: "🗑️ پاک کردن حساب",
+  technical: "📐 معماری فنی",
   back: "🏠 بازگشت",
   confirmClear: "🗑️ بله، پاک کن",
   confirmClearBlocks: "🔓 بله، آنبلاک همه",
@@ -96,6 +97,8 @@ export const buildSettingsMenu = (paused: boolean): Keyboard =>
     .text(MENU.back)
     .row()
     .text(MENU.clearBlockList)
+    .row()
+    .text(MENU.technical)
     .row()
     .text(MENU.clearData)
     .resized();

@@ -65,6 +65,8 @@ export interface Environment {
   BOT_NAME: string;
   APP_SECURE_KEY: string;
   INBOX_DO: DurableObjectNamespace;
+  /** Public site origin for bot links to HTML docs (e.g. https://nekonymous.example.com). */
+  PUBLIC_SITE_URL?: string;
 }
 
 export type Handler = (

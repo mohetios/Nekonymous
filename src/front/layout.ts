@@ -98,6 +98,9 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
         <a href="/about" class="nav-link text-blue-600 hover:text-blue-800 mx-2">
           درباره
         </a>
+        <a href="/about/technical" class="nav-link text-blue-600 hover:text-blue-800 mx-2">
+          معماری فنی
+        </a>
       </div>
     </nav>  
       <div class="text-gray-700 leading-relaxed">
