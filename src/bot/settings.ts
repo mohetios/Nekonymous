@@ -1,0 +1,280 @@
+import type { Context } from "grammy";
+import type { Environment, User } from "../types";
+import {
+  confirmClearMenu,
+  isMenuLabel,
+  MENU,
+  mainMenu,
+  settingsMenu,
+} from "../utils/constant";
+import type { KVModel } from "../utils/kv-storage";
+import { logBotError } from "../utils/logs";
+import {
+  SETTINGS_BACK_MESSAGE,
+  SETTINGS_CLEAR_DATA_CANCELLED_MESSAGE,
+  SETTINGS_CLEAR_DATA_DONE_MESSAGE,
+  SETTINGS_CLEAR_DATA_WARNING_MESSAGE,
+  SETTINGS_EDIT_NAME_MESSAGE,
+  SETTINGS_HOME_MESSAGE,
+  SETTINGS_CANCEL_DRAFT_MESSAGE,
+  SETTINGS_NAME_INVALID_MESSAGE,
+  SETTINGS_NAME_SAVED_MESSAGE,
+  SETTINGS_NAME_TEXT_ONLY_MESSAGE,
+} from "../utils/messages-settings";
+import { HuhMessage, RATE_LIMIT_MESSAGE } from "../utils/messages";
+import { checkRateLimit } from "../utils/tools";
+import {
+  deleteUserAccount,
+  ensureUser,
+  sanitizeDisplayName,
+} from "../utils/user";
+
+export type SettingsDeps = {
+  userModel: KVModel<User>;
+  userUUIDtoId: KVModel<string>;
+  statsModel: KVModel<number>;
+  inbox: Environment["INBOX_DO"];
+};
+
+const botLink = (userUUID: string): string =>
+  `https://t.me/nekonymous_bot?start=${userUUID}`;
+
+const showSettingsHome = async (
+  ctx: Context,
+  user: User
+): Promise<void> => {
+  await ctx.reply(
+    SETTINGS_HOME_MESSAGE.replace("USER_NAME", user.userName),
+    { reply_markup: settingsMenu }
+  );
+};
+
+export const handleSettingsCommand = async (
+  ctx: Context,
+  deps: SettingsDeps
+): Promise<void> => {
+  const from = ctx.from;
+  if (!from) {
+    return;
+  }
+
+  try {
+    const user = await ensureUser(
+      from.id,
+      from.first_name,
+      deps.userModel,
+      deps.userUUIDtoId,
+      deps.statsModel
+    );
+    await showSettingsHome(ctx, user);
+  } catch (error) {
+    logBotError("handleSettingsCommand", error);
+    await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+  }
+};
+
+export const handlePendingSettingsInput = async (
+  ctx: Context,
+  user: User,
+  deps: SettingsDeps
+): Promise<boolean> => {
+  if (user.pendingSettings !== "editName") {
+    return false;
+  }
+
+  const text = ctx.message?.text;
+  if (!text) {
+    await ctx.reply(SETTINGS_NAME_TEXT_ONLY_MESSAGE, {
+      reply_markup: settingsMenu,
+    });
+    return true;
+  }
+
+  if (isMenuLabel(text)) {
+    return false;
+  }
+
+  const userId = ctx.from?.id;
+  if (userId === undefined) {
+    return true;
+  }
+
+  if (checkRateLimit(user.lastMessage)) {
+    await ctx.reply(RATE_LIMIT_MESSAGE, { reply_markup: settingsMenu });
+    return true;
+  }
+
+  const displayName = sanitizeDisplayName(text);
+  if (!displayName) {
+    await ctx.reply(SETTINGS_NAME_INVALID_MESSAGE, {
+      reply_markup: settingsMenu,
+    });
+    return true;
+  }
+
+  try {
+    await deps.userModel.updateField(userId.toString(), "userName", displayName);
+    await deps.userModel.updateField(
+      userId.toString(),
+      "pendingSettings",
+      undefined
+    );
+    await deps.userModel.updateField(
+      userId.toString(),
+      "lastMessage",
+      Date.now()
+    );
+    await ctx.reply(
+      SETTINGS_NAME_SAVED_MESSAGE.replace("NAME", displayName),
+      { reply_markup: settingsMenu }
+    );
+  } catch (error) {
+    logBotError("handlePendingSettingsInput", error);
+    await ctx.reply(HuhMessage, { reply_markup: settingsMenu });
+  }
+
+  return true;
+};
+
+export const handleSettingsMenu = async (
+  ctx: Context,
+  user: User,
+  deps: SettingsDeps
+): Promise<boolean> => {
+  const text = ctx.message?.text;
+  const userId = ctx.from?.id;
+  if (!text || userId === undefined) {
+    return false;
+  }
+
+  switch (text) {
+    case MENU.settings:
+      if (user.pendingSettings) {
+        await deps.userModel.updateField(
+          userId.toString(),
+          "pendingSettings",
+          undefined
+        );
+      }
+      await showSettingsHome(ctx, user);
+      return true;
+
+    case MENU.back:
+      if (user.pendingSettings) {
+        await deps.userModel.updateField(
+          userId.toString(),
+          "pendingSettings",
+          undefined
+        );
+      }
+      await ctx.reply(SETTINGS_BACK_MESSAGE, { reply_markup: mainMenu });
+      return true;
+
+    case MENU.editName:
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await deps.userModel.updateField(
+        userId.toString(),
+        "pendingSettings",
+        "editName"
+      );
+      await ctx.reply(SETTINGS_EDIT_NAME_MESSAGE, {
+        reply_markup: { force_reply: true },
+      });
+      return true;
+
+    case MENU.cancelDraft:
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await deps.userModel.updateField(
+        userId.toString(),
+        "pendingSettings",
+        undefined
+      );
+      await ctx.reply(SETTINGS_CANCEL_DRAFT_MESSAGE, {
+        reply_markup: settingsMenu,
+      });
+      return true;
+
+    case MENU.clearData:
+      await deps.userModel.updateField(
+        userId.toString(),
+        "currentConversation",
+        undefined
+      );
+      await deps.userModel.updateField(
+        userId.toString(),
+        "pendingSettings",
+        "confirmClearData"
+      );
+      await ctx.reply(SETTINGS_CLEAR_DATA_WARNING_MESSAGE, {
+        reply_markup: confirmClearMenu,
+      });
+      return true;
+
+    case MENU.confirmClear:
+      if (user.pendingSettings !== "confirmClearData") {
+        return false;
+      }
+
+      try {
+        await deleteUserAccount(
+          userId,
+          user,
+          deps.userModel,
+          deps.userUUIDtoId,
+          deps.inbox
+        );
+        const freshUser = await ensureUser(
+          userId,
+          ctx.from?.first_name,
+          deps.userModel,
+          deps.userUUIDtoId,
+          deps.statsModel
+        );
+        await ctx.reply(
+          SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(
+            "UUID_USER_URL",
+            botLink(freshUser.userUUID)
+          ),
+          { reply_markup: mainMenu }
+        );
+      } catch (error) {
+        logBotError("handleSettingsMenu:clearData", error);
+        await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+      }
+      return true;
+
+    case MENU.cancel:
+      if (user.pendingSettings === "confirmClearData") {
+        await deps.userModel.updateField(
+          userId.toString(),
+          "pendingSettings",
+          undefined
+        );
+        await ctx.reply(SETTINGS_CLEAR_DATA_CANCELLED_MESSAGE, {
+          reply_markup: settingsMenu,
+        });
+        return true;
+      }
+      if (user.pendingSettings === "editName") {
+        await deps.userModel.updateField(
+          userId.toString(),
+          "pendingSettings",
+          undefined
+        );
+        await showSettingsHome(ctx, user);
+        return true;
+      }
+      return false;
+
+    default:
+      return false;
+  }
+};

@@ -1,6 +1,30 @@
-import type { User } from "../types";
+import type { Environment, User } from "../types";
 import type { KVModel } from "./kv-storage";
+import { purgeInbox } from "./inbox";
 import { incrementStat } from "./logs";
+
+const DISPLAY_NAME_MAX_CHARS = 64;
+
+export const sanitizeDisplayName = (input: string): string | null => {
+  const cleaned = input.replace(/[\u0000-\u001F\u007F]/g, "").trim();
+  if (!cleaned) {
+    return null;
+  }
+
+  return [...cleaned].slice(0, DISPLAY_NAME_MAX_CHARS).join("");
+};
+
+export const deleteUserAccount = async (
+  userId: number,
+  user: User,
+  userModel: KVModel<User>,
+  userUUIDtoId: KVModel<string>,
+  inbox: Environment["INBOX_DO"]
+): Promise<void> => {
+  await userUUIDtoId.remove(user.userUUID);
+  await purgeInbox(inbox, userId);
+  await userModel.remove(userId.toString());
+};
 
 const generateUserLinkId = (): string => {
   const bytes = crypto.getRandomValues(new Uint8Array(16));

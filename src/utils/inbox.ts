@@ -64,6 +64,16 @@ export const addInboxEntry = async (
     body: JSON.stringify(entry),
   });
 
+export const purgeInbox = async (
+  inbox: Environment["INBOX_DO"],
+  userId: number
+): Promise<boolean> => {
+  const response = await inboxStub(inbox, userId).fetch("https://inbox/purge", {
+    method: "DELETE",
+  });
+  return response.ok;
+};
+
 export const markInboxDelivered = async (
   inbox: Environment["INBOX_DO"],
   userId: number,

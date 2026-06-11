@@ -8,6 +8,8 @@ export interface User {
   lastMessage?: number;
   /** Recipient-only labels keyed by opaque sender alias (HKDF). */
   contactLabels?: Record<string, string>;
+  /** Awaiting settings input (display name or data-delete confirmation). */
+  pendingSettings?: "editName" | "confirmClearData";
   currentConversation?: {
     to?: number;
     reply_to_message_id?: number;

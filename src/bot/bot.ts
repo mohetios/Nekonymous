@@ -13,6 +13,7 @@ import {
   handleMessage,
   handleStartCommand,
 } from "./commands";
+import { handleSettingsCommand } from "./settings";
 
 type BotConfig = NonNullable<ConstructorParameters<typeof Bot>[1]>;
 
@@ -52,6 +53,15 @@ export const createBot = (env: Environment) => {
       INBOX_DO,
       APP_SECURE_KEY
     )
+  );
+
+  bot.command("settings", (ctx) =>
+    handleSettingsCommand(ctx, {
+      userModel,
+      userUUIDtoId,
+      statsModel,
+      inbox: INBOX_DO,
+    })
   );
 
   bot.on("message", (ctx) => {

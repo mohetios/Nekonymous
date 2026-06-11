@@ -1,6 +1,10 @@
 import type { Context } from "grammy";
 import type { Conversation, Environment, User } from "../types";
 import {
+  handlePendingSettingsInput,
+  handleSettingsMenu,
+} from "./settings";
+import {
   createMessageKeyboard,
   handleMenuCommand,
   mainMenu,
@@ -152,7 +156,22 @@ export const handleMessage = async (
     statsModel
   );
 
+  const settingsDeps = {
+    userModel,
+    userUUIDtoId,
+    statsModel,
+    inbox,
+  };
+
   if (await handleMenuCommand(ctx, currentUser.userUUID)) {
+    return;
+  }
+
+  if (await handleSettingsMenu(ctx, currentUser, settingsDeps)) {
+    return;
+  }
+
+  if (await handlePendingSettingsInput(ctx, currentUser, settingsDeps)) {
     return;
   }
 

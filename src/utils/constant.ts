@@ -3,6 +3,22 @@ import { ABOUT_PRIVACY_COMMAND_MESSAGE, USER_LINK_MESSAGE } from "./messages";
 import { assertCallbackData } from "./telegram-limits";
 import { escapeMarkdownV2 } from "./tools";
 
+export const MENU = {
+  about: "درباره و حریم خصوصی",
+  link: "دریافت لینک",
+  settings: "تنظیمات",
+  editName: "ویرایش نام نمایشی",
+  cancelDraft: "لغو پیام ناتمام",
+  clearData: "پاک کردن همه داده‌ها",
+  back: "بازگشت به منو",
+  confirmClear: "بله، همه را پاک کن",
+  cancel: "انصراف",
+} as const;
+
+const MENU_LABELS = new Set<string>(Object.values(MENU));
+
+export const isMenuLabel = (text: string): boolean => MENU_LABELS.has(text);
+
 const INBOX_CALLBACK = {
   reply: (ref: string) => `rpl:${ref}`,
   block: (ref: string) => `blk:${ref}`,
@@ -12,8 +28,25 @@ const INBOX_CALLBACK = {
 
 // Main menu keyboard used across various commands
 export const mainMenu = new Keyboard()
-  .text("درباره و حریم خصوصی")
-  .text("دریافت لینک")
+  .text(MENU.about)
+  .text(MENU.link)
+  .row()
+  .text(MENU.settings)
+  .resized();
+
+export const settingsMenu = new Keyboard()
+  .text(MENU.editName)
+  .row()
+  .text(MENU.cancelDraft)
+  .text(MENU.clearData)
+  .row()
+  .text(MENU.back)
+  .resized();
+
+export const confirmClearMenu = new Keyboard()
+  .text(MENU.confirmClear)
+  .row()
+  .text(MENU.cancel)
   .resized();
 
 export const handleMenuCommand = async (
@@ -23,7 +56,7 @@ export const handleMenuCommand = async (
   const msgPayload = ctx.message?.text;
 
   switch (msgPayload) {
-    case "دریافت لینک":
+    case MENU.link:
       await ctx.reply(
         USER_LINK_MESSAGE.replace(
           "UUID_USER_URL",
@@ -34,7 +67,7 @@ export const handleMenuCommand = async (
         }
       );
       break;
-    case "درباره و حریم خصوصی":
+    case MENU.about:
       await ctx.reply(escapeMarkdownV2(ABOUT_PRIVACY_COMMAND_MESSAGE), {
         reply_markup: mainMenu,
         parse_mode: "MarkdownV2",
