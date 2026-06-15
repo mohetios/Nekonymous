@@ -66,7 +66,7 @@ export interface Environment {
   BOT_USERNAME: string;
   APP_SECURE_KEY: string;
   INBOX_DO: DurableObjectNamespace;
-  /** Public site origin for bot links to HTML docs (e.g. https://nekonymous.example.com). */
+  /** Public site origin for bot links to HTML docs (e.g. https://nekonymous.mohetios.dev). */
   PUBLIC_SITE_URL?: string;
 }
 

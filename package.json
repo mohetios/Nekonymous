@@ -1,6 +1,7 @@
 {
   "name": "nekonymous",
   "version": "0.1.0",
+  "homepage": "https://nekonymous.mohetios.dev",
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.3",

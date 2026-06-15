@@ -22,5 +22,14 @@
       "binding": "NekonymousKV",
       "id": "YOUR_KV_NAMESPACE_ID"
     }
+  ],
+  "vars": {
+    "PUBLIC_SITE_URL": "https://nekonymous.mohetios.dev"
+  },
+  "routes": [
+    {
+      "pattern": "nekonymous.mohetios.dev",
+      "custom_domain": true
+    }
   ]
 }

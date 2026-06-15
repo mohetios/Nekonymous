@@ -12,7 +12,11 @@ kv_namespaces = [
 mode = "smart"
 
 [vars]
+PUBLIC_SITE_URL = "https://nekonymous.mohetios.dev"
 
+[[routes]]
+pattern = "nekonymous.mohetios.dev"
+custom_domain = true
 
 [durable_objects]
 bindings = [{ name = "INBOX_DO", class_name = "InboxDurableObject" }]

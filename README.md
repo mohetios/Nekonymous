@@ -283,7 +283,7 @@ Account deletion does not chase messages already delivered to or pending in othe
 - Old delivered callback refs expire when the 50-row inbox cap prunes them.
 - `BOT_USERNAME` must match the Telegram username from BotFather; bad values fail link generation.
 - `wrangler.toml` should periodically update `compatibility_date` after local verification.
-- The public page still contains placeholder social/meta URLs in `layout.ts` until a real production origin/image is chosen.
+- `PUBLIC_SITE_URL` must match the deployed Worker origin so canonical/OG meta and bot technical-doc links stay correct.
 
 ---
 
@@ -351,7 +351,8 @@ Local development uses `.dev.vars` with Wrangler. Production uses Wrangler secre
 | `BOT_INFO` | JSON result compatible with Grammy `botInfo` |
 | `BOT_NAME` | Public site/bot display name |
 | `BOT_USERNAME` | Telegram bot username without `@`, used for `t.me` deep links |
-| `PUBLIC_SITE_URL` | Optional origin used for technical-doc links in bot copy |
+| `PUBLIC_SITE_URL` | Public origin for HTML meta/canonical URLs and technical-doc links in bot copy (`https://nekonymous.mohetios.dev`) |
+| `PRODUCTION_WEBHOOK_URL` | Local reference for Telegram webhook URL (`https://nekonymous.mohetios.dev/bot`) |
 
 Never commit filled `.env`, `.dev.vars`, Telegram tokens, or `APP_SECURE_KEY`.
 
@@ -362,6 +363,24 @@ wrangler secret put BOT_USERNAME
 ```
 
 `BOT_USERNAME` is not cryptographic secret material, but setting it through Wrangler secrets keeps runtime configuration consistent with the other bot environment values.
+
+Production site: `https://nekonymous.mohetios.dev`  
+Telegram webhook: `https://nekonymous.mohetios.dev/bot`
+
+After changing the public origin or webhook URL, update:
+
+1. `PUBLIC_SITE_URL` and `PRODUCTION_WEBHOOK_URL` in `.env` / `.dev.vars`
+2. `PUBLIC_SITE_URL` in `wrangler.toml` `[vars]`
+3. The Worker custom domain route in `wrangler.toml` (`nekonymous.mohetios.dev`)
+4. Telegram webhook via Bot API:
+
+```bash
+curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://nekonymous.mohetios.dev/bot","secret_token":"<BOT_SECRET_KEY>"}'
+```
+
+5. GitHub repository homepage (Settings → General) to `https://nekonymous.mohetios.dev`
 
 ### Wrangler Bindings
 
