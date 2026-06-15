@@ -1,4 +1,7 @@
 # pnpm project settings (required even for single-package repos on pnpm 10+)
+packages:
+  - "."
+
 minimumReleaseAgeExclude:
   - '@cloudflare/workerd-*'
   - '@cloudflare/workers-types'
