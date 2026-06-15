@@ -90,12 +90,31 @@ export class InboxSqliteDurableObject extends DurableObject<Environment> {
       return new Response("Missing fields", { status: 400 });
     }
 
+    const pending = this.ctx.storage.sql
+      .exec<{ count: number }>(
+        "SELECT COUNT(*) AS count FROM inbox_entries WHERE delivered = 0"
+      )
+      .one().count;
+
+    if (pending >= INBOX_MAX_MESSAGES) {
+      return new Response("Inbox full", { status: 429 });
+    }
+
     const total = this.ctx.storage.sql
       .exec<{ count: number }>("SELECT COUNT(*) AS count FROM inbox_entries")
       .one().count;
 
     if (total >= INBOX_MAX_MESSAGES) {
-      return new Response("Inbox full", { status: 429 });
+      this.ctx.storage.sql.exec(
+        `DELETE FROM inbox_entries
+         WHERE ref IN (
+           SELECT ref FROM inbox_entries
+           WHERE delivered = 1
+           ORDER BY created_at ASC
+           LIMIT ?
+         )`,
+        total - INBOX_MAX_MESSAGES + 1
+      );
     }
 
     const ref = generateInboxRef();

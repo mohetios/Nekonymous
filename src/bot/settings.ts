@@ -50,6 +50,7 @@ export type SettingsDeps = {
   userUUIDtoId: KVModel<string>;
   statsModel: KVModel<number>;
   inbox: Environment["INBOX_DO"];
+  botUsername: string;
   publicSiteUrl?: string;
 };
 
@@ -355,7 +356,7 @@ export const handleSettingsMenu = async (
         await ctx.reply(
           SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(
             "UUID_USER_URL",
-            buildUserDeepLink(freshUser.userUUID)
+            buildUserDeepLink(deps.botUsername, freshUser.userUUID)
           ),
           withHtml({ reply_markup: mainMenu })
         );

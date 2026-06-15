@@ -34,6 +34,7 @@ import {
   RATE_LIMIT_MESSAGE,
   SELF_MESSAGE_DISABLE_MESSAGE,
   StartConversationMessage,
+  UnsupportedMessageTypeMessage,
   USER_IS_BLOCKED_MESSAGE,
   WelcomeMessage,
   YOUR_MESSAGE_SEEN_MESSAGE,
@@ -70,7 +71,8 @@ export const handleStartCommand = async (
   ctx: Context,
   userModel: KVModel<User>,
   userUUIDtoId: KVModel<string>,
-  statsModel: KVModel<number>
+  statsModel: KVModel<number>,
+  botUsername: string
 ): Promise<void> => {
   const from = ctx.from;
   if (!from) {
@@ -92,7 +94,7 @@ export const handleStartCommand = async (
 
       const welcome = WelcomeMessage.replace(
         "UUID_USER_URL",
-        buildUserDeepLink(user.userUUID)
+        buildUserDeepLink(botUsername, user.userUUID)
       );
       await ctx.reply(
         user.paused ? `${OWNER_PAUSED_NOTE}\n\n${welcome}` : welcome,
@@ -183,6 +185,7 @@ export const handleMessage = async (
   inbox: Environment["INBOX_DO"],
   statsModel: KVModel<number>,
   appSecureKey: string,
+  botUsername: string,
   publicSiteUrl?: string
 ): Promise<void> => {
   const from = ctx.from;
@@ -205,10 +208,11 @@ export const handleMessage = async (
     userUUIDtoId,
     statsModel,
     inbox,
+    botUsername,
     publicSiteUrl,
   };
 
-  if (await handleMenuCommand(ctx, currentUser)) {
+  if (await handleMenuCommand(ctx, currentUser, botUsername)) {
     return;
   }
 
@@ -313,7 +317,6 @@ export const handleMessage = async (
   }
 
   try {
-    const ticketId = generateTicketId();
     const conversation: Conversation = {
       connection: {
         from: from.id,
@@ -325,7 +328,15 @@ export const handleMessage = async (
     };
 
     applyMessagePayload(conversation, message);
+    if (!hasDeliverablePayload(conversation)) {
+      await ctx.reply(UnsupportedMessageTypeMessage, {
+        reply_markup: buildDraftMenu(),
+        reply_to_message_id: conversation.connection.parent_message_id,
+      });
+      return;
+    }
 
+    const ticketId = generateTicketId();
     const payloadJson = JSON.stringify(conversation);
     const { conversationId, ciphertext } = await encryptConversationPayload(
       ticketId,

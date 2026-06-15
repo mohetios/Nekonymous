@@ -4,6 +4,5 @@
   "ignoreIssues": {
     "src/bot/inboxDU.ts": ["unlisted"],
     "src/index.ts": ["unlisted"]
-  },
-  "ignoreDependencies": ["@cloudflare/workers-types"]
+  }
 }

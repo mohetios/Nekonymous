@@ -39,6 +39,7 @@ export const createBot = (env: Environment) => {
     SECRET_TELEGRAM_API_TOKEN,
     NekonymousKV,
     BOT_INFO,
+    BOT_USERNAME,
     APP_SECURE_KEY,
     INBOX_DO,
     PUBLIC_SITE_URL,
@@ -62,7 +63,7 @@ export const createBot = (env: Environment) => {
   const statsModel = new KVModel<number>("stats", NekonymousKV);
 
   bot.command("start", (ctx) =>
-    handleStartCommand(ctx, userModel, userUUIDtoId, statsModel)
+    handleStartCommand(ctx, userModel, userUUIDtoId, statsModel, BOT_USERNAME)
   );
 
   bot.command("inbox", (ctx) =>
@@ -81,6 +82,7 @@ export const createBot = (env: Environment) => {
       userUUIDtoId,
       statsModel,
       inbox: INBOX_DO,
+      botUsername: BOT_USERNAME,
       publicSiteUrl: PUBLIC_SITE_URL,
     })
   );
@@ -98,6 +100,7 @@ export const createBot = (env: Environment) => {
       INBOX_DO,
       statsModel,
       APP_SECURE_KEY,
+      BOT_USERNAME,
       PUBLIC_SITE_URL
     );
   });

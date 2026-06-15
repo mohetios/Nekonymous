@@ -1,5 +1,59 @@
+import { escapeHtml } from "../utils/tools";
 
-const pageLayout = (title: string, BOT_NAME: string, content: string) => `
+const siteOrigin = (publicSiteUrl?: string): string | null => {
+  const trimmed = publicSiteUrl?.trim().replace(/\/$/, "");
+  return trimmed ? trimmed : null;
+};
+
+const pageUrl = (origin: string | null): string | null => origin;
+
+const siteStructuredData = (
+  BOT_NAME: string,
+  origin: string | null
+): string => {
+  const data = origin
+    ? {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: BOT_NAME,
+        url: origin,
+      }
+    : {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: BOT_NAME,
+      };
+
+  return `<script type="application/ld+json">${JSON.stringify(data)}</script>`;
+};
+
+const socialMeta = (title: string, BOT_NAME: string, origin: string | null) => {
+  const url = pageUrl(origin);
+  return `
+      <meta property="og:title" content="${escapeHtml(title)}" />
+      <meta property="og:description" content="${escapeHtml(BOT_NAME)} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
+      <meta property="og:type" content="website" />
+      ${url ? `<meta property="og:url" content="${escapeHtml(url)}" />` : ""}
+      <meta property="og:locale" content="fa_IR" />
+      <meta property="og:site_name" content="${escapeHtml(BOT_NAME)}" />
+      <meta name="twitter:card" content="summary" />
+      <meta name="twitter:title" content="${escapeHtml(title)}" />
+      <meta name="twitter:description" content="${escapeHtml(BOT_NAME)} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
+      ${url ? `<link rel="canonical" href="${escapeHtml(url)}" />` : ""}
+      ${siteStructuredData(BOT_NAME, origin)}`;
+};
+
+const pageLayout = (
+  title: string,
+  BOT_NAME: string,
+  content: string,
+  publicSiteUrl?: string
+) => {
+  const origin = siteOrigin(publicSiteUrl);
+  const escapedTitle = escapeHtml(title);
+  const escapedBotName = escapeHtml(BOT_NAME);
+
+  return `
   <!doctype html>
   <html lang="fa">
     <head>
@@ -16,39 +70,14 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
         href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css"
         rel="stylesheet"
       />
-      <title>${title}</title>
-      <meta name="description" content="${BOT_NAME} — ربات پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
-      <meta name="keywords" content="ربات ناشناس, امنیت, پیام ناشناس, حریم خصوصی, ${BOT_NAME}" />
+      <title>${escapedTitle}</title>
+      <meta name="description" content="${escapedBotName} — ربات پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
+      <meta name="keywords" content="ربات ناشناس, امنیت, پیام ناشناس, حریم خصوصی, ${escapedBotName}" />
       <meta name="robots" content="index, follow" />
-      <meta name="author" content="ربات ${BOT_NAME}" />
-      <meta property="og:title" content="${title}" />
-      <meta property="og:description" content="${BOT_NAME} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
-      <meta property="og:type" content="website" />
-      <meta property="og:url" content="https://example.com" />
-      <meta property="og:image" content="https://example.com/path-to-your-image.jpg" />
-      <meta property="og:locale" content="fa_IR" />
-      <meta property="og:site_name" content="${BOT_NAME}" />
-      <meta name="twitter:card" content="summary_large_image" />
-      <meta name="twitter:title" content="${title}" />
-      <meta name="twitter:description" content="${BOT_NAME} — پیام ناشناس برای تلگرام. لینک شخصی، بدون لو رفتن یوزرنیم." />
-      <meta name="twitter:image" content="https://example.com/path-to-your-image.jpg" />
-      <meta name="twitter:site" content="@YourTwitterHandle" />
-      <link rel="canonical" href="https://example.com" />
+      <meta name="author" content="ربات ${escapedBotName}" />
+      ${socialMeta(title, BOT_NAME, origin)}
       <link rel="icon" href="/favicon.ico" />
       <meta name="theme-color" content="#317EFB"/>
-      <script type="application/ld+json">
-        {
-          "@context": "https://schema.org",
-          "@type": "WebSite",
-          "name": "${BOT_NAME}",
-          "url": "https://example.com",
-          "potentialAction": {
-            "@type": "SearchAction",
-            "target": "https://example.com/search?q={search_term_string}",
-            "query-input": "required name=search_term_string"
-          }
-        }
-      </script>
       <style>
         body {
           direction: rtl;
@@ -88,10 +117,10 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
           href="/"
           class="text-xl font-bold nav-link text-blue-600 hover:text-blue-800"
         >
-        ${BOT_NAME}
+        ${escapedBotName}
         </a>
         <span class="text-sm font-normal nav-link text-blue-600 hover:text-blue-800">
-        ، ${title}
+        ، ${escapedTitle}
         </span>
       </div>
       <div>
@@ -110,5 +139,6 @@ const pageLayout = (title: string, BOT_NAME: string, content: string) => `
     </body>
   </html>
 `;
+};
 
 export default pageLayout;

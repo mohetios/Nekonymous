@@ -106,15 +106,24 @@ export class KVModel<T = unknown> {
   async list(
     options: { prefix?: string } = {}
   ): Promise<{ keys: { name: string }[]; values: T[] }> {
-    const keys = await this.kv.list({
-      prefix: options.prefix
-        ? `${this.namespace}:${options.prefix}`
-        : `${this.namespace}:`,
-    });
+    const prefix = options.prefix
+      ? `${this.namespace}:${options.prefix}`
+      : `${this.namespace}:`;
+    const keys: { name: string }[] = [];
+    let cursor: string | undefined;
+
+    do {
+      const page = await this.kv.list({ prefix, cursor });
+      keys.push(...page.keys);
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
 
     const values: T[] = [];
-    for (const key of keys.keys) {
-      const id = key.name.split(":").pop();
+    const namespacePrefix = `${this.namespace}:`;
+    for (const key of keys) {
+      const id = key.name.startsWith(namespacePrefix)
+        ? key.name.slice(namespacePrefix.length)
+        : "";
       if (!id) {
         continue;
       }
@@ -125,6 +134,6 @@ export class KVModel<T = unknown> {
       }
     }
 
-    return { keys: keys.keys, values };
+    return { keys, values };
   }
 }

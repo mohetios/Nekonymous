@@ -7,7 +7,6 @@ import {
 } from "../utils/contact";
 import type { KVModel } from "../utils/kv-storage";
 import { loadConversationForAction } from "../utils/inbox";
-import { incrementStat } from "../utils/logs";
 import {
   HuhMessage,
   NICKNAME_PROMPT_MESSAGE,
@@ -22,7 +21,6 @@ import {
 } from "../utils/messages";
 import { getSenderAlias } from "../utils/ticket";
 import { checkRateLimit, escapeHtml, withHtml } from "../utils/tools";
-import { scheduleWork } from "../utils/worker";
 
 type ActionContext = {
   userModel: KVModel<User>;
@@ -53,7 +51,7 @@ export const handleReplyAction = async (
   ctx: Context,
   userModel: KVModel<User>,
   conversationModel: KVModel<string>,
-  statsModel: KVModel<number>,
+  _statsModel: KVModel<number>,
   inbox: Environment["INBOX_DO"],
   appSecureKey: string
 ): Promise<void> => {
@@ -114,7 +112,6 @@ export const handleReplyAction = async (
       parent_message_id: callbackMessageId,
       reply_to_message_id: conversation.connection.parent_message_id,
     });
-    await scheduleWork(ctx, incrementStat(statsModel, "newConversation"));
 
     const replyPrompt = senderLabel
       ? REPLAY_TO_NICKNAME_MESSAGE.replace("NICKNAME", escapeHtml(senderLabel))

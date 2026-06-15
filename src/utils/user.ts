@@ -8,9 +8,23 @@ import { scheduleWork } from "./worker";
 
 const DISPLAY_NAME_MAX_CHARS = 64;
 const LINK_ID_RE = /^[A-Za-z0-9_-]{20,24}$/;
+const BOT_USERNAME_RE = /^[A-Za-z][A-Za-z0-9_]{4,31}$/;
 
-export const buildUserDeepLink = (userUUID: string): string =>
-  `https://t.me/nekonymous_bot?start=${userUUID}`;
+const cleanBotUsername = (botUsername: string): string => {
+  const cleaned = botUsername.trim().replace(/^@/, "");
+  if (!BOT_USERNAME_RE.test(cleaned)) {
+    throw new Error("Invalid BOT_USERNAME");
+  }
+  return cleaned;
+};
+
+export const buildUserDeepLink = (
+  botUsername: string,
+  userUUID?: string
+): string => {
+  const base = `https://t.me/${cleanBotUsername(botUsername)}?start`;
+  return userUUID ? `${base}=${userUUID}` : base;
+};
 
 export const isUserLinkId = (value: string): boolean => LINK_ID_RE.test(value);
 
@@ -85,7 +99,6 @@ export const ensureUser = async (
     userUUID,
     userName: initialDisplayName(firstName),
     blockList: [],
-    lastMessage: Date.now(),
     currentConversation: {},
   };
 

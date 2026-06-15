@@ -117,7 +117,8 @@ export const confirmClearMenu = new Keyboard()
 
 export const handleMenuCommand = async (
   ctx: Context,
-  user: User
+  user: User,
+  botUsername: string
 ): Promise<boolean> => {
   const msgPayload = ctx.message?.text;
 
@@ -125,7 +126,7 @@ export const handleMenuCommand = async (
     case MENU.link: {
       const linkText = USER_LINK_MESSAGE.replace(
         "UUID_USER_URL",
-        buildUserDeepLink(user.userUUID)
+        buildUserDeepLink(botUsername, user.userUUID)
       );
       await ctx.reply(
         user.paused ? `${OWNER_PAUSED_NOTE}\n\n${linkText}` : linkText,

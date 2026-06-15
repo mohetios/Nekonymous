@@ -1,6 +1,8 @@
 import type { Environment } from "../types";
 import { KVModel } from "../utils/kv-storage";
 import { getTotalStats } from "../utils/logs";
+import { escapeHtml } from "../utils/tools";
+import { buildUserDeepLink } from "../utils/user";
 
 interface GitHubCommitResponse {
   sha: string;
@@ -27,23 +29,26 @@ export const HomePageContent = async (env: Environment) => {
   let commitMessage = "N/A";
   let commitUrl = githubUrl;
 
-  // Fetch the latest commit from GitHub
-  const commitInfo = await fetch(
-    `https://api.github.com/repos/${githubOwner}/${githubRepo}/commits/master`,
-    {
-      headers: {
-        "User-Agent": "Cloudflare Worker",
-        Accept: "application/vnd.github.v3+json",
-      },
-    }
-  );
+  try {
+    const commitInfo = await fetch(
+      `https://api.github.com/repos/${githubOwner}/${githubRepo}/commits/master`,
+      {
+        headers: {
+          "User-Agent": "Cloudflare Worker",
+          Accept: "application/vnd.github.v3+json",
+        },
+      }
+    );
 
-  if (commitInfo.ok) {
-    const commitData: GitHubCommitResponse = await commitInfo.json();
-    commitHash = commitData.sha.substring(0, 7); // Shortened commit hash
-    commitDate = new Date(commitData.commit.author.date).toLocaleDateString();
-    commitMessage = commitData.commit.message.split("\n")[0]; // Extract first line of commit message
-    commitUrl = commitData.html_url; // URL to the specific commit on GitHub
+    if (commitInfo.ok) {
+      const commitData: GitHubCommitResponse = await commitInfo.json();
+      commitHash = commitData.sha.substring(0, 7);
+      commitDate = new Date(commitData.commit.author.date).toLocaleDateString();
+      commitMessage = commitData.commit.message.split("\n")[0];
+      commitUrl = commitData.html_url;
+    }
+  } catch {
+    // Home page should stay available even if GitHub metadata is unavailable.
   }
 
   return `
@@ -77,7 +82,7 @@ export const HomePageContent = async (env: Environment) => {
       </p>
       <div class="text-center mb-10 py-10">
         <a
-          href="https://t.me/nekonymous_bot?start"
+          href="${escapeHtml(buildUserDeepLink(env.BOT_USERNAME))}"
           class="inline-block bg-blue-600 text-white text-xl font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-blue-700 transition"
         >
           رفتن به ربات
@@ -87,9 +92,9 @@ export const HomePageContent = async (env: Environment) => {
       <!-- Footer Section -->
       <footer class="text-center mt-10 border-t pt-4">
        <p class="text-sm text-gray-600">
-          <a href="${githubUrl}" class="underline">GitHub Repository</a> | 
-          <a href="${commitUrl}" class="underline">Latest Commit: ${commitHash} on ${commitDate}</a><br />
-          Commit Message: ${commitMessage}
+          <a href="${escapeHtml(githubUrl)}" class="underline">GitHub Repository</a> | 
+          <a href="${escapeHtml(commitUrl)}" class="underline">Latest Commit: ${escapeHtml(commitHash)} on ${escapeHtml(commitDate)}</a><br />
+          Commit Message: ${escapeHtml(commitMessage)}
         </p>
       </footer>
 
