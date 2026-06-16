@@ -1,7 +1,7 @@
 import { InlineKeyboard, Keyboard, type Context } from "grammy";
 import type { BotUser } from "../types";
+import type { MatchHubMenuVariant } from "../features/matching/match-types";
 import {
-  ABOUT_PRIVACY_COMMAND_MESSAGE,
   OWNER_PAUSED_NOTE,
   USER_LINK_MESSAGE,
 } from "./messages";
@@ -11,8 +11,17 @@ import { buildUserDeepLink } from "./user";
 
 export const MENU = {
   about: "🛡️ درباره و حریم خصوصی",
-  link: "🔗 دریافت لینک",
-  test: "🧭 تست",
+  privacy: "🔒 حریم خصوصی",
+  link: "🔗 لینک من",
+  matchSystem: "🧭 مچ‌یابی",
+  matchProfile: "👤 پروفایل من",
+  matchFind: "🔎 پیدا کردن مچ",
+  matchPending: "📥 درخواست‌های در انتظار",
+  matchEnable: "✅ فعال کردن مچ‌یابی",
+  matchDisable: "⏸️ توقف مچ‌یابی",
+  matchTest: "📝 اجرای تست",
+  matchRetest: "📝 اجرای دوباره تست",
+  matchBackToHub: "↩️ مچ‌یابی",
   settings: "⚙️ تنظیمات",
   editName: "✏️ نام نمایشی",
   cancelDraft: "↩️ لغو پیام ناتمام",
@@ -70,12 +79,48 @@ const INBOX_CALLBACK = {
 
 // Main menu keyboard used across various commands
 export const mainMenu = new Keyboard()
-  .text(MENU.about)
   .text(MENU.link)
+  .text(MENU.matchSystem)
   .row()
-  .text(MENU.test)
   .text(MENU.settings)
   .resized();
+
+/** Match-system submenu on the reply keyboard (not inline under messages). */
+export const buildMatchSystemMenu = (
+  variant: MatchHubMenuVariant = "default"
+): Keyboard => {
+  const keyboard = new Keyboard()
+    .text(MENU.matchProfile)
+    .text(MENU.matchFind)
+    .row()
+    .text(MENU.matchPending)
+    .text(MENU.matchTest);
+
+  if (variant === "can_enable") {
+    keyboard.row().text(MENU.matchEnable);
+  } else if (variant === "can_disable") {
+    keyboard.row().text(MENU.matchDisable);
+  }
+
+  return keyboard.row().text(MENU.back).resized();
+};
+
+export const buildMatchProfileEmptyMenu = (): Keyboard =>
+  new Keyboard()
+    .text(MENU.matchTest)
+    .row()
+    .text(MENU.matchBackToHub)
+    .text(MENU.back)
+    .resized();
+
+export const buildMatchProfileReadyMenu = (): Keyboard =>
+  new Keyboard()
+    .text(MENU.matchFind)
+    .text(MENU.matchRetest)
+    .row()
+    .text(MENU.matchBackToHub)
+    .text(MENU.back)
+    .resized();
 
 /** Shown while composing, replying, or naming — always offers a way out. */
 export const buildDraftMenu = (): Keyboard =>
@@ -87,21 +132,23 @@ export const buildDraftMenu = (): Keyboard =>
     .resized();
 
 /**
- * Grouped settings keyboard (RTL: first button = right on screen).
- * حساب | دریافت → خروج → بلاک/پاک → فنی
+ * Settings keyboard (RTL: first button on each row = right on screen).
+ * حساب → مخاطبین → اطلاعات → خطر → خروج
  */
 export const buildSettingsMenu = (paused: boolean): Keyboard =>
   new Keyboard()
     .text(MENU.editName)
     .text(paused ? MENU.resumeInbox : MENU.pauseInbox)
     .row()
-    .text(MENU.cancelDraft)
-    .text(MENU.back)
-    .row()
     .text(MENU.clearBlockList)
+    .row()
+    .text(MENU.about)
+    .text(MENU.technical)
+    .row()
     .text(MENU.clearData)
     .row()
-    .text(MENU.technical)
+    .text(MENU.cancelDraft)
+    .text(MENU.back)
     .resized();
 
 export const confirmClearBlocksMenu = new Keyboard()
@@ -135,12 +182,6 @@ export const handleMenuCommand = async (
       );
       break;
     }
-    case MENU.about:
-      await ctx.reply(
-        ABOUT_PRIVACY_COMMAND_MESSAGE,
-        withHtml({ reply_markup: mainMenu })
-      );
-      break;
     default:
       return false;
   }

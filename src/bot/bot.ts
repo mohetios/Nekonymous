@@ -16,6 +16,8 @@ import {
 } from "./commands";
 import { handleSettingsCommand } from "./settings";
 import { handleTestCallback, handleTestCommand } from "./test";
+import { handleMatchCallback, handleMatchCommand } from "./match";
+import { handleMatchSystemCallback, handleMatchSystemCommand } from "./match-system";
 
 type BotConfig = NonNullable<ConstructorParameters<typeof Bot>[1]>;
 
@@ -63,6 +65,10 @@ export const createBot = (env: Environment) => {
 
   bot.command("test", (ctx) => handleTestCommand(ctx, env));
 
+  bot.command("match", (ctx) => handleMatchCommand(ctx, env));
+
+  bot.command("match_system", (ctx) => handleMatchSystemCommand(ctx, env));
+
   bot.on("message", (ctx) => {
     if (ctx.message && isCommandMessage(ctx.message)) {
       return;
@@ -83,6 +89,10 @@ export const createBot = (env: Environment) => {
   bot.callbackQuery(/^rp:([a-f0-9]{8})$/, onInboxCallback(handleReportAction));
 
   bot.callbackQuery(/^t:/, (ctx) => handleTestCallback(ctx, env));
+
+  bot.callbackQuery(/^m:/, (ctx) => handleMatchCallback(ctx, env));
+
+  bot.callbackQuery(/^ms:/, (ctx) => handleMatchSystemCallback(ctx, env));
 
   cachedBot = { key: cacheKey, bot };
   return bot;

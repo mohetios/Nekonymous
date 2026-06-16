@@ -4,7 +4,8 @@ import {
   handlePendingSettingsInput,
   handleSettingsMenu,
 } from "./settings";
-import { handleTestMenu } from "./test";
+import { handleMatchIntroInput } from "./match";
+import { handleMatchSystemMenu } from "./match-system";
 import {
   buildDraftMenu,
   createMessageKeyboard,
@@ -179,7 +180,7 @@ export const handleMessage = async (
       return;
     }
 
-    if (await handleTestMenu(ctx, env)) {
+    if (await handleMatchSystemMenu(ctx, env)) {
       return;
     }
 
@@ -192,6 +193,12 @@ export const handleMessage = async (
     }
 
     const draft = (await getDraft(env, user.id)) ?? user.draft;
+
+    if (draft?.mode === "match_intro" && draft.replyRef) {
+      await handleMatchIntroInput(ctx, user.id, draft.replyRef, env);
+      return;
+    }
+
     const pendingNickname = draft?.pendingNicknameAlias;
     if (pendingNickname) {
       if (!message.text) {
@@ -238,6 +245,10 @@ export const handleMessage = async (
 
     const recipientId = draft?.toUserId;
     if (!recipientId) {
+      if (draft?.mode === "match_intro") {
+        await ctx.reply(HuhMessage, { reply_markup: buildDraftMenu() });
+        return;
+      }
       await ctx.reply(HuhMessage, { reply_markup: mainMenu });
       return;
     }
