@@ -55,13 +55,13 @@ export const HomePageContent = async (env: Environment) => {
   return `
     <section class="space-y-10">
       <div class="rounded-2xl bg-gray-900 text-white p-6 md:p-8">
-        <p class="text-sm text-blue-200 mb-3">رله پیام ناشناس برای Telegram</p>
+        <p class="text-sm text-blue-200 mb-3">پیام ناشناس و مچ‌یابی ناشناس در Telegram</p>
         <h1 class="text-3xl md:text-4xl font-bold leading-tight mb-4">
           ${botName}
         </h1>
         <p class="text-lg md:text-xl leading-9 text-gray-100 mb-6">
-          لینک شخصی می‌گیری، دیگران از همان لینک پیام می‌فرستند، و گفتگو از داخل bot جلو می‌رود؛
-          بدون اینکه username تلگرام دو طرف در رابط ربات نمایش داده شود.
+          لینک شخصی می‌گیری، پیام ناشناس دریافت می‌کنی، تست سبک گفت‌وگو را کامل می‌کنی،
+          و اگر خودت بخواهی وارد مچ‌یابی ناشناس می‌شوی؛ بدون نمایش username تلگرام دو طرف در رابط ربات.
         </p>
         <div class="flex flex-col sm:flex-row gap-3">
           <a
@@ -79,14 +79,26 @@ export const HomePageContent = async (env: Environment) => {
         </div>
       </div>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div class="rounded-xl border border-blue-100 bg-blue-50 p-5">
           <p class="text-sm text-blue-700 mb-1">کاربران ساخته‌شده</p>
           <p class="text-3xl font-bold text-blue-900">${escapeHtml(convertToPersianNumbers(stats.usersCount))}</p>
         </div>
         <div class="rounded-xl border border-green-100 bg-green-50 p-5">
-          <p class="text-sm text-green-700 mb-1">پیام‌های موفق</p>
+          <p class="text-sm text-green-700 mb-1">پیام‌های ناشناس</p>
           <p class="text-3xl font-bold text-green-900">${escapeHtml(convertToPersianNumbers(stats.conversationsCount))}</p>
+        </div>
+        <div class="rounded-xl border border-purple-100 bg-purple-50 p-5">
+          <p class="text-sm text-purple-700 mb-1">پروفایل‌های تست</p>
+          <p class="text-3xl font-bold text-purple-900">${escapeHtml(convertToPersianNumbers(stats.testProfilesCount))}</p>
+        </div>
+        <div class="rounded-xl border border-indigo-100 bg-indigo-50 p-5">
+          <p class="text-sm text-indigo-700 mb-1">آماده مچ‌یابی</p>
+          <p class="text-3xl font-bold text-indigo-900">${escapeHtml(convertToPersianNumbers(stats.discoverableProfilesCount))}</p>
+        </div>
+        <div class="rounded-xl border border-gray-200 bg-gray-50 p-5">
+          <p class="text-sm text-gray-600 mb-1">درخواست‌های مچ</p>
+          <p class="text-3xl font-bold text-gray-900">${escapeHtml(convertToPersianNumbers(stats.matchRequestsCount))}</p>
         </div>
       </div>
 
@@ -104,23 +116,44 @@ export const HomePageContent = async (env: Environment) => {
             <p class="text-sm font-bold text-gray-500 mb-2">۲</p>
             <h3 class="font-semibold mb-2">دیگران پیام می‌دهند</h3>
             <p class="text-sm leading-7 text-gray-600">
-              فرستنده لینک را باز می‌کند و پیام یا media پشتیبانی‌شده را داخل bot ارسال می‌کند.
+              فرستنده لینک را باز می‌کند و پیام یا media پشتیبانی‌شده را داخل ربات ارسال می‌کند.
             </p>
           </div>
           <div class="rounded-xl border border-gray-200 p-4">
             <p class="text-sm font-bold text-gray-500 mb-2">۳</p>
-            <h3 class="font-semibold mb-2">تو از inbox می‌خوانی</h3>
+            <h3 class="font-semibold mb-2">از inbox می‌خوانی</h3>
             <p class="text-sm leading-7 text-gray-600">
               پیام‌های جدید در صندوق تو منتظر می‌مانند و با /inbox تحویل داده می‌شوند.
             </p>
           </div>
           <div class="rounded-xl border border-gray-200 p-4">
             <p class="text-sm font-bold text-gray-500 mb-2">۴</p>
-            <h3 class="font-semibold mb-2">کنترل دست توست</h3>
+            <h3 class="font-semibold mb-2">اگر خواستی مچ می‌گیری</h3>
             <p class="text-sm leading-7 text-gray-600">
-              می‌توانی پاسخ بدهی، block کنی، دریافت را pause کنی یا برای فرستنده nickname خصوصی بگذاری.
+              تست سبک گفت‌وگو را کامل می‌کنی و با opt-in، پیشنهادهای ناشناس برای شروع گفتگو می‌گیری.
             </p>
           </div>
+        </div>
+      </section>
+
+      <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="rounded-xl border border-gray-200 p-5">
+          <h2 class="text-xl font-bold mb-3">رله پیام ناشناس</h2>
+          <p class="text-sm leading-7 text-gray-700">
+            پیام‌ها قبل از ذخیره رمزنگاری می‌شوند، بعد از /inbox payload پاک می‌شود، و reply، block، report و nickname با reference داخلی ادامه پیدا می‌کنند.
+          </p>
+        </div>
+        <div class="rounded-xl border border-gray-200 p-5">
+          <h2 class="text-xl font-bold mb-3">تست سبک گفت‌وگو</h2>
+          <p class="text-sm leading-7 text-gray-700">
+            تست درباره مرزها، عمق، انرژی اجتماعی و ترجیح‌های ارتباطی است. نتیجه برای شناخت سبک گفتگوست، نه تشخیص روان‌شناسی.
+          </p>
+        </div>
+        <div class="rounded-xl border border-gray-200 p-5">
+          <h2 class="text-xl font-bold mb-3">مچ‌یابی opt-in</h2>
+          <p class="text-sm leading-7 text-gray-700">
+            تا وقتی فعال نکنی، در جست‌وجوی مچ‌ها ظاهر نمی‌شوی. پیشنهادها ناشناس‌اند و گفتگو فقط با پذیرش طرف مقابل شروع می‌شود.
+          </p>
         </div>
       </section>
 
@@ -128,19 +161,19 @@ export const HomePageContent = async (env: Environment) => {
         <div class="rounded-xl border border-gray-200 p-5">
           <h2 class="text-xl font-bold mb-3">چه چیزی محافظت می‌شود؟</h2>
           <ul class="space-y-2 text-sm leading-7 text-gray-700">
-            <li>فرستنده و گیرنده username تلگرام همدیگر را در bot نمی‌بینند.</li>
+            <li>فرستنده و گیرنده username تلگرام همدیگر را در ربات نمی‌بینند.</li>
             <li>متن پیام قبل از ذخیره‌شدن رمزنگاری می‌شود.</li>
             <li>بعد از تحویل، متن پیام از payload ذخیره‌شده پاک می‌شود.</li>
-            <li>برای تکرارها می‌توانی nickname خصوصی بگذاری؛ فقط برای خودت دیده می‌شود.</li>
+            <li>مچ‌یابی فقط با اجازه کاربر فعال می‌شود و نتیجه کامل تست نمایش داده نمی‌شود.</li>
           </ul>
         </div>
         <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-5">
           <h2 class="text-xl font-bold mb-3">چه چیزی را ادعا نمی‌کند؟</h2>
           <ul class="space-y-2 text-sm leading-7 text-yellow-900">
             <li>این سیستم end-to-end encrypted نیست.</li>
-            <li>Telegram همچنان پیام اولیه را دریافت می‌کند، چون این یک Telegram bot است.</li>
+            <li>Telegram همچنان پیام‌های bot را دریافت می‌کند، چون این یک ربات تلگرام است.</li>
             <li>Worker هنگام پردازش پیام، متن را می‌بیند و بعد برای storage رمز می‌کند.</li>
-            <li>اعتماد به اپراتور و secretهای runtime هنوز بخشی از مدل است.</li>
+            <li>تست تشخیص پزشکی نیست و مچ‌یابی تضمین سازگاری یا رابطه نمی‌دهد.</li>
           </ul>
         </div>
       </section>
@@ -148,9 +181,9 @@ export const HomePageContent = async (env: Environment) => {
       <section class="rounded-xl border border-gray-200 bg-gray-50 p-5">
         <h2 class="text-2xl font-bold mb-3">برای چه کسی مناسب است؟</h2>
         <p class="leading-8 mb-4">
-          برای وقتی که می‌خواهی یک راه ساده برای دریافت پیام ناشناس داشته باشی، اما نمی‌خواهی
-          product را شبیه یک پلتفرم بزرگ یا وعدهٔ امنیتی کامل معرفی کنی. نکونیموس یک relay کوچک و صادق است:
-          سریع شروع می‌شود، کنترل‌های اصلی را دارد، و محدودیت‌هایش را پنهان نمی‌کند.
+          برای وقتی که می‌خواهی دریافت پیام ناشناس ساده داشته باشی، سبک گفت‌وگوی خودت را بهتر بشناسی،
+          و شاید با چند پیشنهاد ناشناس وارد گفت‌وگوی تازه شوی. نِکونیموس خودش را پیام‌رسان امن کامل،
+          شبکه اجتماعی بزرگ یا ابزار تشخیص روان‌شناسی معرفی نمی‌کند.
         </p>
         <div class="flex flex-col sm:flex-row gap-3">
           <a href="/about" class="inline-flex justify-center rounded-lg bg-gray-800 px-4 py-2 text-white hover:bg-gray-900 transition">

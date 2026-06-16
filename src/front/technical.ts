@@ -5,117 +5,102 @@ export const TechnicalPageContent = () => `
     </p>
 
     <section>
-      <p class="text-sm text-blue-700 mb-2">نحوه کار و معماری، با زبان قابل خواندن</p>
-      <h1 class="text-3xl font-bold mb-4">تصویر اصلی نِکونیموس</h1>
+      <p class="text-sm text-blue-700 mb-2">معماری فنی، با زبان قابل خواندن</p>
+      <h1 class="text-3xl font-bold mb-4">نِکونیموس روی یک Worker کوچک</h1>
       <p class="text-lg leading-9 mb-4">
-        نِکونیموس یک bot تلگرام نیست که فقط چند دستور داشته باشد؛ یک relay کوچک است.
-        پیام از bot عبور می‌کند، در storage به شکل رمزنگاری‌شده می‌ماند، و به صاحب لینک از طریق /inbox تحویل داده می‌شود.
+        نِکونیموس یک Cloudflare Worker واحد است: همان Worker هم صفحات سبک HTML را سرو می‌کند،
+        هم webhook تلگرام را می‌گیرد، هم queue خروجی Telegram را مصرف می‌کند.
       </p>
       <p class="text-lg leading-9">
-        این صفحه برای کسی است که می‌خواهد بداند «پیام از کجا می‌آید، کجا منتظر می‌ماند،
-        بعد از خواندن چه می‌شود، و privacy دقیقاً تا کجاست»؛ بدون ورود به پیچیدگی الگوریتمی.
+        مسیرهای اصلی محصول سه بخش دارند: پیام ناشناس، تست سبک گفت‌وگو، و مچ‌یابی ناشناس opt-in.
+        طراحی سیستم عمداً کوچک مانده است: D1 برای رکوردهای رابطه‌ای، Durable Object برای state داغ هر کاربر،
+        KV فقط برای cache مسیر‌یابی، و Vectorize فقط برای کشف اولیه candidateها.
       </p>
     </section>
 
     <section class="rounded-xl border border-gray-200 bg-gray-50 p-5">
-      <h2 class="text-2xl font-semibold mb-4">نقشه خیلی کوتاه</h2>
-      <pre class="bg-gray-900 text-gray-100 text-xs p-4 rounded-lg overflow-x-auto leading-7" dir="ltr">Telegram link
+      <h2 class="text-2xl font-semibold mb-4">نقشه کوتاه</h2>
+      <pre class="bg-gray-900 text-gray-100 text-xs p-4 rounded-lg overflow-x-auto leading-7" dir="ltr">Telegram / Browser
   -> Cloudflare Worker
-  -> Grammy bot flow
-  -> encrypted message storage
-  -> recipient inbox
-  -> /inbox delivery
-  -> reply / block / nickname callbacks</pre>
+  -> Grammy handlers
+  -> D1 source-of-truth records
+  -> KV routing cache
+  -> per-user UserState Durable Object
+  -> Queue + TelegramOutbox Durable Object
+  -> Workers AI embeddings + Vectorize candidate search</pre>
     </section>
 
     <section>
-      <h2 class="text-2xl font-semibold mb-4">جریان کاربر، قدم‌به‌قدم</h2>
+      <h2 class="text-2xl font-semibold mb-4">جریان پیام ناشناس</h2>
       <ol class="space-y-4">
         <li class="rounded-xl border border-gray-200 p-4">
-          <strong>۱. ساخت لینک:</strong>
-          کاربر با /start یک لینک شخصی می‌گیرد. این لینک به owner داخل storage وصل می‌شود،
-          اما username Telegram owner برای فرستنده نمایش داده نمی‌شود.
+          <strong>۱. /start:</strong>
+          ربات کاربر تلگرام را resolve یا create می‌کند، Telegram ID را HMAC می‌کند، chat id را encrypt می‌کند،
+          public link را در D1 می‌سازد و lookupهای <span dir="ltr">tg:{hash}</span> و <span dir="ltr">link:{slug}</span> را در KV cache می‌کند.
         </li>
         <li class="rounded-xl border border-gray-200 p-4">
-          <strong>۲. باز شدن لینک:</strong>
-          فرستنده لینک را باز می‌کند. bot بررسی می‌کند لینک معتبر باشد، فرستنده خود owner نباشد،
-          block نشده باشد، و owner دریافت پیام را pause نکرده باشد.
+          <strong>۲. /start با slug:</strong>
+          slug از KV و در صورت نیاز از D1 resolve می‌شود. سپس self-message، pause، block و امکان دریافت توسط UserState Durable Object بررسی می‌شود.
         </li>
         <li class="rounded-xl border border-gray-200 p-4">
           <strong>۳. ارسال پیام:</strong>
-          پیام فقط اگر نوع آن پشتیبانی شود پذیرفته می‌شود. سپس payload برای storage رمزنگاری می‌شود
-          و یک entry در inbox گیرنده ساخته می‌شود.
+          پیام پشتیبانی‌شده به payload استاندارد تبدیل می‌شود. برای هر پیام ticket id و ref کوتاه ساخته می‌شود،
+          payload و connection metadata جداگانه encrypt می‌شوند و ticket در inbox گیرنده داخل UserStateDO ذخیره می‌شود.
         </li>
         <li class="rounded-xl border border-gray-200 p-4">
-          <strong>۴. خواندن inbox:</strong>
-          owner با /inbox پیام‌های pending را دریافت می‌کند. bot پیام را decrypt می‌کند،
-          از طریق Telegram تحویل می‌دهد، و بعد payload ذخیره‌شده را خالی می‌کند.
+          <strong>۴. /inbox:</strong>
+          ticketهای pending از UserStateDO خوانده می‌شوند، payload decrypt و به تلگرام تحویل داده می‌شود،
+          سپس status delivered می‌شود و payload_ciphertext پاک می‌شود.
         </li>
         <li class="rounded-xl border border-gray-200 p-4">
-          <strong>۵. بعد از تحویل:</strong>
-          متن پیام در storage باقی نمی‌ماند، اما connection metadata رمزنگاری‌شده باقی می‌ماند
-          تا reply، block، unblock و nickname هنوز کار کنند.
+          <strong>۵. callbackها:</strong>
+          reply، block، unblock، report و nickname فقط با ref کوتاه شروع می‌شوند.
+          handler باید ref را در UserStateDO همان کاربر resolve کند و به callback data اعتماد نمی‌کند.
         </li>
       </ol>
     </section>
 
-    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div class="rounded-xl border border-green-200 bg-green-50 p-5">
-        <h2 class="text-xl font-semibold mb-3">سیستم چه چیزی را کم می‌کند؟</h2>
-        <ul class="list-disc list-inside space-y-2 leading-8">
-          <li>نمایش username دو طرف در رابط bot</li>
-          <li>نگه‌داری plaintext پیام در KV یا Durable Object</li>
-          <li>باقی ماندن payload بعد از /inbox</li>
-          <li>دسترسی اشتباه به callbackهای reply و block</li>
-        </ul>
-      </div>
-      <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-5">
-        <h2 class="text-xl font-semibold mb-3">سیستم چه چیزی را حذف نمی‌کند؟</h2>
-        <ul class="list-disc list-inside space-y-2 leading-8">
-          <li>Telegram همچنان پیام اولیه را دریافت می‌کند.</li>
-          <li>Worker هنگام پردازش، plaintext را می‌بیند.</li>
-          <li>اپراتور و secretهای runtime بخشی از مدل اعتماد هستند.</li>
-          <li>metadata لازم برای user، block، pause و nickname وجود دارد.</li>
-        </ul>
-      </div>
-    </section>
-
     <section>
-      <h2 class="text-2xl font-semibold mb-4">هر بخش کجا زندگی می‌کند؟</h2>
+      <h2 class="text-2xl font-semibold mb-4">مسئولیت هر storage</h2>
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm border border-gray-200 rounded-lg">
           <thead class="bg-gray-100">
             <tr>
               <th class="p-3 text-right border-b">بخش</th>
-              <th class="p-3 text-right border-b">کجا ذخیره یا اجرا می‌شود؟</th>
-              <th class="p-3 text-right border-b">برای چه کاری؟</th>
+              <th class="p-3 text-right border-b">کجا؟</th>
+              <th class="p-3 text-right border-b">نقش</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td class="p-3 border-b">Webhook و صفحات وب</td>
-              <td class="p-3 border-b">یک Cloudflare Worker</td>
-              <td class="p-3 border-b">دریافت Telegram update، routeها، HTML سبک</td>
+              <td class="p-3 border-b">کاربران، لینک‌ها، گفتگوها، گزارش‌ها، consentها</td>
+              <td class="p-3 border-b">D1</td>
+              <td class="p-3 border-b">source of truth رابطه‌ای؛ بدون متن plaintext پیام</td>
             </tr>
             <tr>
-              <td class="p-3 border-b">منطق bot</td>
-              <td class="p-3 border-b">Grammy داخل همان Worker</td>
-              <td class="p-3 border-b">/start، /inbox، settings، callbackها</td>
+              <td class="p-3 border-b">draft، pause، block، nickname، inbox، test session</td>
+              <td class="p-3 border-b">UserState Durable Object + SQLite</td>
+              <td class="p-3 border-b">state داغ و recipient-scoped با ordering و cap مشخص</td>
             </tr>
             <tr>
-              <td class="p-3 border-b">پروفایل و تنظیمات</td>
-              <td class="p-3 border-b">Cloudflare KV</td>
-              <td class="p-3 border-b">نام نمایشی، link id، block list، pause، nicknameها</td>
+              <td class="p-3 border-b">lookupهای تلگرام و لینک</td>
+              <td class="p-3 border-b">KV</td>
+              <td class="p-3 border-b">cache مسیر‌یابی فقط؛ نه inbox، نه profile، نه ciphertext پیام</td>
             </tr>
             <tr>
-              <td class="p-3 border-b">متن رمزنگاری‌شده</td>
-              <td class="p-3 border-b">KV با key از نوع conversation</td>
-              <td class="p-3 border-b">نگه‌داری blob رمزنگاری‌شده تا زمان تحویل</td>
+              <td class="p-3 border-b">ارسال‌های غیرضروری برای پاسخ فوری webhook</td>
+              <td class="p-3 border-b">Cloudflare Queue + TelegramOutboxDO</td>
+              <td class="p-3 border-b">تحویل idempotent اعلان‌ها و پیام‌های غیرحیاتی</td>
             </tr>
             <tr>
-              <td class="p-3">inbox هر گیرنده</td>
-              <td class="p-3">Durable Object + SQLite</td>
-              <td class="p-3">صف pending، refهای callback، سقف ۵۰ row</td>
+              <td class="p-3 border-b">پروفایل تست و match records</td>
+              <td class="p-3 border-b">D1</td>
+              <td class="p-3 border-b">attemptها، answerها، profileها، suggestionها و requestها</td>
+            </tr>
+            <tr>
+              <td class="p-3">کشف candidateهای مچ‌یابی</td>
+              <td class="p-3">Workers AI + Vectorize</td>
+              <td class="p-3">embedding summary کنترل‌شده و جست‌وجوی تقریبی؛ تصمیم نهایی نیست</td>
             </tr>
           </tbody>
         </table>
@@ -123,63 +108,72 @@ export const TechnicalPageContent = () => `
     </section>
 
     <section>
-      <h2 class="text-2xl font-semibold mb-4">چرا inbox جداست؟</h2>
-      <p class="leading-8 mb-3">
-        KV برای profile و link map خوب است، اما برای ترتیب inbox مناسب نیست.
-        اگر چند نفر نزدیک به هم پیام بدهند، inbox باید یک نقطهٔ مشخص برای صف و تحویل داشته باشد.
-      </p>
-      <p class="leading-8">
-        برای همین هر گیرنده یک Durable Object جدا دارد. این object پیام‌های pending را نگه می‌دارد،
-        ظرفیت را محدود می‌کند، و بعد از تحویل ciphertext خودش را پاک می‌کند ولی ref لازم برای callback را نگه می‌دارد.
-      </p>
-    </section>
-
-    <section>
-      <h2 class="text-2xl font-semibold mb-4">رمزنگاری در حد لازم برای فهم مدل</h2>
-      <p class="leading-8 mb-3">
-        برای هر پیام پذیرفته‌شده یک ticket تصادفی ساخته می‌شود. سیستم با همان ticket و secret اصلی،
-        کلید لازم برای رمزنگاری پیام و شناسه conversation را مشتق می‌کند. پیام با AES-GCM ذخیره می‌شود.
-      </p>
-      <p class="leading-8 mb-3">
-        معنی عملی این بخش برای کاربر این است: بدنه پیام به شکل plaintext در KV یا inbox ذخیره نمی‌شود.
-        بعد از /inbox هم payload از storage پاک می‌شود.
-      </p>
-      <p class="leading-8">
-        اما این end-to-end encryption نیست. چون bot و Worker باید پیام را پردازش کنند،
-        plaintext در لحظه پردازش دیده می‌شود.
-      </p>
-    </section>
-
-    <section>
-      <h2 class="text-2xl font-semibold mb-4">کنترل‌های کاربر</h2>
+      <h2 class="text-2xl font-semibold mb-4">تست و مچ‌یابی</h2>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="rounded-xl border border-gray-200 p-4">
-          <h3 class="font-semibold mb-2">block</h3>
-          <p class="leading-8">فرستنده دیگر نمی‌تواند از لینک شما پیام جدید بفرستد.</p>
+        <div class="rounded-xl border border-gray-200 p-5">
+          <h3 class="font-semibold mb-2">تست سبک گفت‌وگو</h3>
+          <p class="leading-8">
+            پیشرفت فعال تست داخل UserStateDO نگه‌داری می‌شود. بعد از تکمیل، attempt و answerها در D1 ثبت می‌شوند،
+            scoreهای deterministic ساخته می‌شوند، و یک summary کنترل‌شده برای profile ذخیره می‌شود.
+          </p>
         </div>
-        <div class="rounded-xl border border-gray-200 p-4">
-          <h3 class="font-semibold mb-2">pause</h3>
-          <p class="leading-8">پیام‌های جدید از لینک متوقف می‌شوند؛ replyهای thread قبلی می‌توانند ادامه داشته باشند.</p>
-        </div>
-        <div class="rounded-xl border border-gray-200 p-4">
-          <h3 class="font-semibold mb-2">nickname</h3>
-          <p class="leading-8">نام خصوصی برای تشخیص فرستنده‌های تکراری؛ فقط روی profile خودت نگه‌داری می‌شود.</p>
-        </div>
-        <div class="rounded-xl border border-gray-200 p-4">
-          <h3 class="font-semibold mb-2">پاک کردن حساب</h3>
-          <p class="leading-8">لینک فعلی، inbox، block list و nicknameها پاک می‌شوند و لینک تازه ساخته می‌شود.</p>
+        <div class="rounded-xl border border-gray-200 p-5">
+          <h3 class="font-semibold mb-2">مچ‌یابی ناشناس</h3>
+          <p class="leading-8">
+            discoverability پیش‌فرض خاموش است. وقتی کاربر فعال کند، Vectorize فقط candidateهای احتمالی را پیدا می‌کند؛
+            سپس D1 profileها با filter و scoring قطعی بررسی می‌شوند و حداکثر چند پیشنهاد ناشناس نمایش داده می‌شود.
+          </p>
         </div>
       </div>
     </section>
 
-    <section class="rounded-xl border border-gray-200 bg-gray-50 p-5">
-      <h2 class="text-2xl font-semibold mb-4">محدودیت‌های مهم</h2>
+    <section class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div class="rounded-xl border border-green-200 bg-green-50 p-5">
+        <h2 class="text-xl font-semibold mb-3">سیستم چه چیزی را کم می‌کند؟</h2>
+        <ul class="list-disc list-inside space-y-2 leading-8">
+          <li>نمایش username تلگرام دو طرف در رابط ربات</li>
+          <li>ذخیره plaintext پیام در D1، KV یا Durable Object</li>
+          <li>باقی ماندن payload پیام بعد از /inbox</li>
+          <li>اعتماد به callback_data بدون resolve کردن ref داخلی</li>
+          <li>نمایش هویت، لینک شخصی یا نتیجه کامل تست در مچ‌یابی</li>
+        </ul>
+      </div>
+      <div class="rounded-xl border border-yellow-200 bg-yellow-50 p-5">
+        <h2 class="text-xl font-semibold mb-3">سیستم چه چیزی را حذف نمی‌کند؟</h2>
+        <ul class="list-disc list-inside space-y-2 leading-8">
+          <li>Telegram همچنان پیام‌های bot را دریافت می‌کند.</li>
+          <li>Worker هنگام پردازش پیام، plaintext را می‌بیند.</li>
+          <li>secretهای runtime و اپراتور Worker بخشی از مدل اعتماد هستند.</li>
+          <li>metadata رمزنگاری‌شده برای reply، block، report و nickname باقی می‌ماند.</li>
+          <li>شباهت مچ‌یابی تقریبی است و تضمین رابطه یا سازگاری نیست.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-2xl font-semibold mb-4">رمزنگاری</h2>
+      <p class="leading-8 mb-3">
+        Telegram user id با HMAC-SHA-256 به hash داخلی تبدیل می‌شود. chat id، payload پیام، connection metadata،
+        nickname و intro مچ‌یابی با Web Crypto و AES-GCM رمزنگاری می‌شوند.
+      </p>
+      <p class="leading-8 mb-3">
+        برای هر پیام ticket id تصادفی ساخته می‌شود و با HKDF-SHA-256 کلیدهای جدا برای payload و connection metadata مشتق می‌شود.
+        ciphertextها در envelope نسخه‌دار ذخیره می‌شوند: <span dir="ltr">{ v, kid, iv, ct }</span>.
+      </p>
+      <p class="leading-8">
+        ticket id، secretها، payload decryptشده و token تلگرام نباید log شوند. callbackها فقط ref کوتاه دارند و ref بدون state داخلی معنایی ندارد.
+      </p>
+    </section>
+
+    <section>
+      <h2 class="text-2xl font-semibold mb-4">محدودیت‌های عملی</h2>
       <ul class="list-disc list-inside space-y-2 leading-8">
-        <li>inbox هر گیرنده سقف ۵۰ row دارد؛ اگر همه pending باشند، پیام جدید پذیرفته نمی‌شود.</li>
-        <li>آمار public تقریبی است و برای accounting دقیق طراحی نشده است.</li>
-        <li>callbackهای خیلی قدیمی ممکن است بعد از prune شدن refها دیگر کار نکنند.</li>
-        <li>پیام‌های unsupported قبل از encryption رد می‌شوند.</li>
-        <li>secretها، ticketها و متن decryptشده نباید log شوند.</li>
+        <li>inbox هر کاربر سقف ۵۰ ticket دارد.</li>
+        <li>rate limit ارسال در UserStateDO اعمال می‌شود.</li>
+        <li>KV eventually consistent است و فقط cache است.</li>
+        <li>Queue at-least-once است؛ Outbox Durable Object باید ارسال را idempotent کند.</li>
+        <li>صفحات public فقط HTML سبک هستند و SPA جداگانه‌ای وجود ندارد.</li>
+        <li>تست، تشخیص روان‌شناسی یا ابزار درمان نیست.</li>
       </ul>
     </section>
 

@@ -31,14 +31,14 @@ const socialMeta = (title: string, BOT_NAME: string, origin: string | null) => {
   const url = pageUrl(origin);
   return `
       <meta property="og:title" content="${escapeHtml(title)}" />
-      <meta property="og:description" content="${escapeHtml(BOT_NAME)} — رله پیام ناشناس برای Telegram با لینک شخصی، inbox، پاسخ ناشناس و مدل حریم خصوصی صادقانه." />
+      <meta property="og:description" content="${escapeHtml(BOT_NAME)} — پیام ناشناس و مچ‌یابی ناشناس در Telegram با لینک شخصی، inbox، تست سبک گفت‌وگو و مدل حریم خصوصی صادقانه." />
       <meta property="og:type" content="website" />
       ${url ? `<meta property="og:url" content="${escapeHtml(url)}" />` : ""}
       <meta property="og:locale" content="fa_IR" />
       <meta property="og:site_name" content="${escapeHtml(BOT_NAME)}" />
       <meta name="twitter:card" content="summary" />
       <meta name="twitter:title" content="${escapeHtml(title)}" />
-      <meta name="twitter:description" content="${escapeHtml(BOT_NAME)} — رله پیام ناشناس برای Telegram با لینک شخصی، inbox، پاسخ ناشناس و مدل حریم خصوصی صادقانه." />
+      <meta name="twitter:description" content="${escapeHtml(BOT_NAME)} — پیام ناشناس و مچ‌یابی ناشناس در Telegram با لینک شخصی، inbox، تست سبک گفت‌وگو و مدل حریم خصوصی صادقانه." />
       ${url ? `<link rel="canonical" href="${escapeHtml(url)}" />` : ""}
       ${siteStructuredData(BOT_NAME, origin)}`;
 };
@@ -71,8 +71,8 @@ const pageLayout = (
         rel="stylesheet"
       />
       <title>${escapedTitle}</title>
-      <meta name="description" content="${escapedBotName} — رله پیام ناشناس برای Telegram. لینک شخصی، inbox، پاسخ ناشناس، block و توضیح روشن درباره حریم خصوصی." />
-      <meta name="keywords" content="ربات ناشناس, امنیت, پیام ناشناس, حریم خصوصی, ${escapedBotName}" />
+      <meta name="description" content="${escapedBotName} — پیام ناشناس و مچ‌یابی ناشناس در Telegram. لینک شخصی، inbox، تست سبک گفت‌وگو، پاسخ ناشناس و توضیح روشن درباره حریم خصوصی." />
+      <meta name="keywords" content="ربات ناشناس, پیام ناشناس, مچ‌یابی ناشناس, تست سبک گفت‌وگو, حریم خصوصی, ${escapedBotName}" />
       <meta name="robots" content="index, follow" />
       <meta name="author" content="ربات ${escapedBotName}" />
       ${socialMeta(title, BOT_NAME, origin)}

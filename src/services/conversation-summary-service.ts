@@ -26,18 +26,41 @@ export const upsertConversationSummary = async (
 
 export const getPublicStats = async (
   env: Environment
-): Promise<{ usersCount: number; conversationsCount: number }> => {
-  const [users, conversations] = await Promise.all([
-    env.DB.prepare(
-      "SELECT COUNT(*) AS count FROM users WHERE status = 'active'"
-    ).first<{ count: number }>(),
-    env.DB.prepare(
-      "SELECT COALESCE(SUM(message_count), 0) AS count FROM conversations"
-    ).first<{ count: number }>(),
+): Promise<{
+  usersCount: number;
+  conversationsCount: number;
+  testProfilesCount: number;
+  discoverableProfilesCount: number;
+  matchRequestsCount: number;
+}> => {
+  const count = async (sql: string): Promise<number> => {
+    try {
+      const row = await env.DB.prepare(sql).first<{ count: number }>();
+      return row?.count ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const [
+    usersCount,
+    conversationsCount,
+    testProfilesCount,
+    discoverableProfilesCount,
+    matchRequestsCount,
+  ] = await Promise.all([
+    count("SELECT COUNT(*) AS count FROM users WHERE status = 'active'"),
+    count("SELECT COALESCE(SUM(message_count), 0) AS count FROM conversations"),
+    count("SELECT COUNT(*) AS count FROM test_profiles WHERE status = 'completed'"),
+    count("SELECT COUNT(*) AS count FROM test_profiles WHERE discoverable = 1"),
+    count("SELECT COUNT(*) AS count FROM match_requests"),
   ]);
 
   return {
-    usersCount: users?.count ?? 0,
-    conversationsCount: conversations?.count ?? 0,
+    usersCount,
+    conversationsCount,
+    testProfilesCount,
+    discoverableProfilesCount,
+    matchRequestsCount,
   };
 };
