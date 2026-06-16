@@ -4,6 +4,8 @@ import type { Environment, UserDraft } from "../../types";
 const INBOX_MAX_TICKETS = 50;
 const RATE_LIMIT_SECONDS = 5;
 const RATE_LIMIT_SCOPE = "message";
+const TEST_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TEST_SESSION_ID = "current";
 
 type UserStateRow = {
   user_id: string;
@@ -27,6 +29,19 @@ type DraftRow = {
   pending_nickname_alias: string | null;
   pending_settings: string | null;
   created_at: number;
+  updated_at: number;
+  expires_at: number | null;
+};
+
+type TestSessionRow = {
+  id: string;
+  version: string;
+  status: string;
+  current_index: number;
+  total_questions: number;
+  answers_json: string;
+  attempt_id: string | null;
+  started_at: number;
   updated_at: number;
   expires_at: number | null;
 };
@@ -178,6 +193,25 @@ export class UserStateDurableObject extends DurableObject<Environment> {
         INSERT INTO _sql_schema_migrations (id) VALUES (1);
       `);
     }
+
+    if (version < 2) {
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS test_sessions (
+          id TEXT PRIMARY KEY,
+          version TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          current_index INTEGER NOT NULL DEFAULT 0,
+          total_questions INTEGER NOT NULL,
+          answers_json TEXT NOT NULL DEFAULT '{}',
+          attempt_id TEXT,
+          started_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          expires_at INTEGER
+        );
+
+        INSERT INTO _sql_schema_migrations (id) VALUES (2);
+      `);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -242,6 +276,27 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     }
     if (request.method === "DELETE" && pathname === "/purge") {
       return this.purge();
+    }
+    if (request.method === "POST" && pathname === "/test/start") {
+      return this.startTestSession(request);
+    }
+    if (request.method === "GET" && pathname === "/test/session") {
+      return this.getTestSession();
+    }
+    if (request.method === "POST" && pathname === "/test/answer") {
+      return this.saveTestAnswer(request);
+    }
+    if (request.method === "POST" && pathname === "/test/set-current-index") {
+      return this.setTestCurrentIndex(request);
+    }
+    if (request.method === "POST" && pathname === "/test/complete") {
+      return this.completeTestSession();
+    }
+    if (request.method === "POST" && pathname === "/test/cancel") {
+      return this.cancelTestSession();
+    }
+    if (request.method === "DELETE" && pathname === "/test/reset") {
+      return this.resetTestSession();
     }
 
     return new Response("Not Found", { status: 404 });
@@ -680,6 +735,191 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     return Response.json({ ok: true });
   }
 
+  private parseAnswersJson(json: string): Record<string, number> {
+    try {
+      return JSON.parse(json) as Record<string, number>;
+    } catch {
+      return {};
+    }
+  }
+
+  private parseTestSession(row: TestSessionRow) {
+    const answers = this.parseAnswersJson(row.answers_json);
+
+    return {
+      id: row.id,
+      version: row.version,
+      status: row.status,
+      currentIndex: row.current_index,
+      totalQuestions: row.total_questions,
+      answers,
+      attemptId: row.attempt_id,
+      startedAt: row.started_at,
+      updatedAt: row.updated_at,
+      expiresAt: row.expires_at,
+    };
+  }
+
+  private getActiveTestSessionRow(): TestSessionRow | null {
+    const rows = this.ctx.storage.sql
+      .exec<TestSessionRow>(
+        `SELECT * FROM test_sessions
+         WHERE status = 'active'
+         ORDER BY updated_at DESC
+         LIMIT 1`
+      )
+      .toArray();
+
+    const row = rows[0];
+    if (!row) {
+      return null;
+    }
+
+    if (row.expires_at !== null && Date.now() > row.expires_at) {
+      this.ctx.storage.sql.exec("DELETE FROM test_sessions WHERE id = ?", row.id);
+      return null;
+    }
+
+    return row;
+  }
+
+  private async startTestSession(request: Request): Promise<Response> {
+    const body = await request.json<{
+      version: string;
+      totalQuestions: number;
+      attemptId: string;
+    }>();
+
+    if (!body.version || !body.totalQuestions || !body.attemptId) {
+      return new Response("Missing fields", { status: 400 });
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec("DELETE FROM test_sessions");
+
+    this.ctx.storage.sql.exec(
+      `INSERT INTO test_sessions (
+        id, version, status, current_index, total_questions, answers_json,
+        attempt_id, started_at, updated_at, expires_at
+      ) VALUES (?, ?, 'active', 0, ?, '{}', ?, ?, ?, ?)`,
+      TEST_SESSION_ID,
+      body.version,
+      body.totalQuestions,
+      body.attemptId,
+      now,
+      now,
+      now + TEST_SESSION_TTL_MS
+    );
+
+    return Response.json({ ok: true });
+  }
+
+  private getTestSession(): Response {
+    const row = this.getActiveTestSessionRow();
+    if (!row) {
+      return Response.json({ session: null });
+    }
+
+    return Response.json({ session: this.parseTestSession(row) });
+  }
+
+  private async saveTestAnswer(request: Request): Promise<Response> {
+    const body = await request.json<{
+      questionId: string;
+      answerValue: number;
+      currentIndex?: number;
+    }>();
+
+    const row = this.getActiveTestSessionRow();
+    if (!row) {
+      return new Response("No active session", { status: 404 });
+    }
+
+    if (
+      !body.questionId ||
+      body.answerValue < 1 ||
+      body.answerValue > 5
+    ) {
+      return new Response("Invalid answer", { status: 400 });
+    }
+
+    const answers = this.parseAnswersJson(row.answers_json);
+    answers[body.questionId] = body.answerValue;
+
+    const nextIndex =
+      body.currentIndex !== undefined
+        ? body.currentIndex + 1
+        : row.current_index + 1;
+    const now = Date.now();
+
+    this.ctx.storage.sql.exec(
+      `UPDATE test_sessions
+       SET answers_json = ?, current_index = ?, updated_at = ?
+       WHERE id = ?`,
+      JSON.stringify(answers),
+      Math.min(nextIndex, row.total_questions),
+      now,
+      row.id
+    );
+
+    return Response.json({ ok: true, answers, currentIndex: nextIndex });
+  }
+
+  private async setTestCurrentIndex(request: Request): Promise<Response> {
+    const { currentIndex } = await request.json<{ currentIndex: number }>();
+    const row = this.getActiveTestSessionRow();
+    if (!row) {
+      return new Response("No active session", { status: 404 });
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE test_sessions SET current_index = ?, updated_at = ? WHERE id = ?",
+      Math.max(0, currentIndex),
+      now,
+      row.id
+    );
+
+    return Response.json({ ok: true });
+  }
+
+  private completeTestSession(): Response {
+    const row = this.getActiveTestSessionRow();
+    if (!row) {
+      return new Response("No active session", { status: 404 });
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE test_sessions SET status = 'completed', updated_at = ? WHERE id = ?",
+      now,
+      row.id
+    );
+
+    return Response.json({ ok: true });
+  }
+
+  private cancelTestSession(): Response {
+    const row = this.getActiveTestSessionRow();
+    if (!row) {
+      return Response.json({ ok: true });
+    }
+
+    const now = Date.now();
+    this.ctx.storage.sql.exec(
+      "UPDATE test_sessions SET updated_at = ? WHERE id = ?",
+      now,
+      row.id
+    );
+
+    return Response.json({ ok: true });
+  }
+
+  private resetTestSession(): Response {
+    this.ctx.storage.sql.exec("DELETE FROM test_sessions");
+    return Response.json({ ok: true });
+  }
+
   private async purge(): Promise<Response> {
     this.ctx.storage.sql.exec(`
       DELETE FROM processed_events;
@@ -688,6 +928,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       DELETE FROM blocks;
       DELETE FROM inbox_tickets;
       DELETE FROM drafts;
+      DELETE FROM test_sessions;
       DELETE FROM user_state;
     `);
     await this.ctx.storage.deleteAll();

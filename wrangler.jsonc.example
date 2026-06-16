@@ -71,5 +71,14 @@
       "pattern": "nekonymous.mohetios.dev",
       "custom_domain": true
     }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "vectorize": [
+    {
+      "binding": "PROFILE_VECTORS",
+      "index_name": "nekonymous-profile-vectors"
+    }
   ]
 }

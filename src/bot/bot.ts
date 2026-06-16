@@ -15,6 +15,7 @@ import {
   handleStartCommand,
 } from "./commands";
 import { handleSettingsCommand } from "./settings";
+import { handleTestCallback, handleTestCommand } from "./test";
 
 type BotConfig = NonNullable<ConstructorParameters<typeof Bot>[1]>;
 
@@ -60,6 +61,8 @@ export const createBot = (env: Environment) => {
 
   bot.command("settings", (ctx) => handleSettingsCommand(ctx, env));
 
+  bot.command("test", (ctx) => handleTestCommand(ctx, env));
+
   bot.on("message", (ctx) => {
     if (ctx.message && isCommandMessage(ctx.message)) {
       return;
@@ -78,6 +81,8 @@ export const createBot = (env: Environment) => {
   bot.callbackQuery(/^u:([a-f0-9]{8})$/, onInboxCallback(handleUnblockAction));
   bot.callbackQuery(/^n:([a-f0-9]{8})$/, onInboxCallback(handleNicknameAction));
   bot.callbackQuery(/^rp:([a-f0-9]{8})$/, onInboxCallback(handleReportAction));
+
+  bot.callbackQuery(/^t:/, (ctx) => handleTestCallback(ctx, env));
 
   cachedBot = { key: cacheKey, bot };
   return bot;

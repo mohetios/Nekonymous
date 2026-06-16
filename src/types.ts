@@ -123,6 +123,9 @@ export interface Environment {
 
   TELEGRAM_OUTBOX_QUEUE: Queue<TelegramOutboxJob>;
 
+  AI: Ai;
+  PROFILE_VECTORS: VectorizeIndex;
+
   BOT_INFO: string;
   BOT_NAME: string;
   BOT_USERNAME: string;

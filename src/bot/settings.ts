@@ -47,6 +47,7 @@ import {
   toBotUser,
 } from "../services/identity-service";
 import { encryptDisplayName } from "../services/crypto-service";
+import { resetUserTestProfile } from "../features/test/test-profile-service";
 import {
   clearBlocks,
   clearDraft,
@@ -323,6 +324,7 @@ export const handleSettingsMenu = async (
       }
 
       try {
+        await resetUserTestProfile(user.id, env);
         await purgeUserState(env, user.id);
         await deactivateUser(user.id, env);
         const freshD1 = await createUserFromTelegram(ctx, env);

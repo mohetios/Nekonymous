@@ -290,3 +290,88 @@ export const purgeUserState = async (
     method: "DELETE",
   });
 };
+
+export type TestSession = {
+  id: string;
+  version: string;
+  status: string;
+  currentIndex: number;
+  totalQuestions: number;
+  answers: Record<string, number>;
+  attemptId: string | null;
+  startedAt: number;
+  updatedAt: number;
+  expiresAt: number | null;
+};
+
+export const startTestSession = async (
+  userId: string,
+  version: string,
+  totalQuestions: number,
+  attemptId: string,
+  env: Environment
+): Promise<void> => {
+  await doFetch(env, userId, "/test/start", {
+    method: "POST",
+    body: JSON.stringify({ version, totalQuestions, attemptId }),
+  });
+};
+
+export const getTestSession = async (
+  userId: string,
+  env: Environment
+): Promise<TestSession | null> => {
+  const body = await doFetch<{ session: TestSession | null }>(
+    env,
+    userId,
+    "/test/session"
+  );
+  return body.session;
+};
+
+export const saveTestAnswer = async (
+  userId: string,
+  questionId: string,
+  answerValue: number,
+  env: Environment,
+  currentIndex?: number
+): Promise<void> => {
+  await doFetch(env, userId, "/test/answer", {
+    method: "POST",
+    body: JSON.stringify({ questionId, answerValue, currentIndex }),
+  });
+};
+
+export const setTestCurrentIndex = async (
+  userId: string,
+  currentIndex: number,
+  env: Environment
+): Promise<void> => {
+  await doFetch(env, userId, "/test/set-current-index", {
+    method: "POST",
+    body: JSON.stringify({ currentIndex }),
+  });
+};
+
+export const completeTestSession = async (
+  userId: string,
+  env: Environment
+): Promise<void> => {
+  await doFetch(env, userId, "/test/complete", { method: "POST" });
+};
+
+export const cancelTestSession = async (
+  userId: string,
+  env: Environment
+): Promise<void> => {
+  await doFetch(env, userId, "/test/cancel", { method: "POST" });
+};
+
+export const resetTestSession = async (
+  userId: string,
+  env: Environment
+): Promise<void> => {
+  await stub(env, userId).fetch("https://user-state/test/reset", {
+    method: "DELETE",
+  });
+};

@@ -12,6 +12,7 @@ import { buildUserDeepLink } from "./user";
 export const MENU = {
   about: "🛡️ درباره و حریم خصوصی",
   link: "🔗 دریافت لینک",
+  test: "🧭 تست",
   settings: "⚙️ تنظیمات",
   editName: "✏️ نام نمایشی",
   cancelDraft: "↩️ لغو پیام ناتمام",
@@ -72,6 +73,7 @@ export const mainMenu = new Keyboard()
   .text(MENU.about)
   .text(MENU.link)
   .row()
+  .text(MENU.test)
   .text(MENU.settings)
   .resized();
 

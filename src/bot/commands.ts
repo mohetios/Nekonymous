@@ -4,6 +4,7 @@ import {
   handlePendingSettingsInput,
   handleSettingsMenu,
 } from "./settings";
+import { handleTestMenu } from "./test";
 import {
   buildDraftMenu,
   createMessageKeyboard,
@@ -175,6 +176,10 @@ export const handleMessage = async (
     const user = await toBotUser(d1User, env);
 
     if (await handleMenuCommand(ctx, user, botUsername)) {
+      return;
+    }
+
+    if (await handleTestMenu(ctx, env)) {
       return;
     }
 

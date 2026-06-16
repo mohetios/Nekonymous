@@ -701,7 +701,8 @@ src/
         └── en.ftl
 
 migrations/
-└── 0001_core.sql
+├── 0001_core.sql
+└── 0002_test_profiles_and_vectors.sql
 
 tools/
 └── verify-crypto.ts
@@ -794,6 +795,13 @@ bindings = [
   { name = "TELEGRAM_OUTBOX_DO", class_name = "TelegramOutboxDurableObject" }
 ]
 
+[ai]
+binding = "AI"
+
+[[vectorize]]
+binding = "PROFILE_VECTORS"
+index_name = "nekonymous-profile-vectors"
+
 [[migrations]]
 tag = "v1-clean-core"
 new_sqlite_classes = [
@@ -817,6 +825,29 @@ Apply migrations locally:
 ```bash
 wrangler d1 migrations apply nekonymous_core --local
 ```
+
+This applies `0001_core.sql` and `0002_test_profiles_and_vectors.sql`.
+
+### Vectorize index (profile matching prep)
+
+Create the profile vector index (768 dimensions for `@cf/google/embeddinggemma-300m`):
+
+```bash
+wrangler vectorize create nekonymous-profile-vectors --dimensions=768 --metric=cosine
+```
+
+Create metadata indexes for future matching filters:
+
+```bash
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=locale --type=string
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=discoverable --type=boolean
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=safetyTier --type=string
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=profileVersion --type=string
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=intentPrimary --type=string
+wrangler vectorize create-metadata-index nekonymous-profile-vectors --propertyName=profileBucket --type=number
+```
+
+Embedding model constant: `src/features/test/constants.ts` (`PROFILE_EMBEDDING_MODEL`).
 
 Apply migrations remotely:
 
@@ -881,6 +912,21 @@ Before deploying a bot/crypto/storage change:
 
 ---
 
+## Test and Profile Indexing
+
+Nekonymous includes a non-clinical conversation-style test (`/test` or main menu **تست**).
+
+- Active test progress is stored in **UserStateDO** (`test_sessions`).
+- Completed attempts, answers, and latest profile scores are stored in **D1** (`test_attempts`, `test_answers`, `test_profiles`).
+- After completion, the system builds a controlled `profile_summary_text` and indexes it in **Cloudflare Vectorize** using **Workers AI** embeddings (`@cf/google/embeddinggemma-300m`, 768 dimensions).
+- Indexing runs via `ctx.waitUntil` after the user sees their result; Vectorize failure is non-fatal.
+- This prepares the system for future anonymous matching, but **matching is not active** in this phase.
+- `discoverable` defaults to **off** (`0`).
+
+Vector ID format: `profile:{userId}:{profileVersion}` (example: `profile:u_abc123:v1`).
+
+---
+
 ## Testing Checklist
 
 Manual tests for a fresh environment:
@@ -905,6 +951,12 @@ Manual tests for a fresh environment:
 18. UserStateDO contains drafts/tickets/blocks/labels as expected
 19. KV only contains routing/cache keys
 20. No plaintext body appears in logs/storage
+21. Main menu shows **تست**; `/test` opens dashboard
+22. Start test, answer, exit, continue, complete — result persists in D1
+23. `test_profiles.profile_summary_text` has no raw answers
+24. Vectorize upsert succeeds when AI/Vectorize bindings exist
+25. Anonymous messaging (`/start`, `/inbox`, reply/block) still works
+26. No test progress written to KV
 
 ---
 
@@ -912,9 +964,9 @@ Manual tests for a fresh environment:
 
 After the clean V1 core is stable:
 
-1. Personality test and compatibility profile.
-2. Locale-aware anonymous matching.
-3. Workers AI and Vectorize for candidate discovery/explanations.
+1. ~~Personality test and compatibility profile.~~ (test + Vectorize indexing shipped; matching not yet)
+2. Locale-aware anonymous matching (`/match`, discoverability toggle, double opt-in).
+3. ~~Workers AI and Vectorize for candidate discovery.~~ (indexing ready; search not yet)
 4. Telegram Stars credit packages for paid AI matching.
 5. Admin/moderation view.
 6. Better public docs and self-hosting guide.
