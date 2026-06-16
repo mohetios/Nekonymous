@@ -98,6 +98,8 @@ export type SendMessageInput = {
   linkSlug: string;
   isThreadReply: boolean;
   replyToMessageId?: number;
+  /** Override inbox dedupe key (e.g. per match request id). */
+  dedupeKey?: string;
 };
 
 export const sendAnonymousMessage = async (
@@ -149,11 +151,13 @@ export const sendAnonymousMessage = async (
     ),
   ]);
 
-  const dedupeKey = buildDedupeKey(
-    input.sender.id,
-    input.recipient.id,
-    input.payload.telegramMessageId
-  );
+  const dedupeKey =
+    input.dedupeKey ??
+    buildDedupeKey(
+      input.sender.id,
+      input.recipient.id,
+      input.payload.telegramMessageId
+    );
 
   await ensureUserStateInitialized(env, input.recipient.id);
 

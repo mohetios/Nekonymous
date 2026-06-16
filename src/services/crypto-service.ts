@@ -259,6 +259,18 @@ export const encryptReportDetails = async (
   return envelopeToWire(await sealWithKey(aesKey, details, MASTER_KID));
 };
 
+export const encryptMatchIntro = async (
+  requestId: string,
+  intro: string,
+  appMasterKey: string
+): Promise<string> => encryptMessagePayload(requestId, intro, appMasterKey);
+
+export const decryptMatchIntro = async (
+  requestId: string,
+  ciphertext: string,
+  appMasterKey: string
+): Promise<string> => decryptMessagePayload(requestId, ciphertext, appMasterKey);
+
 export const encryptDisplayName = async (
   name: string,
   appMasterKey: string
