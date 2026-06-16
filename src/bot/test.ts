@@ -2,7 +2,7 @@ import { InlineKeyboard, type Context } from "grammy";
 import type { Environment } from "../types";
 import { logBotError } from "../utils/logs";
 import { HuhMessage } from "../utils/messages";
-import { mainMenu, MENU } from "../utils/constant";
+import { mainMenu } from "../utils/constant";
 import {
   convertToPersianNumbers,
   escapeHtml,
@@ -96,7 +96,7 @@ const formatResultMessage = (
   return text;
 };
 
-const sendDashboard = async (
+export const sendTestDashboard = async (
   ctx: Context,
   userId: string,
   env: Environment,
@@ -187,23 +187,11 @@ export const handleTestCommand = async (
 
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
-    await sendDashboard(ctx, d1User.id, env);
+    await sendTestDashboard(ctx, d1User.id, env);
   } catch (error) {
     logBotError("handleTestCommand", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });
   }
-};
-
-export const handleTestMenu = async (
-  ctx: Context,
-  env: Environment
-): Promise<boolean> => {
-  if (ctx.message?.text !== MENU.test) {
-    return false;
-  }
-
-  await handleTestCommand(ctx, env);
-  return true;
 };
 
 export const handleTestCallback = async (
@@ -237,7 +225,7 @@ export const handleTestCallback = async (
     }
 
     if (data === TEST_CALLBACK.menu) {
-      await sendDashboard(ctx, userId, env, true);
+      await sendTestDashboard(ctx, userId, env, true);
       return;
     }
 
@@ -260,7 +248,7 @@ export const handleTestCallback = async (
     }
 
     if (data === TEST_CALLBACK.resetNo) {
-      await sendDashboard(ctx, userId, env, true);
+      await sendTestDashboard(ctx, userId, env, true);
       return;
     }
 
@@ -273,7 +261,7 @@ export const handleTestCallback = async (
     if (data === TEST_CALLBACK.result) {
       const profile = await getLatestTestProfile(userId, env);
       if (!profile) {
-        await sendDashboard(ctx, userId, env, true);
+        await sendTestDashboard(ctx, userId, env, true);
         return;
       }
       const summary = parseResultSummary(profile);
@@ -289,7 +277,7 @@ export const handleTestCallback = async (
     if (data === TEST_CALLBACK.previous) {
       const session = await getTestSession(userId, env);
       if (!session) {
-        await sendDashboard(ctx, userId, env, true);
+        await sendTestDashboard(ctx, userId, env, true);
         return;
       }
       const index = Math.max(0, session.currentIndex - 1);
@@ -304,7 +292,7 @@ export const handleTestCallback = async (
       const value = Number(answerMatch[2]);
       const session = await getTestSession(userId, env);
       if (!session || !session.attemptId) {
-        await sendDashboard(ctx, userId, env, true);
+        await sendTestDashboard(ctx, userId, env, true);
         return;
       }
 
@@ -355,7 +343,7 @@ export const handleTestCallback = async (
       return;
     }
 
-    await sendDashboard(ctx, userId, env, true);
+    await sendTestDashboard(ctx, userId, env, true);
   } catch (error) {
     logBotError("handleTestCallback", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });

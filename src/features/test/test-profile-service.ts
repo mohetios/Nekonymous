@@ -221,6 +221,26 @@ export const getLatestTestProfile = async (
     .first<TestProfileRow>();
 };
 
+export const getMatchProfile = async (
+  userId: string,
+  env: Environment
+): Promise<TestProfileRow | null> => getLatestTestProfile(userId, env);
+
+export const setDiscoverable = async (
+  userId: string,
+  enabled: boolean,
+  env: Environment
+): Promise<void> => {
+  const now = Date.now();
+  await env.DB.prepare(
+    `UPDATE test_profiles
+     SET discoverable = ?, updated_at = ?
+     WHERE user_id = ? AND status = 'completed'`
+  )
+    .bind(enabled ? 1 : 0, now, userId)
+    .run();
+};
+
 export const resetUserTestProfile = async (
   userId: string,
   env: Environment

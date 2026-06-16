@@ -164,3 +164,55 @@ export const indexCompletedProfileSafe = async (
     // Vector indexing failure is non-fatal; status recorded in D1.
   }
 };
+
+export const updateVectorDiscoverability = async (
+  userId: string,
+  enabled: boolean,
+  env: Environment
+): Promise<void> => {
+  const row = await env.DB.prepare(
+    "SELECT * FROM test_profiles WHERE user_id = ?"
+  )
+    .bind(userId)
+    .first<{
+      vector_id: string | null;
+      vector_status: string;
+      version: string;
+      locale?: string;
+      safety_tier: string;
+      primary_intent: string;
+      profile_bucket: number;
+    }>();
+
+  if (!row?.vector_id || row.vector_status !== "indexed") {
+    return;
+  }
+
+  const stored = await env.PROFILE_VECTORS.getByIds([row.vector_id]);
+  const vector = stored[0];
+  if (!vector?.values?.length) {
+    return;
+  }
+
+  const user = await env.DB.prepare("SELECT locale FROM users WHERE id = ?")
+    .bind(userId)
+    .first<{ locale: string }>();
+
+  const locale = user?.locale === "en" ? "en" : "fa";
+
+  await env.PROFILE_VECTORS.upsert([
+    {
+      id: row.vector_id,
+      values: vector.values,
+      metadata: {
+        userId,
+        locale,
+        discoverable: enabled,
+        safetyTier: row.safety_tier,
+        profileVersion: row.version,
+        intentPrimary: row.primary_intent,
+        profileBucket: row.profile_bucket,
+      },
+    },
+  ]);
+};
