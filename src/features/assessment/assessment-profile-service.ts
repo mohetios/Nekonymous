@@ -7,6 +7,7 @@ import {
   computeSafetyTier,
 } from "./scoring";
 import { scoresFromJson, scoresToJson } from "./assessment-scores";
+import { incrementPlatformStat } from "../platform/platform-stats-service";
 
 export type AssessmentProfileRow = {
   user_id: string;
@@ -156,6 +157,8 @@ export const saveAssessmentProfile = async (
       now
     )
     .run();
+
+  await incrementPlatformStat(env, "assessment_completions");
 };
 
 export const updateProfileVectorStatus = async (
@@ -203,15 +206,6 @@ export const setDiscoverable = async (
      WHERE user_id = ? AND status = 'completed'`
   )
     .bind(enabled ? 1 : 0, now, userId)
-    .run();
-};
-
-export const resetUserAssessmentProfile = async (
-  userId: string,
-  env: Environment
-): Promise<void> => {
-  await env.DB.prepare("DELETE FROM assessment_profiles WHERE user_id = ?")
-    .bind(userId)
     .run();
 };
 

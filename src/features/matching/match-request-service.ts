@@ -15,6 +15,7 @@ import {
 import { enqueueTelegramOutbox, sendViaOutboxDo } from "../../storage/telegram-outbox-client";
 import type { MessagePayload } from "../../types";
 import { clearDraft } from "../../storage/user-state-client";
+import { incrementPlatformStat } from "../platform/platform-stats-service";
 import {
   MATCH_REQUEST_TTL_MS,
   MATCH_PENDING_LIST_LIMIT,
@@ -384,6 +385,7 @@ export const createMatchRequest = async (
   }
 
   await markSuggestionAction(suggestionId, "requested", env);
+  await incrementPlatformStat(env, "match_requests");
   await recordMatchEvent(env, {
     type: "request_created",
     userId: requesterUserId,

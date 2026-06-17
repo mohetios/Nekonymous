@@ -4,6 +4,7 @@
 PRAGMA foreign_keys = OFF;
 
 DROP TABLE IF EXISTS match_events;
+DROP TABLE IF EXISTS platform_stats;
 DROP TABLE IF EXISTS match_suggestions;
 DROP TABLE IF EXISTS match_blocks;
 DROP TABLE IF EXISTS match_requests;

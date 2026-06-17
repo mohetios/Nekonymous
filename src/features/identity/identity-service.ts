@@ -8,7 +8,7 @@ import {
   generateOpaqueId,
   hmacTelegramUserId,
 } from "../../crypto/crypto-service";
-import { getUserState, initUserState } from "../../storage/user-state-client";
+import { getUserState, initUserState, purgeUserState } from "../../storage/user-state-client";
 
 export const ensureUserStateInitialized = async (
   env: Environment,
@@ -150,6 +150,101 @@ export const getUserByTelegramHash = async (
   return row ? rowToD1User(row) : null;
 };
 
+const getUserByTelegramHashAnyStatus = async (
+  telegramHash: string,
+  env: Environment
+): Promise<D1User | null> => {
+  const row = await env.DB.prepare(
+    "SELECT * FROM users WHERE telegram_user_hash = ?"
+  )
+    .bind(telegramHash)
+    .first();
+
+  return row ? rowToD1User(row) : null;
+};
+
+/** Permanently remove a user and all D1 rows tied to them. KV + Vectorize best-effort. */
+export const hardDeleteUserAccount = async (
+  userId: string,
+  env: Environment
+): Promise<void> => {
+  const [user, links, vectorRow] = await Promise.all([
+    env.DB.prepare(
+      "SELECT telegram_user_hash FROM users WHERE id = ?"
+    )
+      .bind(userId)
+      .first<{ telegram_user_hash: string }>(),
+    env.DB.prepare(
+      "SELECT slug FROM public_links WHERE owner_user_id = ?"
+    )
+      .bind(userId)
+      .all<{ slug: string }>(),
+    env.DB.prepare(
+      "SELECT vector_id FROM assessment_profiles WHERE user_id = ?"
+    )
+      .bind(userId)
+      .first<{ vector_id: string | null }>(),
+  ]);
+
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM assessment_answers WHERE user_id = ?").bind(
+      userId
+    ),
+    env.DB.prepare("DELETE FROM assessment_attempts WHERE user_id = ?").bind(
+      userId
+    ),
+    env.DB.prepare("DELETE FROM assessment_profiles WHERE user_id = ?").bind(
+      userId
+    ),
+    env.DB.prepare(
+      "DELETE FROM profile_vector_index_events WHERE user_id = ?"
+    ).bind(userId),
+    env.DB.prepare(
+      `DELETE FROM match_requests
+       WHERE requester_user_id = ? OR candidate_user_id = ?`
+    ).bind(userId, userId),
+    env.DB.prepare(
+      `DELETE FROM match_suggestions
+       WHERE user_id = ? OR candidate_user_id = ?`
+    ).bind(userId, userId),
+    env.DB.prepare(
+      `DELETE FROM match_blocks
+       WHERE user_id = ? OR blocked_user_id = ?`
+    ).bind(userId, userId),
+    env.DB.prepare(
+      "DELETE FROM match_events WHERE user_id = ? OR target_user_id = ?"
+    ).bind(userId, userId),
+    env.DB.prepare("DELETE FROM consents WHERE user_id = ?").bind(userId),
+    env.DB.prepare(
+      `DELETE FROM reports
+       WHERE reporter_user_id = ? OR reported_user_id = ?`
+    ).bind(userId, userId),
+    env.DB.prepare(
+      `DELETE FROM conversations WHERE user_a_id = ? OR user_b_id = ?`
+    ).bind(userId, userId),
+    env.DB.prepare("DELETE FROM public_links WHERE owner_user_id = ?").bind(
+      userId
+    ),
+    env.DB.prepare("DELETE FROM users WHERE id = ?").bind(userId),
+  ]);
+
+  const vectorId = vectorRow?.vector_id;
+  if (vectorId) {
+    try {
+      await env.PROFILE_VECTORS.deleteByIds([vectorId]);
+    } catch {
+      // Vector may already be gone.
+    }
+  }
+
+  if (user) {
+    await env.NEKO_KV.delete(tgCacheKey(user.telegram_user_hash));
+  }
+  for (const link of links.results ?? []) {
+    await env.NEKO_KV.delete(linkCacheKey(link.slug));
+  }
+};
+
 export const getUserByPublicSlug = async (
   slug: string,
   env: Environment
@@ -218,30 +313,45 @@ export const createUserFromTelegram = async (
     env.APP_MASTER_KEY
   );
 
-  try {
-    await env.DB.prepare(
-      `INSERT INTO users (
-        id, telegram_user_hash, telegram_chat_ciphertext,
-        locale, locale_source, onboarding_completed,
-        status, bucket_id, created_at, updated_at
-      ) VALUES (?, ?, ?, 'fa', 'fallback', 0, 'active', ?, ?, ?)`
-    )
-      .bind(
-        userId,
-        telegramHash,
-        chatCiphertext,
-        bucketForHash(telegramHash),
-        now,
-        now
+  const insertUserRow = async (): Promise<boolean> => {
+    try {
+      await env.DB.prepare(
+        `INSERT INTO users (
+          id, telegram_user_hash, telegram_chat_ciphertext,
+          locale, locale_source, onboarding_completed,
+          status, bucket_id, created_at, updated_at
+        ) VALUES (?, ?, ?, 'fa', 'fallback', 0, 'active', ?, ?, ?)`
       )
-      .run();
-  } catch {
+        .bind(
+          userId,
+          telegramHash,
+          chatCiphertext,
+          bucketForHash(telegramHash),
+          now,
+          now
+        )
+        .run();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  if (!(await insertUserRow())) {
     const existing = await getUserByTelegramHash(telegramHash, env);
     if (existing) {
       await ensureUserStateInitialized(env, existing.id);
-      return existing;
+      return refreshTelegramChatIdIfNeeded(ctx, existing, env);
     }
-    throw new Error("Failed to create user");
+
+    const leftover = await getUserByTelegramHashAnyStatus(telegramHash, env);
+    if (leftover) {
+      await hardDeleteUserAccount(leftover.id, env);
+    }
+
+    if (!(await insertUserRow())) {
+      throw new Error("Failed to create user");
+    }
   }
 
   const slug = await createPublicLinkForUser(userId, env);
@@ -292,41 +402,14 @@ export const getActiveSlugForUser = async (
   return row?.slug ?? null;
 };
 
-export const deactivateUser = async (
+export const clearUserAccountAndRecreate = async (
+  ctx: Context,
   userId: string,
   env: Environment
-): Promise<void> => {
-  const now = Date.now();
-
-  const [user, links] = await Promise.all([
-    env.DB.prepare(
-      "SELECT telegram_user_hash FROM users WHERE id = ?"
-    )
-      .bind(userId)
-      .first<{ telegram_user_hash: string }>(),
-    env.DB.prepare(
-      "SELECT slug FROM public_links WHERE owner_user_id = ?"
-    )
-      .bind(userId)
-      .all<{ slug: string }>(),
-  ]);
-
-  await env.DB.batch([
-    env.DB.prepare(
-      "UPDATE users SET status = 'deleted', updated_at = ? WHERE id = ?"
-    ).bind(now, userId),
-    env.DB.prepare(
-      "UPDATE public_links SET is_active = 0, updated_at = ? WHERE owner_user_id = ?"
-    ).bind(now, userId),
-  ]);
-
-  if (user) {
-    await env.NEKO_KV.delete(tgCacheKey(user.telegram_user_hash));
-  }
-
-  for (const link of links.results ?? []) {
-    await env.NEKO_KV.delete(linkCacheKey(link.slug));
-  }
+): Promise<D1User> => {
+  await purgeUserState(env, userId);
+  await hardDeleteUserAccount(userId, env);
+  return createUserFromTelegram(ctx, env);
 };
 
 export const toBotUser = async (

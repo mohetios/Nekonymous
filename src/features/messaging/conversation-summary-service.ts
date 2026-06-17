@@ -1,4 +1,5 @@
 import type { Environment } from "../../types";
+import { incrementPlatformStat } from "../platform/platform-stats-service";
 
 const nowMs = (): number => Date.now();
 
@@ -22,45 +23,8 @@ export const upsertConversationSummary = async (
   )
     .bind(conversationId, userAId, userBId, now, now, now)
     .run();
+
+  await incrementPlatformStat(env, "messages_relayed");
 };
 
-export const getPublicStats = async (
-  env: Environment
-): Promise<{
-  usersCount: number;
-  conversationsCount: number;
-  assessmentProfilesCount: number;
-  discoverableProfilesCount: number;
-  matchRequestsCount: number;
-}> => {
-  const count = async (sql: string): Promise<number> => {
-    try {
-      const row = await env.DB.prepare(sql).first<{ count: number }>();
-      return row?.count ?? 0;
-    } catch {
-      return 0;
-    }
-  };
-
-  const [
-    usersCount,
-    conversationsCount,
-    assessmentProfilesCount,
-    discoverableProfilesCount,
-    matchRequestsCount,
-  ] = await Promise.all([
-    count("SELECT COUNT(*) AS count FROM users WHERE status = 'active'"),
-    count("SELECT COALESCE(SUM(message_count), 0) AS count FROM conversations"),
-    count("SELECT COUNT(*) AS count FROM assessment_profiles WHERE status = 'completed'"),
-    count("SELECT COUNT(*) AS count FROM assessment_profiles WHERE discoverable = 1"),
-    count("SELECT COUNT(*) AS count FROM match_requests"),
-  ]);
-
-  return {
-    usersCount,
-    conversationsCount,
-    assessmentProfilesCount,
-    discoverableProfilesCount,
-    matchRequestsCount,
-  };
-};
+export { getPlatformStats as getPublicStats } from "../platform/platform-stats-service";

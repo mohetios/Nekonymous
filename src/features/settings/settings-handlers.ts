@@ -45,13 +45,11 @@ import {
   sanitizeDisplayName,
 } from "../../utils/user";
 import {
-  createUserFromTelegram,
-  deactivateUser,
+  clearUserAccountAndRecreate,
   resolveOrCreateUser,
   toBotUser,
 } from "../identity/identity-service";
 import { encryptDisplayName } from "../../crypto/crypto-service";
-import { resetUserAssessmentProfile } from "../assessment/assessment-profile-service";
 import {
   countUserMatchHistory,
   resetUserMatchHistory,
@@ -60,7 +58,6 @@ import {
   clearBlocks,
   clearDraft,
   isRateLimited,
-  purgeUserState,
   setDisplayName,
   setDraft,
   setPaused,
@@ -409,10 +406,7 @@ export const handleSettingsMenu = async (
       }
 
       try {
-        await resetUserAssessmentProfile(user.id, env);
-        await purgeUserState(env, user.id);
-        await deactivateUser(user.id, env);
-        const freshD1 = await createUserFromTelegram(ctx, env);
+        const freshD1 = await clearUserAccountAndRecreate(ctx, user.id, env);
         const freshUser = await toBotUser(freshD1, env);
         await clearDraft(env, freshUser.id);
         await ctx.reply(

@@ -2,7 +2,7 @@
 
 ## Prime Directive
 
-Nekonymous runs as a single Cloudflare Worker with a Telegram webhook and lightweight HTML pages. Server code must be small, edge-safe, low-CPU, and predictable.
+Nekonymous runs as a **single Cloudflare Worker** with a **Telegram webhook only** (no public HTML site in V1). Server code must be small, edge-safe, low-CPU, and predictable.
 
 When changing bot logic, crypto, D1, KV cache, Durable Objects, queues, or Worker routes, optimize for:
 
@@ -47,7 +47,9 @@ Keep reports short and practical.
 
 ## Current Project Identity
 
-Nekonymous is a secure anonymous Telegram messaging bot. Users share a personal link slug; others message them without revealing identity. Replies stay anonymous in both directions.
+Nekonymous is a secure anonymous Telegram messaging bot with optional conversation-style **assessment** and opt-in **matching**.
+
+Users share a personal link slug; others message them without revealing identity. Replies stay anonymous in both directions.
 
 The product should feel:
 
@@ -61,92 +63,94 @@ The product should feel:
 
 Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nekonymous`).
 
-V1 treats old KV user/conversation/inbox storage as disposable. Do not add legacy fallback, dual-read, or dual-write paths.
+**V1 rules:**
+
+- No legacy KV inbox/conversation storage. Do not add dual-read, dual-write, or migration fallbacks.
+- No soft-deleted user rows for account reset — use hard delete (`hardDeleteUserAccount`).
+- Assessment schema version is **`v1`** only (`ASSESSMENT_VERSION` in `question-bank.ts`).
+- User-facing copy says **ارزیابی**, not تست. Command is `/assessment` only (no `/test`).
 
 ## Current Stack
 
 - **Cloudflare Workers** — single Worker entry (`src/index.ts`) + queue consumer
 - **Grammy** — Telegram bot framework (`grammy`)
-- **Cloudflare D1** — users, public links, conversation summaries, reports, consents
+- **Cloudflare D1** — users, links, conversation summaries, assessment, matching, anonymous `platform_stats`
 - **Cloudflare KV** — routing/cache only (`tg:{hash}`, `link:{slug}`)
-- **Cloudflare Durable Objects (SQLite)** — per-user hot state (`UserStateDurableObject`) and idempotent Telegram outbox (`TelegramOutboxDurableObject`)
+- **Cloudflare Durable Objects (SQLite)** — `UserStateDurableObject`, `TelegramOutboxDurableObject`
 - **Cloudflare Queues** — `telegram-outbox` for non-critical outbound Telegram sends
 - **Web Crypto API** — HMAC, HKDF-SHA-256, AES-256-GCM (`src/crypto/crypto-service.ts`)
 - **Workers AI + Vectorize** — profile embeddings for assessment/matching (`env.AI`, `env.PROFILE_VECTORS`)
-- **Tailwind CSS 2 (CDN)** — static HTML pages only
 - **Wrangler 4** — dev and deploy (`wrangler.jsonc`)
-- **pnpm** — package manager (lockfile present; CI still uses `npm install`)
+- **pnpm** — package manager
 
-There is no Nuxt, GraphQL, separate `workers/` package, or frontend SPA.
+There is no Nuxt, GraphQL, separate `workers/` package, public website, or frontend SPA.
 
 ## Main Folder Model
 
 ```
 src/
-├── index.ts                    # thin entry: DO exports, fetch, queue
-├── types.ts                    # Environment, BotUser, D1User, ticket types
+├── index.ts                         # DO exports, fetch, queue
+├── types.ts                         # Environment, BotUser, D1User, ticket types
 ├── bot/
-│   ├── create-bot.ts           # createBot(), defer middleware, bot cache
-│   ├── register-handlers.ts    # command/callback wiring
-│   ├── router.ts               # public pages + /bot webhook routes
-│   ├── menu.ts                 # MENU labels, handleMenuCommand
-│   └── keyboards.ts            # reply/inline keyboards
+│   ├── create-bot.ts
+│   ├── register-handlers.ts         # command/callback wiring
+│   ├── router.ts                    # POST /bot webhook only
+│   ├── menu.ts
+│   ├── menu-labels.ts
+│   └── keyboards.ts
 ├── features/
 │   ├── identity/
-│   │   └── identity-service.ts # D1 users, public links, KV routing cache
+│   │   └── identity-service.ts      # users, links, KV cache, hard delete, recreate
 │   ├── messaging/
 │   │   ├── messaging-service.ts
-│   │   ├── messaging-commands.ts   # /start, /inbox, message routing
-│   │   ├── messaging-actions.ts    # reply, block, unblock, nickname, report
+│   │   ├── messaging-commands.ts    # /start, /inbox
+│   │   ├── messaging-actions.ts     # reply, block, nickname, report
 │   │   ├── payload-service.ts
 │   │   ├── conversation-summary-service.ts
 │   │   └── report-service.ts
 │   ├── settings/
 │   │   ├── settings-handlers.ts
 │   │   └── settings-copy.ts
-│   ├── assessment/             # conversation-style questionnaire (not unit tests)
+│   ├── assessment/                  # 56-question / 14-dimension flow (v1)
 │   │   ├── assessment-handlers.ts
 │   │   ├── assessment-flow-service.ts
 │   │   ├── assessment-profile-service.ts
+│   │   ├── assessment-scores.ts
+│   │   ├── profile-vector-service.ts
 │   │   ├── question-bank.ts, scoring.ts, keyboards.ts, …
-│   └── matching/
-│       ├── match-handlers.ts, match-system-handlers.ts
-│       ├── match-service.ts, match-request-service.ts, …
+│   ├── matching/
+│   │   ├── match-handlers.ts, match-system-handlers.ts
+│   │   ├── match-service.ts, match-request-service.ts
+│   │   ├── match-vector-service.ts, match-selection.ts, match-scoring.ts, …
+│   └── platform/
+│       └── platform-stats-service.ts  # anonymous lifetime counters
 ├── crypto/
-│   └── crypto-service.ts       # HMAC, encrypt/decrypt, ticket/ref generation
+│   └── crypto-service.ts
 ├── storage/
-│   ├── user-state-do.ts        # UserStateDurableObject class
-│   ├── user-state-client.ts    # UserStateDO client (only place for DO fetch calls)
-│   ├── telegram-outbox-do.ts   # TelegramOutboxDurableObject class
-│   └── telegram-outbox-client.ts  # enqueue + OutboxDO dispatch
+│   ├── user-state-do.ts
+│   ├── user-state-client.ts         # only place for UserStateDO fetch calls
+│   ├── telegram-outbox-do.ts
+│   └── telegram-outbox-client.ts
 ├── queues/
 │   ├── telegram-outbox.types.ts
 │   └── telegram-outbox.consumer.ts
-├── front/
-│   ├── layout.ts
-│   ├── home.ts                 # public stats from D1
-│   ├── about.ts
-│   └── technical.ts
 ├── i18n/
-│   └── messages.ts             # shared bot copy (Persian-first)
+│   └── messages.ts
 └── utils/
-    ├── router.ts               # generic HTTP Router class
-    ├── sender.ts               # decrypt + forward media to Telegram
-    ├── tools.ts
-    ├── user.ts                 # display-name helpers, deep-link re-exports
-    ├── contact.ts, contact-display.ts
-    ├── worker.ts               # defer via waitUntil
-    ├── telegram-limits.ts
-    ├── site.ts
-    └── logs.ts                 # logBotError only
+    ├── router.ts, sender.ts, tools.ts, user.ts, contact.ts, …
+    └── logs.ts                        # logBotError only
 
 migrations/
-└── 0001_init.sql
+├── 0001_init.sql                      # core + assessment + matching schema
+└── 0002_platform_stats.sql            # anonymous aggregate counters
 
 tools/
-├── verify-crypto.ts            # pnpm test:crypto
-├── verify-assessment.ts        # pnpm test:assessment
-└── verify-matching.ts          # pnpm test:matching
+├── verify-crypto.ts                   # pnpm test:crypto
+├── verify-assessment.ts               # pnpm test:assessment
+├── verify-matching.ts                 # pnpm test:matching
+├── flush-remote-d1.sql
+├── flush-remote.sh
+└── reset-assessment-data.sql
 ```
 
 Do not create alternative roots unless the project already uses them.
@@ -157,13 +161,10 @@ Do not create alternative roots unless the project already uses them.
 
 `src/index.ts` is the only Worker entry. It exports DO classes and delegates HTTP/queue handling.
 
-| Method | Path               | Purpose                                       |
-|--------|--------------------|-----------------------------------------------|
-| GET    | `/`                | Public home page with aggregate stats (D1)    |
-| GET    | `/about`           | About / privacy page                          |
-| GET    | `/about/technical` | Technical architecture page                   |
-| POST   | `/bot`             | Telegram webhook (`webhookCallback` + secret) |
-| queue  | `telegram-outbox`  | Outbound Telegram job consumer                |
+| Method | Path  | Purpose                                       |
+|--------|-------|-----------------------------------------------|
+| POST   | `/bot` | Telegram webhook (`webhookCallback` + secret) |
+| queue  | `telegram-outbox` | Outbound Telegram job consumer        |
 
 Route registration lives in `src/bot/router.ts`. Use `src/utils/router.ts` (`Router` class) for new HTTP routes. Do not add a second router or framework.
 
@@ -204,9 +205,21 @@ Core user flow:
 
 1. `/start` without payload → resolve/create D1 user + public link, show personal `t.me/...?start={slug}` link.
 2. `/start {slug}` → open compose draft to link owner (rate-limited, block-checked, pause-checked, no self-message).
-3. Sender sends message/media → encrypt payload + connection metadata, insert inbox ticket in recipient `UserStateDO`, upsert D1 conversation summary, notify recipient via outbox queue.
+3. Sender sends message/media → encrypt payload + connection metadata, insert inbox ticket in recipient `UserStateDO`, upsert D1 conversation summary + `platform_stats`, notify recipient via outbox queue.
 4. `/inbox` → load pending tickets from recipient `UserStateDO`, decrypt, deliver to Telegram, clear `payload_ciphertext`, keep `connection_ciphertext` for callbacks.
-5. Inline **پاسخ** / **بلاک** / **آنبلاک** / **نام مستعار** → reply draft, block list, or nickname flow. Callback data uses short refs (`r:`, `b:`, `u:`, `n:`); never trust callback data alone — load ticket from DO and verify ownership.
+5. Inline **پاسخ** / **مسدود** / **رفع مسدودیت** / **نام خصوصی** → reply draft, block list, or nickname flow. Callback data uses short refs; never trust callback data alone — load ticket from DO and verify ownership.
+
+### Account reset (پاک کردن حساب)
+
+`clearUserAccountAndRecreate` in `identity-service.ts`:
+
+1. `purgeUserState` — wipe recipient DO (inbox, drafts, blocks, assessment session, …)
+2. `hardDeleteUserAccount` — delete all D1 rows for user, Vectorize vector, KV routing keys
+3. `createUserFromTelegram` — brand-new internal user id + new public link
+
+No soft-delete. `telegram_user_hash` UNIQUE is freed by hard delete.
+
+Anonymous lifetime counters in `platform_stats` are **not** decremented on delete.
 
 ### Telegram copy
 
@@ -252,24 +265,28 @@ Rules:
 
 D1 (`env.DB`, database `nekonymous_core`) is source of truth for:
 
-- users (opaque id, `telegram_user_hash`, encrypted chat id)
-- public_links (slug → owner)
-- conversations (pair summaries, `message_count`, no plaintext body)
-- reports
-- consents
+- `users`, `public_links`
+- `conversations` (pair summaries, counts only)
+- `reports`, `consents`
+- `assessment_profiles`, `assessment_attempts`, `assessment_answers`
+- `profile_vector_index_events`
+- `match_suggestions`, `match_requests`, `match_blocks`, `match_events`
+- `platform_stats` (single row, no user ids — lifetime anonymous counters)
 
-Schema: `migrations/0001_core.sql`. Apply with:
+Apply migrations:
 
 ```bash
-wrangler d1 migrations apply nekonymous_core --local
-wrangler d1 migrations apply nekonymous_core --remote
+pnpm db:migrations:apply:local
+pnpm db:migrations:apply:remote
 ```
 
 Prefer:
 
 - bounded queries with indexes
-- `features/identity/identity-service.ts` and `features/messaging/conversation-summary-service.ts` for D1 access
-- assessment profile D1 in `features/assessment/assessment-profile-service.ts`
+- `features/identity/identity-service.ts` for users/links/delete
+- `features/assessment/assessment-profile-service.ts` for assessment D1
+- `features/messaging/conversation-summary-service.ts` for conversation upserts
+- `features/platform/platform-stats-service.ts` for public aggregate stats
 - upsert conversation summaries on send — no message body in D1
 
 Avoid:
@@ -277,20 +294,21 @@ Avoid:
 - storing plaintext message bodies or decrypted nicknames in D1
 - storing hot inbox payloads, drafts, blocks, or labels in D1
 - full-table scans in webhook paths
+- soft-deleting users (`status = 'deleted'`) — hard delete instead
 
 ## KV Rules
 
 `env.NEKO_KV` is **routing/cache only**. Access via `features/identity/identity-service.ts`.
 
-| Key pattern        | Value   | Purpose                    |
-|--------------------|---------|----------------------------|
-| `tg:{telegramHash}`| user id | Telegram hash → user id   |
-| `link:{slug}`      | user id | Public slug → user id      |
+| Key pattern         | Value   | Purpose                  |
+|---------------------|---------|--------------------------|
+| `tg:{telegramHash}` | user id | Telegram hash → user id |
+| `link:{slug}`       | user id | Public slug → user id   |
 
 Prefer:
 
 - D1 as source of truth; KV as optional acceleration
-- delete stale cache keys when D1 lookup misses
+- delete stale cache keys when D1 lookup misses or on hard delete
 - direct `env.NEKO_KV.put/get/delete` in identity service — no `KVModel` wrapper
 
 Avoid:
@@ -314,7 +332,7 @@ One DO per internal user id (`idFromName(userId)`). Authority for:
 
 All DO calls go through `src/storage/user-state-client.ts` using `https://user-state/...` URLs.
 
-Key endpoints: `/init`, `/state`, `/set-draft`, `/add-ticket`, `/pending-inbox`, `/mark-delivered`, `/ticket/:ref`, `/add-block`, `/remove-block`, `/set-label`, `/check-can-receive`, `/check-rate-limit`, `/purge`, `/assessment/*` (assessment session).
+Key endpoints: `/init`, `/state`, `/set-draft`, `/add-ticket`, `/pending-inbox`, `/mark-delivered`, `/ticket/:ref`, `/add-block`, `/remove-block`, `/set-label`, `/check-can-receive`, `/check-rate-limit`, `/purge`, `/assessment/*`.
 
 Inbox cap: 50 tickets per user DO. Pending tickets indexed by `status = 'pending'`.
 
@@ -334,6 +352,25 @@ Avoid:
 
 - storing plaintext secrets in outbox DO logs
 - unbounded inbox or outbox table growth without caps/eviction
+
+## Assessment and Matching (V1)
+
+### Assessment
+
+- **56 questions**, **14 dimensions**, version **`v1`**
+- Active progress in `UserStateDO.assessment_sessions`
+- Completed profile in D1 `assessment_profiles` (`dimension_scores_json`, controlled `profile_summary_text`)
+- Vector id: `profile:{userId}:v1`
+- Discoverability off by default; user opts in for matching
+
+### Matching
+
+1. Vectorize `topK` with metadata filters (`discoverable`, `locale`, `safetyTier`, `profileVersion`)
+2. Merge with bounded recent discoverable D1 profiles when index is sparse (`fetchD1FallbackProfiles`)
+3. Deterministic scoring in `match-scoring.ts` (Vectorize narrows; code decides)
+4. Match request → candidate accept → normal inbox ticket
+
+Do not add version-specific ranking hacks beyond `ASSESSMENT_VERSION === "v1"`.
 
 ## Cloudflare Worker Performance Rules
 
@@ -421,14 +458,14 @@ PROFILE_VECTORS
 BOT_INFO
 BOT_NAME
 BOT_USERNAME
-PUBLIC_SITE_URL?
+PUBLIC_SITE_URL?   // optional; no public pages in V1 bot-only deploy
 ```
 
 Rules:
 
 - read bindings from the `env` argument passed into handlers
 - extend `Environment` when adding a new binding — do not use untyped `env.FOO` elsewhere
-- never expose secrets in HTML pages or Telegram messages
+- never expose secrets in Telegram messages
 - webhook route must keep `secretToken: env.BOT_SECRET_KEY` validation
 
 Do not rely on `process.env` in Worker runtime code.
@@ -481,23 +518,9 @@ Validate at the boundary:
 
 Prefer small explicit checks in the handler. Do not add a validation framework.
 
-Public stats use bounded D1 aggregates (`getPublicStats`). Do not replace with full-table scans as data grows without pagination design.
+Public stats use `getPlatformStats` (anonymous counters + live active-user count). Do not replace with unbounded full-table scans as data grows.
 
 Return practical user-safe Persian errors. Keep internal details out of Telegram replies.
-
-## Static Front Pages Rules
-
-Public HTML lives in `src/front/` as template strings — not a SPA.
-
-- `layout.ts` provides RTL Persian shell, Tailwind 2 CDN, Vazirmatn font.
-- `home.ts` fetches GitHub commit info and D1 stats — keep external fetches fail-soft.
-- `about.ts` is static explanatory content.
-
-Rules:
-
-- keep pages server-rendered strings; do not introduce Nuxt/React/Vue for these routes without explicit approval
-- preserve RTL (`lang="fa"`, `direction: rtl`)
-- sanitize any user-derived HTML (there is currently none — keep it that way)
 
 ## TypeScript Rules
 
@@ -512,14 +535,6 @@ Prefer strict, boring TypeScript.
 ## Dependencies Rules
 
 Do not add production dependencies unless explicitly approved.
-
-Before proposing a dependency, check:
-
-- Can this be done with Web APIs?
-- Can this be done with a small helper in `src/utils/` or a `features/*` module?
-- Is the library Worker-compatible?
-- Does it pull Node-only transitive dependencies?
-- Does it increase the webhook bundle size?
 
 Current approved runtime deps: `grammy`, `@cloudflare/workers-types`.
 
@@ -541,17 +556,15 @@ pnpm knip
 pnpm check
 ```
 
-`pnpm check` runs typecheck, lint, knip, `test:crypto`, and `test:matching`.
-TypeScript also enforces `noUnusedLocals` and `noUnusedParameters`.
+`pnpm check` runs typecheck, lint, knip, `test:crypto`, `test:assessment`, and `test:matching`.
 
 Only run when explicitly requested or clearly required:
 
 ```bash
 pnpm dev
 pnpm deploy
-wrangler deploy
-wrangler d1 migrations apply nekonymous_core --remote
-wrangler kv key list --binding NEKO_KV --remote
+wrangler d1 migrations apply DB --remote
+./tools/flush-remote.sh          # destructive: D1 + KV + Vectorize reset
 ```
 
 Never run destructive KV clears, deploy, or production Wrangler commands without explicit confirmation.
@@ -561,34 +574,7 @@ Never run destructive KV clears, deploy, or production Wrangler commands without
 - Inspect before editing.
 - Preserve unrelated changes.
 - Do not remove files unless directly required.
-- Do not rewrite large files for style-only reasons.
-- If unexpected workspace changes exist, do not overwrite them.
-
-Default branch for deploy workflow is `master`.
-
-## Cursor / Codex Behavior Rules
-
-This file is the project source of truth for coding-agent behavior.
-
-For Codex:
-
-- keep this file near the repository root
-- avoid bloating it beyond useful project-specific instructions
-
-For Cursor:
-
-- prefer this root `AGENTS.md` as shared guidance
-- if Cursor rules are added, make them short bridges to this file
-
-When working as an agent:
-
-- follow project patterns over generic framework advice
-- do not create files just because a template suggests them
-- do not add docs unless requested
-- do not add tests unless the project already has a clear test pattern or the task asks for them
-- do not "improve" unrelated code
-- do not replace working compact code with enterprise architecture
-- do not reintroduce legacy KV conversation storage, `InboxSqliteDurableObject`, or `KVModel`
+- Default branch for deploy workflow is `master`.
 
 ## Server Code Review Checklist
 
@@ -602,21 +588,7 @@ Before finalizing a Worker/bot change, verify:
 - Are inbox operations going through `user-state-client.ts`?
 - Are messages encrypted at rest and payloads cleared after delivery?
 - Are block checks and rate limits enforced server-side via UserStateDO?
+- Does account reset hard-delete user data (not soft-delete)?
 - Are webhook secrets and crypto material never logged?
 - Did this avoid unnecessary dependencies and abstraction layers?
 - Did this avoid legacy `user:`, `conversation:`, `userUUIDtoId:`, or `stats:` KV keys?
-
-## Default Answer Format for Implementation Tasks
-
-When asked to give AI editor/Codex instructions, provide a complete implementable brief with:
-
-- objective
-- target files
-- constraints
-- generated base code or exact patch guidance when practical
-- adaptation notes
-- acceptance criteria
-- what not to change
-- checks to run
-
-The brief should be complete enough that the editor agent can implement without guessing.
