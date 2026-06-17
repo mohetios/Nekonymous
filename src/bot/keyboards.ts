@@ -1,7 +1,7 @@
 import { InlineKeyboard, Keyboard } from "grammy";
 import type { MatchHubMenuVariant } from "../features/matching/match-types";
 import { assertCallbackData } from "../utils/telegram-limits";
-import { MENU } from "./menu";
+import { MENU } from "./menu-labels";
 
 const INBOX_BUTTON = {
   block: "🚫 بلاک",
