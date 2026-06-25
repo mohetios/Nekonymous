@@ -49,30 +49,12 @@ const fs=require('fs');const j=JSON.parse(fs.readFileSync(0,'utf8'));
 if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 "
 
-echo "==> setMyShortDescription (fa)"
-SHORT="نِکونیموس — پیام ناشناس فارسی‌محور، لینک شخصی، ارزیابی سبک گفت‌وگو و مچ‌یابی اختیاری."
-tg_post setMyShortDescription \
-  --data-urlencode "short_description=${SHORT}" \
-  --data-urlencode "language_code=fa" | node -e "
-const fs=require('fs');const j=JSON.parse(fs.readFileSync(0,'utf8'));
-if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
-"
-
 echo "==> setMyDescription (en)"
 read -r -d '' DESCRIPTION_EN <<'EOF' || true
 Nekonymous is a Persian-first anonymous messaging bot. Create a personal link, receive anonymous messages, reply anonymously, explore your conversation style, and optionally discover matches. Messages are processed through Telegram and the bot server; stored data is minimized where possible and encrypted at rest.
 EOF
 tg_post setMyDescription \
   --data-urlencode "description=${DESCRIPTION_EN}" \
-  --data-urlencode "language_code=en" | node -e "
-const fs=require('fs');const j=JSON.parse(fs.readFileSync(0,'utf8'));
-if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
-"
-
-echo "==> setMyShortDescription (en)"
-SHORT_EN="Nekonymous — Persian-first anonymous bot: personal link, assessment, and optional matching."
-tg_post setMyShortDescription \
-  --data-urlencode "short_description=${SHORT_EN}" \
   --data-urlencode "language_code=en" | node -e "
 const fs=require('fs');const j=JSON.parse(fs.readFileSync(0,'utf8'));
 if(!j.ok){console.error(j);process.exit(1)} console.log('ok');

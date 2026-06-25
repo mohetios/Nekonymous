@@ -1,7 +1,8 @@
 {
   "name": "nekonymous",
   "version": "0.1.0",
-  "description": "Persian-first anonymous Telegram bot on Cloudflare Workers: deep-link messaging, conversation-style assessment, and opt-in matching.",
+  "description": "Persian-first anonymous Telegram bot for personal deep-link messaging, assessment, and opt-in matching",
+  "license": "MIT",
   "homepage": "https://nekonymous.mohetios.dev",
   "repository": {
     "type": "git",

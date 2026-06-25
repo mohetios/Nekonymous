@@ -1,5 +1,7 @@
 # Nekonymous Matching V1
 
+See also [README](../../README.md) and [docs/security/threat-model.md](../security/threat-model.md).
+
 Nekonymous matching is approximate and opt-in. It is a conversation-style product signal for starting anonymous Telegram conversations, not a diagnosis, dating mode, or exact compatibility system.
 
 ## Data Flow

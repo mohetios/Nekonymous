@@ -1,5 +1,7 @@
 # Nekonymous V1 Threat Model
 
+See also [README](../../README.md) and [SECURITY.md](../../SECURITY.md).
+
 Nekonymous V1 is a hosted anonymous Telegram relay.
 
 It hides users from each other and avoids storing a plain anonymous message transcript. Stored message payloads and route metadata are encrypted at rest. Reply routing uses short-lived capabilities held in Telegram private chat buttons.

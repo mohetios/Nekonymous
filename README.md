@@ -4,6 +4,9 @@
 
 The project began as a small anonymous messaging bot and grew into a careful experiment in safer anonymous conversations: private inbox workflows, assessment-based conversation signals, and opt-in matching — without turning anonymity into marketing claims.
 
+- **Project home:** [nekonymous.mohetios.dev](https://nekonymous.mohetios.dev)
+- **Source:** [github.com/mohetios/Nekonymous](https://github.com/mohetios/Nekonymous)
+
 ---
 
 ## Status
@@ -253,7 +256,7 @@ Settings → **پاک کردن حساب** calls `clearUserAccountAndRecreate`:
 - legal or platform-level access to Telegram data
 - perfect anonymity or identity guarantees
 
-For a maintainer-oriented threat model, see [docs/security/threat-model.md](./docs/security/threat-model.md) (includes D1 leak scenarios and D1 vs Vectorize roles). There is no top-level `SECURITY.md` in this repository yet.
+For vulnerability reporting, see [SECURITY.md](./SECURITY.md). For a maintainer-oriented threat model (D1 leak scenarios, D1 vs Vectorize roles), see [docs/security/threat-model.md](./docs/security/threat-model.md).
 
 ---
 
@@ -527,6 +530,7 @@ Runs `typecheck`, `lint`, `knip`, `test:ticketing`, `test:assessment`, and `test
 
 ### V1 release checklist
 
+- [ ] `LICENSE`, `SECURITY.md`, and `CONTRIBUTING.md` in place
 - [ ] README updated
 - [ ] `.env.example` checked against `Environment` in `src/types.ts`
 - [ ] Security model documented; no E2EE or zero-knowledge claims
@@ -568,7 +572,10 @@ tools/                     # verify-*, flush-remote.*
 docs/
   architecture/matching-v1.md
   security/threat-model.md
-.github/workflows/         # check.yml, deploy.yml
+.github/workflows/         # check.yml, deploy.yml (manual only)
+LICENSE
+SECURITY.md
+CONTRIBUTING.md
 ```
 
 There is no separate `src/crypto/` package; cryptography lives in `src/ticketing/ticketing-service.ts`.
@@ -610,32 +617,16 @@ There is no separate `src/crypto/` package; cryptography lives in `src/ticketing
 
 ## Contributing
 
-Contributions are welcome. For large changes, open an issue first.
-
-**Guidelines:**
-
-- Keep security claims precise and honest — no E2EE, zero-knowledge, or “100% anonymous” language.
-- Prefer small, focused diffs over broad rewrites.
-- Keep Telegram callback data language-independent (`r:`, `m:`, `t:`, `ms:`, …).
-- Keep Persian-first user-facing copy consistent.
-- Add or update tests for crypto, matching, assessment, storage, and reset flows when touching those areas.
-- Do not store plaintext message bodies, raw Telegram ids, or raw callback capabilities in D1 or KV.
-- Do not use KV as source of truth for inbox or profile data.
-- Read [AGENTS.md](./AGENTS.md) before editing Worker hot paths.
-
-There is no `CONTRIBUTING.md` in this repository yet.
+Contributions are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md) for principles, local checks, and security reporting. Maintainer-oriented Worker rules live in [AGENTS.md](./AGENTS.md).
 
 ---
 
 ## License
 
-License: not specified yet.
+MIT License. See [LICENSE](./LICENSE).
 
 ---
 
 ## Maintainer
 
 Built by **Ali Zemani** ([Mohetios](https://mohetios.dev)).
-
-- Project home: [nekonymous.mohetios.dev](https://nekonymous.mohetios.dev)
-- Source: [github.com/mohetios/Nekonymous](https://github.com/mohetios/Nekonymous)
