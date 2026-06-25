@@ -143,7 +143,7 @@ See also [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) 
 
 ### D1
 
-Migrations: `migrations/0001_init.sql`, `migrations/0002_platform_stats.sql`.
+Migrations: `migrations/0001_init.sql` only (squashed V1 schema).
 
 | Area | Tables |
 |------|--------|
@@ -440,9 +440,7 @@ D1 database name: **`nekonymous_core`**, binding: **`DB`**, migrations directory
 
 | File | Purpose |
 |------|---------|
-| `0001_init.sql` | Core schema: users, links, assessment, matching, reports |
-| `0002_platform_stats.sql` | Anonymous `platform_stats` row |
-| `0003_drop_legacy_d1_tables.sql` | Drops unused legacy `conversations` and `consents` tables |
+| `0001_init.sql` | Full V1 schema: users, links, assessment, matching, reports, `platform_stats` |
 
 ```bash
 # Local (wrangler dev --local)

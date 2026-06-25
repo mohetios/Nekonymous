@@ -1,4 +1,4 @@
--- Nekonymous core schema (single init migration, assessment v1)
+-- Nekonymous V1 core schema (single squashed init migration)
 
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -34,27 +34,6 @@ CREATE TABLE IF NOT EXISTS public_links (
 CREATE INDEX IF NOT EXISTS idx_public_links_owner ON public_links(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_public_links_active ON public_links(is_active);
 
-CREATE TABLE IF NOT EXISTS conversations (
-  id TEXT PRIMARY KEY,
-  type TEXT NOT NULL DEFAULT 'anonymous_relay',
-
-  user_a_id TEXT NOT NULL,
-  user_b_id TEXT NOT NULL,
-
-  status TEXT NOT NULL DEFAULT 'active',
-  message_count INTEGER NOT NULL DEFAULT 0,
-  report_count INTEGER NOT NULL DEFAULT 0,
-  last_event_at INTEGER NOT NULL,
-
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-
-  UNIQUE(user_a_id, user_b_id, type)
-);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_user_a ON conversations(user_a_id, updated_at);
-CREATE INDEX IF NOT EXISTS idx_conversations_user_b ON conversations(user_b_id, updated_at);
-
 CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY,
 
@@ -73,19 +52,6 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE INDEX IF NOT EXISTS idx_reports_status_created ON reports(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_reports_reported ON reports(reported_user_id, created_at);
-
-CREATE TABLE IF NOT EXISTS consents (
-  id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-
-  consent_type TEXT NOT NULL,
-  version TEXT NOT NULL,
-
-  accepted_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-
-  UNIQUE(user_id, consent_type, version)
-);
 
 CREATE TABLE IF NOT EXISTS assessment_profiles (
   user_id TEXT PRIMARY KEY,
@@ -291,3 +257,13 @@ ON match_events(match_request_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_match_events_type_created
 ON match_events(type, created_at);
+
+CREATE TABLE IF NOT EXISTS platform_stats (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  messages_relayed INTEGER NOT NULL DEFAULT 0,
+  assessment_completions INTEGER NOT NULL DEFAULT 0,
+  match_requests INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+
+INSERT OR IGNORE INTO platform_stats (id, updated_at) VALUES (1, 0);

@@ -151,8 +151,7 @@ src/
     └── logs.ts                        # logBotError only
 
 migrations/
-├── 0001_init.sql                      # core + assessment + matching schema
-└── 0002_platform_stats.sql            # anonymous aggregate counters
+└── 0001_init.sql                      # squashed V1 schema + platform_stats
 
 tools/
 ├── verify-ticketing.ts                # pnpm test:ticketing
