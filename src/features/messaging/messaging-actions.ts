@@ -6,6 +6,12 @@ import {
   lookupContactLabel,
 } from "../../utils/contact";
 import {
+  createBlockHash,
+  createCapabilityLookupHash,
+  createReportPeerHash,
+  randomCapability,
+} from "../../crypto/crypto-service";
+import {
   HuhMessage,
   NICKNAME_PROMPT_MESSAGE,
   NoConversationFoundMessage,
@@ -23,16 +29,25 @@ import {
   resolveOrCreateUser,
   toBotUser,
 } from "../identity/identity-service";
-import { loadTicketForAction } from "./messaging-service";
+import {
+  deliveryContextFromTicket,
+  hasDeliverablePayload,
+  loadTicketForAction,
+  notifyMessageSeen,
+  toLegacyConversation,
+} from "./messaging-service";
 import { createReport } from "./report-service";
 import {
   addBlock,
   isRateLimited,
   markTicketReported,
+  markTicketDelivered,
   removeBlock,
   setDraft,
 } from "../../storage/user-state-client";
 import { escapeHtml, withHtml } from "../../utils/tools";
+import { sendDecryptedMessage } from "../../utils/sender";
+import { logBotError } from "../../utils/logs";
 
 const isRecipient = (
   recipientUserId: string,
@@ -50,6 +65,79 @@ const loadAction = async (
   }
 
   return loadTicketForAction(env, recipientUserId, ref);
+};
+
+export const handleOpenTicketAction = async (
+  ctx: Context,
+  env: Environment
+): Promise<void> => {
+  const from = ctx.from;
+  if (!from) {
+    await ctx.answerCallbackQuery();
+    return;
+  }
+
+  try {
+    const d1User = await resolveOrCreateUser(ctx, env);
+    const user = await toBotUser(d1User, env);
+    const loaded = await loadAction(ctx, env, user.id);
+    if (!loaded?.ticket?.payloadCiphertext) {
+      await ctx.reply(NoConversationFoundMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const delivery = await deliveryContextFromTicket(
+      env,
+      loaded.ticket,
+      user.contactLabels
+    );
+    if (!isRecipient(delivery.connection.recipientUserId, user.id)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    if (!hasDeliverablePayload(delivery.payload)) {
+      await ctx.reply(HuhMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const senderD1 = await getUserById(delivery.connection.senderUserId, env);
+    const isBlocked = senderD1
+      ? user.blockedUserIds.includes(
+          await createBlockHash(
+            env.APP_HMAC_PEPPER,
+            d1User.telegram_user_hash,
+            senderD1.telegram_user_hash
+          )
+        )
+      : false;
+
+    const actionCapability = randomCapability();
+    const actionLookupHash = await createCapabilityLookupHash(
+      actionCapability,
+      env.APP_HMAC_PEPPER
+    );
+    await sendDecryptedMessage(
+      ctx,
+      toLegacyConversation(delivery.connection, delivery.payload, 0, 0),
+      { reply_markup: createMessageKeyboard(actionCapability, isBlocked) },
+      delivery.senderLabel
+    );
+    await markTicketDelivered(env, user.id, loaded.ticket.ref, actionLookupHash);
+
+    if (senderD1) {
+      await notifyMessageSeen(
+        env,
+        senderD1,
+        delivery.connection.parent_message_id
+      ).catch((error) => logBotError("handleOpenTicketAction:seen", error));
+    }
+  } catch {
+    await ctx.reply(HuhMessage);
+  } finally {
+    await ctx.answerCallbackQuery();
+  }
 };
 
 export const handleReplyAction = async (
@@ -107,7 +195,12 @@ export const handleReplyAction = async (
     }
 
     const sender = await toBotUser(senderD1, env);
-    if (sender.blockedUserIds.includes(user.id)) {
+    const replyBlockHash = await createBlockHash(
+      env.APP_HMAC_PEPPER,
+      senderD1.telegram_user_hash,
+      d1User.telegram_user_hash
+    );
+    if (sender.blockedUserIds.includes(replyBlockHash)) {
       await ctx.reply(USER_IS_BLOCKED_MESSAGE);
       await ctx.answerCallbackQuery();
       return;
@@ -166,7 +259,7 @@ export const handleBlockAction = async (
       return;
     }
 
-    const { connection, ticket } = loaded;
+    const { connection } = loaded;
     if (!isRecipient(connection.recipientUserId, user.id)) {
       await ctx.answerCallbackQuery();
       return;
@@ -179,7 +272,13 @@ export const handleBlockAction = async (
       return;
     }
 
-    await addBlock(env, user.id, connection.senderUserId);
+    const blockHash = await createBlockHash(
+      env.APP_HMAC_PEPPER,
+      d1User.telegram_user_hash,
+      senderD1.telegram_user_hash
+    );
+
+    await addBlock(env, user.id, blockHash);
 
     await ctx.api.sendMessage(
       chatId,
@@ -187,7 +286,7 @@ export const handleBlockAction = async (
       withHtml({ reply_to_message_id: callbackMessageId })
     );
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-      reply_markup: createMessageKeyboard(ticket.ref, true),
+      reply_markup: createMessageKeyboard(ctx.match?.[1] ?? "", true),
     });
   } catch {
     await ctx.reply(HuhMessage);
@@ -218,19 +317,32 @@ export const handleUnblockAction = async (
       return;
     }
 
-    const { connection, ticket } = loaded;
+    const { connection } = loaded;
     if (!isRecipient(connection.recipientUserId, user.id)) {
       await ctx.answerCallbackQuery();
       return;
     }
 
-    if (!user.blockedUserIds.includes(connection.senderUserId)) {
+    const senderD1 = await getUserById(connection.senderUserId, env);
+    if (!senderD1) {
+      await ctx.reply(NoConversationFoundMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const blockHash = await createBlockHash(
+      env.APP_HMAC_PEPPER,
+      d1User.telegram_user_hash,
+      senderD1.telegram_user_hash
+    );
+
+    if (!user.blockedUserIds.includes(blockHash)) {
       await ctx.reply(HuhMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    await removeBlock(env, user.id, connection.senderUserId);
+    await removeBlock(env, user.id, blockHash);
 
     await ctx.api.sendMessage(
       chatId,
@@ -238,7 +350,7 @@ export const handleUnblockAction = async (
       withHtml({ reply_to_message_id: callbackMessageId })
     );
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-      reply_markup: createMessageKeyboard(ticket.ref, false),
+      reply_markup: createMessageKeyboard(ctx.match?.[1] ?? "", false),
     });
   } catch {
     await ctx.reply(HuhMessage);
@@ -299,7 +411,6 @@ export const handleNicknameAction = async (
     await setDraft(env, user.id, {
       id: "primary",
       mode: "nickname",
-      toUserId: connection.senderUserId,
       pendingNicknameAlias: connection.senderAlias,
       parent_message_id: callbackMessageId,
     });
@@ -341,10 +452,22 @@ export const handleReportAction = async (
       return;
     }
 
+    const senderD1 = await getUserById(connection.senderUserId, env);
+    if (!senderD1) {
+      await ctx.reply(NoConversationFoundMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const reportedPeerHash = await createReportPeerHash(
+      env.APP_HMAC_PEPPER,
+      d1User.telegram_user_hash,
+      senderD1.telegram_user_hash
+    );
+
     await createReport(env, {
-      reporterUserId: user.id,
-      reportedUserId: connection.senderUserId,
-      conversationId: connection.conversationId,
+      reporterUserId: d1User.telegram_user_hash,
+      reportedUserId: reportedPeerHash,
       ticketRef: ticket.ref,
       reasonCode: "inbox_report",
     });

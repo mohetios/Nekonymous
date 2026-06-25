@@ -633,15 +633,29 @@ export class UserStateDurableObject extends DurableObject<Environment> {
   }
 
   private async markDelivered(request: Request): Promise<Response> {
-    const { ref } = await request.json<{ ref: string }>();
+    const { ref, nextRef } = await request.json<{
+      ref: string;
+      nextRef?: string;
+    }>();
     const now = Date.now();
-    this.ctx.storage.sql.exec(
-      `UPDATE inbox_tickets
-       SET status = 'delivered', payload_ciphertext = NULL, delivered_at = ?
-       WHERE ref = ?`,
-      now,
-      ref
-    );
+    if (nextRef) {
+      this.ctx.storage.sql.exec(
+        `UPDATE inbox_tickets
+         SET ref = ?, status = 'delivered', payload_ciphertext = NULL, delivered_at = ?
+         WHERE ref = ? AND payload_ciphertext IS NOT NULL`,
+        nextRef,
+        now,
+        ref
+      );
+    } else {
+      this.ctx.storage.sql.exec(
+        `UPDATE inbox_tickets
+         SET status = 'delivered', payload_ciphertext = NULL, delivered_at = ?
+         WHERE ref = ?`,
+        now,
+        ref
+      );
+    }
     return Response.json({ ok: true });
   }
 

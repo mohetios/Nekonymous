@@ -40,6 +40,11 @@ import {
 import { messageToPayload } from "./payload-service";
 import { sendDecryptedMessage } from "../../utils/sender";
 import {
+  createCapabilityLookupHash,
+  createBlockHash,
+  randomCapability,
+} from "../../crypto/crypto-service";
+import {
   deliveryContextFromTicket,
   hasDeliverablePayload,
   notifyMessageSeen,
@@ -123,7 +128,13 @@ export const handleStartCommand = async (
 
     const recipient = await toBotUser(recipientD1, env);
 
-    if (recipient.blockedUserIds.includes(user.id)) {
+    const startBlockHash = await createBlockHash(
+      env.APP_HMAC_PEPPER,
+      recipientD1.telegram_user_hash,
+      d1User.telegram_user_hash
+    );
+
+    if (recipient.blockedUserIds.includes(startBlockHash)) {
       await ctx.reply(USER_IS_BLOCKED_MESSAGE);
       return;
     }
@@ -219,7 +230,7 @@ export const handleMessage = async (
           env,
           user.id,
           pendingNickname,
-          draft?.toUserId ?? user.id,
+          "",
           nickname,
           user.contactLabels
         );
@@ -276,13 +287,19 @@ export const handleMessage = async (
       return;
     }
 
-    if (recipient.blockedUserIds.includes(user.id)) {
+    const blockHash = await createBlockHash(
+      env.APP_HMAC_PEPPER,
+      recipientD1.telegram_user_hash,
+      d1User.telegram_user_hash
+    );
+
+    if (recipient.blockedUserIds.includes(blockHash)) {
       await ctx.reply(USER_IS_BLOCKED_MESSAGE);
       await clearDraft(env, user.id);
       return;
     }
 
-    const canReceive = await checkCanReceive(env, recipientD1.id, user.id);
+    const canReceive = await checkCanReceive(env, recipientD1.id, blockHash);
     if (!canReceive.ok && !isThreadReply) {
       if (canReceive.reason === "blocked") {
         await ctx.reply(USER_IS_BLOCKED_MESSAGE);
@@ -334,7 +351,8 @@ export const handleMessage = async (
         await notifyRecipientInbox(
           env,
           recipientD1,
-          result.pendingCount ?? 1
+          result.pendingCount ?? 1,
+          result.openCapability
         );
       } catch (error) {
         logBotError("handleMessage:notify", error);
@@ -381,8 +399,7 @@ export const handleInboxCommand = async (
         const delivery = await deliveryContextFromTicket(
           env,
           ticket,
-          user.contactLabels,
-          user.blockedUserIds
+          user.contactLabels
         );
 
         if (!hasDeliverablePayload(delivery.payload)) {
@@ -390,6 +407,24 @@ export const handleInboxCommand = async (
           continue;
         }
 
+        const senderD1 = await getUserById(
+          delivery.connection.senderUserId,
+          env
+        );
+        const isBlocked = senderD1
+          ? user.blockedUserIds.includes(
+              await createBlockHash(
+                env.APP_HMAC_PEPPER,
+                d1User.telegram_user_hash,
+                senderD1.telegram_user_hash
+              )
+            )
+          : false;
+        const actionCapability = randomCapability();
+        const actionLookupHash = await createCapabilityLookupHash(
+          actionCapability,
+          env.APP_HMAC_PEPPER
+        );
         const legacy = toLegacyConversation(
           delivery.connection,
           delivery.payload,
@@ -401,16 +436,15 @@ export const handleInboxCommand = async (
           ctx,
           legacy,
           {
-            reply_markup: createMessageKeyboard(ticket.ref, delivery.isBlocked),
+            reply_markup: createMessageKeyboard(
+              actionCapability,
+              isBlocked
+            ),
           },
           delivery.senderLabel
         );
 
-        const senderD1 = await getUserById(
-          delivery.connection.senderUserId,
-          env
-        );
-        await markTicketDelivered(env, user.id, ticket.ref);
+        await markTicketDelivered(env, user.id, ticket.ref, actionLookupHash);
         if (senderD1) {
           await notifyMessageSeen(
             env,

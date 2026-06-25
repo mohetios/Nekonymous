@@ -1,6 +1,9 @@
 import { InlineKeyboard, Keyboard } from "grammy";
 import type { MatchHubMenuVariant } from "../features/matching/match-types";
-import { assertCallbackData } from "../utils/telegram-limits";
+import {
+  encodeCapabilityCallbackData,
+  type CapabilityAction,
+} from "../crypto/crypto-service";
 import { MENU } from "./menu-labels";
 
 const INBOX_BUTTON = {
@@ -8,14 +11,11 @@ const INBOX_BUTTON = {
   unblock: "🔓 رفع مسدودیت",
   reply: "💬 پاسخ",
   nickname: "🏷️ نام خصوصی",
+  report: "گزارش",
 } as const;
 
-const INBOX_CALLBACK = {
-  reply: (ref: string) => `r:${ref}`,
-  block: (ref: string) => `b:${ref}`,
-  unblock: (ref: string) => `u:${ref}`,
-  nickname: (ref: string) => `n:${ref}`,
-} as const;
+const inboxCallback = (action: CapabilityAction, capability: string): string =>
+  encodeCapabilityCallbackData(action, capability);
 
 export const mainMenu = new Keyboard()
   .text(MENU.link)
@@ -108,22 +108,20 @@ export const confirmClearMenu = new Keyboard()
   .resized();
 
 export const createMessageKeyboard = (
-  inboxRef: string,
+  capability: string,
   isBlocked: boolean
 ): InlineKeyboard => {
   const blockData = isBlocked
-    ? INBOX_CALLBACK.unblock(inboxRef)
-    : INBOX_CALLBACK.block(inboxRef);
-  const replyData = INBOX_CALLBACK.reply(inboxRef);
-  const nicknameData = INBOX_CALLBACK.nickname(inboxRef);
-
-  assertCallbackData(blockData);
-  assertCallbackData(replyData);
-  assertCallbackData(nicknameData);
+    ? inboxCallback("unblock", capability)
+    : inboxCallback("block", capability);
+  const replyData = inboxCallback("reply", capability);
+  const nicknameData = inboxCallback("nickname", capability);
+  const reportData = inboxCallback("report", capability);
 
   return new InlineKeyboard()
     .text(isBlocked ? INBOX_BUTTON.unblock : INBOX_BUTTON.block, blockData)
     .text(INBOX_BUTTON.reply, replyData)
     .row()
-    .text(INBOX_BUTTON.nickname, nicknameData);
+    .text(INBOX_BUTTON.nickname, nicknameData)
+    .text(INBOX_BUTTON.report, reportData);
 };

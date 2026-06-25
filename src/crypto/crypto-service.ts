@@ -1,6 +1,7 @@
 import type { CipherEnvelope } from "../types";
 
 const TICKET_ENTROPY_BYTES = 32;
+const CAPABILITY_ENTROPY_BYTES = 24;
 const GCM_IV_BYTES = 12;
 const SENDER_ALIAS_BITS = 128;
 const MASTER_KID = "master:v1";
@@ -8,6 +9,10 @@ const MASTER_KID = "master:v1";
 const AES_INFO = new TextEncoder().encode("nekonymous:aes:v1");
 const CHAT_INFO = new TextEncoder().encode("nekonymous:chat:v1");
 const HMAC_INFO = new TextEncoder().encode("nekonymous:tg-user:v1");
+const LOOKUP_INFO = "lookup:v1:";
+const DEDUPE_INFO = "dedupe:v1:";
+const BLOCK_INFO = "block:v1:";
+const REPORT_INFO = "report:v1:";
 
 const textEncoder = new TextEncoder();
 
@@ -179,13 +184,88 @@ export const generateTicketId = (): string => {
   return bytesToBase64Url(entropy);
 };
 
-export const generateCallbackRef = (): string => {
-  const bytes = crypto.getRandomValues(new Uint8Array(4));
-  return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
-};
-
 export const generateOpaqueId = (bytes = 16): string =>
   bytesToBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
+
+export const randomCapability = (): string =>
+  bytesToBase64Url(crypto.getRandomValues(new Uint8Array(CAPABILITY_ENTROPY_BYTES)));
+
+const hmacSha256Base64Url = async (
+  secret: string,
+  message: string
+): Promise<string> => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    textEncoder.encode(message)
+  );
+  return bytesToBase64Url(new Uint8Array(signature));
+};
+
+export const createCapabilityLookupHash = (
+  capability: string,
+  lookupSecret: string
+): Promise<string> => hmacSha256Base64Url(lookupSecret, `${LOOKUP_INFO}${capability}`);
+
+export const createMessageDedupeKey = (
+  lookupSecret: string,
+  senderHash: string,
+  recipientHash: string,
+  telegramMessageId: number
+): Promise<string> =>
+  hmacSha256Base64Url(
+    lookupSecret,
+    `${DEDUPE_INFO}${senderHash}:${recipientHash}:${telegramMessageId}`
+  );
+
+export const createBlockHash = (
+  lookupSecret: string,
+  ownerHash: string,
+  peerHash: string
+): Promise<string> =>
+  hmacSha256Base64Url(lookupSecret, `${BLOCK_INFO}${ownerHash}:${peerHash}`);
+
+export const createReportPeerHash = (
+  lookupSecret: string,
+  ownerHash: string,
+  peerHash: string
+): Promise<string> =>
+  hmacSha256Base64Url(lookupSecret, `${REPORT_INFO}${ownerHash}:${peerHash}`);
+
+export type CapabilityAction =
+  | "open"
+  | "reply"
+  | "block"
+  | "unblock"
+  | "report"
+  | "nickname";
+
+const CALLBACK_PREFIX: Record<CapabilityAction, string> = {
+  open: "o",
+  reply: "r",
+  block: "b",
+  unblock: "u",
+  report: "rp",
+  nickname: "n",
+};
+
+export const encodeCapabilityCallbackData = (
+  action: CapabilityAction,
+  capability: string
+): string => {
+  const data = `${CALLBACK_PREFIX[action]}:${capability}`;
+  if (new TextEncoder().encode(data).length > 64) {
+    throw new Error("Telegram callback_data limit exceeded");
+  }
+  return data;
+};
 
 const ticketSalt = (ticketId: string): Uint8Array => base64UrlToBytes(ticketId);
 
@@ -286,35 +366,3 @@ export const decryptDisplayName = async (
   const aesKey = await masterKey(appMasterKey);
   return openEnvelope(wireToEnvelope(ciphertext), aesKey);
 };
-
-export const pairConversationKey = (
-  userAId: string,
-  userBId: string
-): [string, string] =>
-  userAId < userBId ? [userAId, userBId] : [userBId, userAId];
-
-export const derivePairConversationId = async (
-  userAId: string,
-  userBId: string,
-  appMasterKey: string
-): Promise<string> => {
-  const [a, b] = pairConversationKey(userAId, userBId);
-  const material = await getHkdfKeyMaterial(appMasterKey);
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: textEncoder.encode(a),
-      info: textEncoder.encode(`nekonymous:pair:v1:${b}`),
-    },
-    material,
-    256
-  );
-  return bytesToBase64Url(new Uint8Array(bits));
-};
-
-export const buildDedupeKey = (
-  senderUserId: string,
-  recipientUserId: string,
-  telegramMessageId: number
-): string => `${senderUserId}:${recipientUserId}:${telegramMessageId}`;

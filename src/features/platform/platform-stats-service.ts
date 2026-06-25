@@ -71,9 +71,8 @@ export const getPlatformStats = async (
     };
   }
 
-  const [conversationsCount, assessmentProfilesCount, matchRequestsCount] =
+  const [assessmentProfilesCount, matchRequestsCount] =
     await Promise.all([
-      count("SELECT COALESCE(SUM(message_count), 0) AS count FROM conversations"),
       count(
         "SELECT COUNT(*) AS count FROM assessment_profiles WHERE status = 'completed'"
       ),
@@ -82,7 +81,7 @@ export const getPlatformStats = async (
 
   return {
     usersCount,
-    conversationsCount,
+    conversationsCount: 0,
     assessmentProfilesCount,
     discoverableProfilesCount,
     matchRequestsCount,

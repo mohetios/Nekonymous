@@ -6,23 +6,24 @@ import type {
   MessagePayload,
 } from "../../types";
 import {
-  buildDedupeKey,
+  createCapabilityLookupHash,
+  createMessageDedupeKey,
+  encodeCapabilityCallbackData,
   decryptConnectionMetadata,
   decryptMessagePayload,
-  derivePairConversationId,
   encryptConnectionMetadata,
   encryptMessagePayload,
-  generateCallbackRef,
   generateTicketId,
   getSenderAlias,
-  pairConversationKey,
+  randomCapability,
 } from "../../crypto/crypto-service";
-import { upsertConversationSummary } from "./conversation-summary-service";
 import { ensureUserStateInitialized } from "../identity/identity-service";
+import { incrementPlatformStat } from "../platform/platform-stats-service";
 import {
   addInboxTicket,
-  getInboxTicket,
+  getInboxTicketByCapability,
 } from "../../storage/user-state-client";
+import type { getInboxTicket } from "../../storage/user-state-client";
 import { enqueueTelegramOutbox } from "../../storage/telegram-outbox-client";
 
 const parseMessagePayload = (raw: string): MessagePayload | null => {
@@ -50,12 +51,12 @@ export const hasDeliverablePayload = (payload: MessagePayload): boolean => {
 export const loadTicketForAction = async (
   env: Environment,
   recipientUserId: string,
-  ref: string
+  capability: string
 ): Promise<{
   ticket: Awaited<ReturnType<typeof getInboxTicket>>;
   connection: ConnectionMetadata;
 } | null> => {
-  const ticket = await getInboxTicket(env, recipientUserId, ref);
+  const ticket = await getInboxTicketByCapability(env, recipientUserId, capability);
   if (!ticket) {
     return null;
   }
@@ -110,14 +111,15 @@ export const sendAnonymousMessage = async (
   status: number;
   pendingCount?: number;
   notify?: boolean;
+  openCapability?: string;
 }> => {
   const ticketId = generateTicketId();
-  const ref = generateCallbackRef();
-  const conversationId = await derivePairConversationId(
-    input.sender.id,
-    input.recipient.id,
-    env.APP_MASTER_KEY
+  const openCapability = randomCapability();
+  const lookupHash = await createCapabilityLookupHash(
+    openCapability,
+    env.APP_HMAC_PEPPER
   );
+  const conversationId = ticketId;
   const senderAlias = await getSenderAlias(
     input.recipient.id,
     input.sender.id,
@@ -153,20 +155,21 @@ export const sendAnonymousMessage = async (
 
   const dedupeKey =
     input.dedupeKey ??
-    buildDedupeKey(
-      input.sender.id,
-      input.recipient.id,
+    (await createMessageDedupeKey(
+      env.APP_HMAC_PEPPER,
+      input.sender.telegram_user_hash,
+      input.recipient.telegram_user_hash,
       input.payload.telegramMessageId
-    );
+    ));
 
   await ensureUserStateInitialized(env, input.recipient.id);
 
   const result = await addInboxTicket(env, input.recipient.id, {
-    ref,
+    ref: lookupHash,
     ticketId,
-    senderUserId: input.sender.id,
-    recipientUserId: input.recipient.id,
-    conversationId,
+    senderUserId: "",
+    recipientUserId: "",
+    conversationId: "",
     payloadCiphertext,
     connectionCiphertext,
     dedupeKey,
@@ -176,14 +179,8 @@ export const sendAnonymousMessage = async (
     return { ok: false, status: result.status };
   }
 
-  const [userA, userB] = pairConversationKey(
-    input.sender.id,
-    input.recipient.id
-  );
-  try {
-    await upsertConversationSummary(env, conversationId, userA, userB);
-  } catch {
-    // Ticket is already accepted; summary is best-effort analytics.
+  if (!result.duplicate) {
+    await incrementPlatformStat(env, "messages_relayed");
   }
 
   return {
@@ -191,13 +188,15 @@ export const sendAnonymousMessage = async (
     status: 200,
     pendingCount: result.pendingCount,
     notify: !result.duplicate,
+    openCapability,
   };
 };
 
 export const notifyRecipientInbox = async (
   env: Environment,
   recipient: D1User,
-  pendingCount: number
+  pendingCount: number,
+  openCapability?: string
 ): Promise<void> => {
   const { NEW_INBOX_MESSAGE } = await import("../../i18n/messages");
   const { convertToPersianNumbers } = await import("../../utils/tools");
@@ -216,6 +215,23 @@ export const notifyRecipientInbox = async (
           convertToPersianNumbers(pendingCount)
         ),
         parse_mode: "HTML",
+        ...(openCapability
+          ? {
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    {
+                      text: "باز کردن پیام",
+                      callback_data: encodeCapabilityCallbackData(
+                        "open",
+                        openCapability
+                      ),
+                    },
+                  ],
+                ],
+              },
+            }
+          : {}),
       }),
     }
   );
@@ -249,13 +265,11 @@ export const notifyMessageSeen = async (
 export const deliveryContextFromTicket = async (
   env: Environment,
   ticket: NonNullable<Awaited<ReturnType<typeof getInboxTicket>>>,
-  ownerContactLabels: Record<string, string>,
-  blockedUserIds: string[]
+  ownerContactLabels: Record<string, string>
 ): Promise<{
   payload: MessagePayload;
   connection: ConnectionMetadata;
   senderLabel?: string;
-  isBlocked: boolean;
 }> => {
   const connection = JSON.parse(
     await decryptConnectionMetadata(
@@ -286,7 +300,6 @@ export const deliveryContextFromTicket = async (
     payload,
     connection,
     senderLabel,
-    isBlocked: blockedUserIds.includes(connection.senderUserId),
   };
 };
 

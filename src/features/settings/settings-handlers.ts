@@ -33,7 +33,7 @@ import {
   TECHNICAL_ABOUT_MESSAGE,
 } from "./settings-copy";
 import { HuhMessage, RATE_LIMIT_MESSAGE, ABOUT_PRIVACY_COMMAND_MESSAGE } from "../../i18n/messages";
-import { getPublicStats } from "../messaging/conversation-summary-service";
+import { getPlatformStats } from "../platform/platform-stats-service";
 import {
   convertToPersianNumbers,
   escapeHtml,
@@ -65,7 +65,7 @@ import {
 } from "../../storage/user-state-client";
 
 const formatAboutPrivacyMessage = async (env: Environment): Promise<string> => {
-  const stats = await getPublicStats(env);
+  const stats = await getPlatformStats(env);
   return ABOUT_PRIVACY_COMMAND_MESSAGE.replace(
     "USERS_COUNT",
     convertToPersianNumbers(stats.usersCount)

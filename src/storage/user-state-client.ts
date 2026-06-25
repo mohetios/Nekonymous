@@ -1,4 +1,5 @@
 import type { Environment, InboxTicket, UserDraft } from "../types";
+import { createCapabilityLookupHash } from "../crypto/crypto-service";
 
 type UserStateSnapshot = {
   paused: boolean;
@@ -210,11 +211,12 @@ export const listPendingInbox = async (
 export const markTicketDelivered = async (
   env: Environment,
   userId: string,
-  ref: string
+  ref: string,
+  nextRef?: string
 ): Promise<void> => {
   await doFetch(env, userId, "/mark-delivered", {
     method: "POST",
-    body: JSON.stringify({ ref }),
+    body: JSON.stringify({ ref, nextRef }),
   });
 };
 
@@ -233,6 +235,18 @@ export const getInboxTicket = async (
     throw new Error(`getInboxTicket failed: ${response.status}`);
   }
   return response.json<InboxTicket>();
+};
+
+export const getInboxTicketByCapability = async (
+  env: Environment,
+  userId: string,
+  capability: string
+): Promise<InboxTicket | null> => {
+  const lookupHash = await createCapabilityLookupHash(
+    capability,
+    env.APP_HMAC_PEPPER
+  );
+  return getInboxTicket(env, userId, lookupHash);
 };
 
 export const addBlock = async (

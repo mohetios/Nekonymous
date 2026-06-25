@@ -16,6 +16,17 @@ When changing bot logic, crypto, D1, KV cache, Durable Objects, queues, or Worke
 
 Do not generate heavy abstractions, repository layers, generic service frameworks, or framework-inside-framework patterns.
 
+## V1 Code-Freeze Communication Rewrite
+
+During the V1 code freeze, capability-based anonymous routing takes precedence over older conversation/ref routing.
+
+- Telegram private chat buttons hold short routing capabilities; raw capabilities are request-only and must not be stored.
+- UserStateDO stores encrypted ticket payloads and encrypted route envelopes, keyed by lookup hashes.
+- Anonymous messaging must not write a plain sender-recipient graph or message transcript to D1.
+- The existing compact repository layout remains preferred unless a rename is explicitly needed; do not create a parallel `core/` tree while equivalent local modules exist.
+- Do not keep compatibility fallbacks for legacy KV inbox/conversation storage.
+- Reports, labels, blocks, and pending actions should use hashes/tags/encrypted context rather than plaintext anonymous peer edges.
+
 ## Agent Operating Mode
 
 ### Before editing
@@ -74,7 +85,7 @@ Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nek
 
 - **Cloudflare Workers** — single Worker entry (`src/index.ts`) + queue consumer
 - **Grammy** — Telegram bot framework (`grammy`)
-- **Cloudflare D1** — users, links, conversation summaries, assessment, matching, anonymous `platform_stats`
+- **Cloudflare D1** — users, links, reports, assessment, matching, anonymous `platform_stats`
 - **Cloudflare KV** — routing/cache only (`tg:{hash}`, `link:{slug}`)
 - **Cloudflare Durable Objects (SQLite)** — `UserStateDurableObject`, `TelegramOutboxDurableObject`
 - **Cloudflare Queues** — `telegram-outbox` for non-critical outbound Telegram sends
@@ -106,7 +117,6 @@ src/
 │   │   ├── messaging-commands.ts    # /start, /inbox
 │   │   ├── messaging-actions.ts     # reply, block, nickname, report
 │   │   ├── payload-service.ts
-│   │   ├── conversation-summary-service.ts
 │   │   └── report-service.ts
 │   ├── settings/
 │   │   ├── settings-handlers.ts
@@ -239,24 +249,26 @@ Read `src/crypto/crypto-service.ts` before changing storage or inbox behavior.
 | Concept                 | Role                                                                 |
 |-------------------------|----------------------------------------------------------------------|
 | `ticketId`              | 256-bit random opaque handle (base64url) per message                 |
-| `ref`                   | 8-hex callback reference for inline buttons                          |
-| `conversationId`        | Stable pair-derived id for D1 summary (not per-ticket KV key)        |
+| `capability`            | 24-byte base64url token held only in Telegram callback buttons       |
+| `ref`                   | stored lookup hash for a capability, not a raw callback token        |
+| `conversationId`        | legacy field; do not use for V1 anonymous D1 routing                 |
 | `APP_MASTER_KEY`        | Encryption IKM for payloads, chat ids, nicknames                     |
 | `APP_HMAC_PEPPER`       | HMAC key for `telegram_user_hash` — never store raw Telegram ids in D1 |
 
 Flow:
 
-1. `generateTicketId()` + `generateCallbackRef()` on send.
+1. `generateTicketId()` + `randomCapability()` on send.
 2. Encrypt `MessagePayload` and `ConnectionMetadata` with ticket-derived AES keys.
-3. Store ticket in recipient `UserStateDO.inbox_tickets` — not in KV or D1 plaintext.
-4. On `/inbox`, decrypt payload from DO, send via `sendDecryptedMessage`, enqueue seen notification, mark delivered, set `payload_ciphertext = NULL`.
-5. Callbacks load ticket by `ref` from recipient DO, decrypt `connection_ciphertext`, verify user role.
+3. Store ticket in recipient `UserStateDO.inbox_tickets` under capability lookup hash — not in KV or D1 plaintext.
+4. On open or `/inbox`, decrypt payload from DO, send via `sendDecryptedMessage`, enqueue seen notification, rotate to an action capability lookup hash, mark delivered, set `payload_ciphertext = NULL`.
+5. Callbacks load ticket by capability-derived lookup hash from recipient DO, decrypt `connection_ciphertext`, verify user role.
 
 Ciphertext envelope: JSON `{ v: 1, kid, iv, ct }` with 12-byte GCM IV.
 
 Rules:
 
 - Never log `ticketId`, `APP_MASTER_KEY`, `APP_HMAC_PEPPER`, decrypted payloads, or Telegram tokens.
+- Never store raw callback capabilities.
 - Never store plaintext message bodies in D1, KV, or DO storage.
 - Use Web Crypto only — no Node `crypto`, no third-party crypto libraries.
 - Blocks, labels, drafts, and rate limits live in `UserStateDO` — not D1 or KV.
@@ -266,7 +278,6 @@ Rules:
 D1 (`env.DB`, database `nekonymous_core`) is source of truth for:
 
 - `users`, `public_links`
-- `conversations` (pair summaries, counts only)
 - `reports`, `consents`
 - `assessment_profiles`, `assessment_attempts`, `assessment_answers`
 - `profile_vector_index_events`
@@ -285,9 +296,8 @@ Prefer:
 - bounded queries with indexes
 - `features/identity/identity-service.ts` for users/links/delete
 - `features/assessment/assessment-profile-service.ts` for assessment D1
-- `features/messaging/conversation-summary-service.ts` for conversation upserts
 - `features/platform/platform-stats-service.ts` for public aggregate stats
-- upsert conversation summaries on send — no message body in D1
+- increment anonymous `platform_stats` on accepted sends — no message body or sender-recipient edge in D1
 
 Avoid:
 

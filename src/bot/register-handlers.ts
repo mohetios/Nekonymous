@@ -4,6 +4,7 @@ import type { Environment } from "../types";
 import {
   handleBlockAction,
   handleNicknameAction,
+  handleOpenTicketAction,
   handleReportAction,
   handleReplyAction,
   handleUnblockAction,
@@ -61,11 +62,12 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     (ctx: Context) =>
       handler(ctx, env);
 
-  bot.callbackQuery(/^r:([a-f0-9]{8})$/, onInboxCallback(handleReplyAction));
-  bot.callbackQuery(/^b:([a-f0-9]{8})$/, onInboxCallback(handleBlockAction));
-  bot.callbackQuery(/^u:([a-f0-9]{8})$/, onInboxCallback(handleUnblockAction));
-  bot.callbackQuery(/^n:([a-f0-9]{8})$/, onInboxCallback(handleNicknameAction));
-  bot.callbackQuery(/^rp:([a-f0-9]{8})$/, onInboxCallback(handleReportAction));
+  bot.callbackQuery(/^o:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleOpenTicketAction));
+  bot.callbackQuery(/^r:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReplyAction));
+  bot.callbackQuery(/^b:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleBlockAction));
+  bot.callbackQuery(/^u:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleUnblockAction));
+  bot.callbackQuery(/^n:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleNicknameAction));
+  bot.callbackQuery(/^rp:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReportAction));
 
   bot.callbackQuery(/^t:/, (ctx) => handleAssessmentCallback(ctx, env));
 

@@ -35,14 +35,5 @@ export const createReport = async (
       now
     )
     .run();
-
-  if (input.conversationId) {
-    await env.DB.prepare(
-      "UPDATE conversations SET report_count = report_count + 1, updated_at = ? WHERE id = ?"
-    )
-      .bind(now, input.conversationId)
-      .run();
-  }
-
   return id;
 };
