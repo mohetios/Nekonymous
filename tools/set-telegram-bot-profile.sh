@@ -60,11 +60,7 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 
 echo "==> setMyDescription (en)"
 read -r -d '' DESCRIPTION_EN <<'EOF' || true
-Nekonymous — Persian-first anonymous Telegram bot.
-
-Personal deep-link messaging, conversation-style assessment, and opt-in matching. Not E2EE: Telegram and the server see plaintext during delivery. Message bodies are cleared from storage after /inbox delivery.
-
-/start · /inbox · /settings · /assessment · /match
+Nekonymous is a Persian-first anonymous messaging bot. Create a personal link, receive anonymous messages, reply anonymously, explore your conversation style, and optionally discover matches. Messages are processed through Telegram and the bot server; stored data is minimized where possible and encrypted at rest.
 EOF
 tg_post setMyDescription \
   --data-urlencode "description=${DESCRIPTION_EN}" \
@@ -74,7 +70,7 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 "
 
 echo "==> setMyShortDescription (en)"
-SHORT_EN="Anonymous Telegram relay: deep-link inbox, assessment, opt-in matching. Encrypted at rest; not E2EE."
+SHORT_EN="Nekonymous — Persian-first anonymous bot: personal link, assessment, and optional matching."
 tg_post setMyShortDescription \
   --data-urlencode "short_description=${SHORT_EN}" \
   --data-urlencode "language_code=en" | node -e "
