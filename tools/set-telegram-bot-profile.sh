@@ -40,16 +40,7 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 
 echo "==> setMyDescription (fa)"
 read -r -d '' DESCRIPTION <<'EOF' || true
-نِکونیموس (Nekonymous) ربات پیام ناشناس در تلگرام است.
-
-• لینک شخصی — دیگران بدون دیدن username شما پیام می‌فرستند
-• /inbox — خواندن و پاسخ ناشناس، مسدودسازی و گزارش
-• ارزیابی سبک گفت‌وگو — سیگنال محصولی، نه تشخیص بالینی
-• مچ‌یابی opt-in — فقط با پذیرش طرف مقابل
-
-صادقانه: E2EE نیست. تلگرام و سرور هنگام ارسال متن را می‌بینند. متن پیام پس از تحویل در /inbox از storage پاک می‌شود.
-
-/start · /inbox · /settings · /assessment · /match
+نِکونیموس یک ربات پیام ناشناس فارسی‌محور است؛ برای ساخت لینک شخصی، دریافت پیام ناشناس، پاسخ ناشناس، ارزیابی سبک گفت‌وگو و مچ‌یابی اختیاری. پیام‌ها از طریق تلگرام و سرور ربات پردازش می‌شوند؛ داده‌های ذخیره‌شده تا حد ممکن کمینه و در حالت ذخیره رمزنگاری می‌شوند.
 EOF
 tg_post setMyDescription \
   --data-urlencode "description=${DESCRIPTION}" \
@@ -59,7 +50,7 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 "
 
 echo "==> setMyShortDescription (fa)"
-SHORT="نِکونیموس — پیام ناشناس، ارزیابی سبک گفت‌وگو، مچ‌یابی opt-in. hosted relay؛ E2EE نیست."
+SHORT="نِکونیموس — پیام ناشناس فارسی‌محور، لینک شخصی، ارزیابی سبک گفت‌وگو و مچ‌یابی اختیاری."
 tg_post setMyShortDescription \
   --data-urlencode "short_description=${SHORT}" \
   --data-urlencode "language_code=fa" | node -e "
