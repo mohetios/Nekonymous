@@ -1,6 +1,6 @@
 /**
  * Crypto smoke tests against production modules.
- * Run: pnpm test:crypto
+ * Run: pnpm test:ticketing
  */
 
 import {
@@ -10,7 +10,7 @@ import {
   encryptTelegramChatId,
   generateTicketId,
   hmacTelegramUserId,
-} from "../src/crypto/crypto-service.ts";
+} from "../src/ticketing/ticketing-service.ts";
 
 const appMasterKey = "test-app-master-key-local-32bytes!";
 const pepper = "test-hmac-pepper-local-32bytes!!";
@@ -34,7 +34,7 @@ const decrypted = await decryptMessagePayload(
 );
 
 if (decrypted !== sample) {
-  console.error("Crypto roundtrip failed");
+  console.error("Ticketing envelope roundtrip failed");
   process.exit(1);
 }
 
@@ -51,7 +51,7 @@ if (!hash || hash.length < 16) {
   process.exit(1);
 }
 
-console.log("Crypto roundtrip OK");
+console.log("Ticketing envelope roundtrip OK");
 console.log("Chat id roundtrip OK");
 console.log("HMAC hash OK");
 console.log(`ticketId length: ${ticketId.length}`);

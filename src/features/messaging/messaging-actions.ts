@@ -10,7 +10,7 @@ import {
   createCapabilityLookupHash,
   createReportPeerHash,
   randomCapability,
-} from "../../crypto/crypto-service";
+} from "../../ticketing/ticketing-service";
 import {
   HuhMessage,
   NICKNAME_PROMPT_MESSAGE,
@@ -34,7 +34,7 @@ import {
   hasDeliverablePayload,
   loadTicketForAction,
   notifyMessageSeen,
-  toLegacyConversation,
+  toTicketDeliveryConversation,
 } from "./messaging-service";
 import { createReport } from "./report-service";
 import {
@@ -120,7 +120,7 @@ export const handleOpenTicketAction = async (
     );
     await sendDecryptedMessage(
       ctx,
-      toLegacyConversation(delivery.connection, delivery.payload, 0, 0),
+      toTicketDeliveryConversation(delivery.connection, delivery.payload, 0, 0),
       { reply_markup: createMessageKeyboard(actionCapability, isBlocked) },
       delivery.senderLabel
     );

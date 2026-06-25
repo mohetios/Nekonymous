@@ -10,20 +10,12 @@ type VectorMatch = {
   vectorScore: number;
 };
 
-const metadataAsRecord = (metadata: unknown): Record<string, unknown> | undefined => {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-    return undefined;
-  }
-  return metadata as Record<string, unknown>;
-};
-
-const extractUserId = (metadata: unknown): string | null => {
-  const record = metadataAsRecord(metadata);
-  if (!record) {
+const extractUserIdFromVectorId = (id: string | undefined): string | null => {
+  if (!id?.startsWith("profile:") || !id.endsWith(`:${ASSESSMENT_VERSION}`)) {
     return null;
   }
-  const userId = record.userId;
-  return typeof userId === "string" ? userId : null;
+  const userId = id.slice("profile:".length, -(`:${ASSESSMENT_VERSION}`.length));
+  return userId || null;
 };
 
 export const queryVectorCandidates = async (
@@ -44,7 +36,7 @@ export const queryVectorCandidates = async (
   const filter: Record<string, string | boolean> = {
     discoverable: true,
     locale: locale === "en" ? "en" : "fa",
-    safetyTier: "normal",
+    matchEligible: true,
     profileVersion: ASSESSMENT_VERSION,
   };
 
@@ -53,7 +45,7 @@ export const queryVectorCandidates = async (
     result = await env.PROFILE_VECTORS.query(vector.values, {
       topK: MATCH_SEARCH_TOP_K,
       returnValues: false,
-      returnMetadata: "indexed",
+      returnMetadata: "all",
       filter,
     });
   } catch (error) {
@@ -63,7 +55,7 @@ export const queryVectorCandidates = async (
 
   const matches: VectorMatch[] = [];
   for (const match of result.matches) {
-    const userId = extractUserId(match.metadata);
+    const userId = extractUserIdFromVectorId(match.id);
     if (!userId || userId === requesterProfile.user_id) {
       continue;
     }

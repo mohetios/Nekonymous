@@ -2,50 +2,50 @@ import { ASSESSMENT_VERSION } from "./question-bank";
 import type { AssessmentResultSummary, AssessmentScores } from "./scoring";
 
 function bucket(score: number): "low" | "medium" | "high" {
-  if (score >= 67) {
+  if (score >= 0.67) {
     return "high";
   }
-  if (score >= 34) {
+  if (score >= 0.34) {
     return "medium";
   }
   return "low";
 }
 
 const replyPacePhrase = (scores: AssessmentScores): string => {
-  if (scores.replyPacePreference >= 67) {
+  if (scores.replyPacePreference >= 0.67) {
     return "prefers slower, thoughtful reply pace";
   }
-  if (scores.replyPacePreference <= 33) {
+  if (scores.replyPacePreference <= 0.33) {
     return "prefers steady, responsive reply pace";
   }
   return "flexible reply pace";
 };
 
 const directnessPhrase = (scores: AssessmentScores): string => {
-  if (scores.directnessPreference >= 67) {
+  if (scores.directnessPreference >= 0.67) {
     return "prefers direct but respectful communication";
   }
-  if (scores.directnessPreference <= 33) {
+  if (scores.directnessPreference <= 0.33) {
     return "prefers indirect, gentle communication";
   }
   return "moderate directness preference";
 };
 
 const supportPhrase = (scores: AssessmentScores): string => {
-  if (scores.supportPreference >= 67) {
+  if (scores.supportPreference >= 0.67) {
     return "needs warm listening before advice";
   }
-  if (scores.supportPreference <= 33) {
+  if (scores.supportPreference <= 0.33) {
     return "prefers practical solutions over emotional support";
   }
   return "balanced support preference";
 };
 
 const anonymityPhrase = (scores: AssessmentScores): string => {
-  if (scores.anonymityComfort >= 67) {
+  if (scores.anonymityComfort >= 0.67) {
     return "comfortable with anonymous conversation";
   }
-  if (scores.anonymityComfort <= 33) {
+  if (scores.anonymityComfort <= 0.33) {
     return "cautious in anonymous conversation";
   }
   return "moderately comfortable with anonymity";
@@ -54,19 +54,19 @@ const anonymityPhrase = (scores: AssessmentScores): string => {
 const matchingNotes = (scores: AssessmentScores): string[] => {
   const notes: string[] = [];
 
-  if (scores.boundaryRespect >= 55 && scores.warmthEmpathy >= 50) {
+  if (scores.boundaryRespect >= 0.55 && scores.warmthEmpathy >= 0.5) {
     notes.push("good for low-pressure, respectful anonymous conversation");
   }
 
-  if (scores.replyPacePreference >= 60) {
+  if (scores.replyPacePreference >= 0.6) {
     notes.push("avoid pushy or very fast message rhythm");
   }
 
-  if (scores.emotionalSensitivity >= 65 && scores.warmthEmpathy >= 55) {
+  if (scores.emotionalSensitivity >= 0.65 && scores.warmthEmpathy >= 0.55) {
     notes.push("values warm tone and emotional attunement");
   }
 
-  if (scores.depthPreference >= 65) {
+  if (scores.depthPreference >= 0.65) {
     notes.push("enjoys moderately deep conversation");
   }
 
@@ -77,12 +77,43 @@ const matchingNotes = (scores: AssessmentScores): string[] => {
   return notes;
 };
 
+const bandFa = (score: number): "پایین" | "میانه" | "بالا" => {
+  if (score >= 0.67) {
+    return "بالا";
+  }
+  if (score >= 0.34) {
+    return "میانه";
+  }
+  return "پایین";
+};
+
+const describeFa = (key: string, score: number): string =>
+  `${key}: ${bandFa(score)}.`;
+
 export const buildProfileEmbeddingText = (
   scores: AssessmentScores,
   summary: AssessmentResultSummary,
   locale: string,
   version: string = ASSESSMENT_VERSION
 ): string => {
+  if (locale !== "en") {
+    return [
+      `زبان: fa.`,
+      `نسخه ارزیابی: ${version}.`,
+      "خلاصه سبک گفت‌وگو:",
+      describeFa("احترام به مرزها", scores.boundaryRespect),
+      describeFa("ترجیح عمق گفتگو", scores.depthPreference),
+      describeFa("ریتم پاسخ‌دهی", scores.replyPacePreference),
+      describeFa("مستقیم‌بودن محترمانه", scores.directnessPreference),
+      describeFa("راحتی با ناشناس‌بودن", scores.anonymityComfort),
+      describeFa("تمایل به ترمیم سوءتفاهم", scores.conflictRepair),
+      "این کاربر برای شروع گفتگو به سیگنال‌های آرام، محترمانه و ناشناس تکیه می‌کند.",
+      summary.title ? `عنوان محصولی: ${summary.title}.` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   const lines = [
     `Language: ${locale}.`,
     `Assessment version: ${version}.`,

@@ -1,5 +1,9 @@
 import type { CipherEnvelope } from "../types";
 
+/**
+ * Product ticketing core: opaque capabilities, encrypted payload envelopes,
+ * chat-id sealing, and stable private peer tags for anonymous relay tickets.
+ */
 const TICKET_ENTROPY_BYTES = 32;
 const CAPABILITY_ENTROPY_BYTES = 24;
 const GCM_IV_BYTES = 12;

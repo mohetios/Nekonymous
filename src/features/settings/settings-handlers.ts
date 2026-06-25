@@ -49,7 +49,7 @@ import {
   resolveOrCreateUser,
   toBotUser,
 } from "../identity/identity-service";
-import { encryptDisplayName } from "../../crypto/crypto-service";
+import { encryptDisplayName } from "../../ticketing/ticketing-service";
 import {
   countUserMatchHistory,
   resetUserMatchHistory,

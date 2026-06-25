@@ -24,7 +24,7 @@ During the V1 code freeze, capability-based anonymous routing takes precedence o
 - UserStateDO stores encrypted ticket payloads and encrypted route envelopes, keyed by lookup hashes.
 - Anonymous messaging must not write a plain sender-recipient graph or message transcript to D1.
 - The existing compact repository layout remains preferred unless a rename is explicitly needed; do not create a parallel `core/` tree while equivalent local modules exist.
-- Do not keep compatibility fallbacks for legacy KV inbox/conversation storage.
+- Do not keep compatibility fallbacks for KV inbox/conversation storage.
 - Reports, labels, blocks, and pending actions should use hashes/tags/encrypted context rather than plaintext anonymous peer edges.
 
 ## Agent Operating Mode
@@ -76,7 +76,7 @@ Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nek
 
 **V1 rules:**
 
-- No legacy KV inbox/conversation storage. Do not add dual-read, dual-write, or migration fallbacks.
+- No KV inbox/conversation storage. Do not add dual-read, dual-write, or migration fallbacks.
 - No soft-deleted user rows for account reset — use hard delete (`hardDeleteUserAccount`).
 - Assessment schema version is **`v1`** only (`ASSESSMENT_VERSION` in `question-bank.ts`).
 - User-facing copy says **ارزیابی**, not تست. Command is `/assessment` only (no `/test`).
@@ -89,7 +89,7 @@ Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nek
 - **Cloudflare KV** — routing/cache only (`tg:{hash}`, `link:{slug}`)
 - **Cloudflare Durable Objects (SQLite)** — `UserStateDurableObject`, `TelegramOutboxDurableObject`
 - **Cloudflare Queues** — `telegram-outbox` for non-critical outbound Telegram sends
-- **Web Crypto API** — HMAC, HKDF-SHA-256, AES-256-GCM (`src/crypto/crypto-service.ts`)
+- **Web Crypto API** — HMAC, HKDF-SHA-256, AES-256-GCM (`src/ticketing/ticketing-service.ts`)
 - **Workers AI + Vectorize** — profile embeddings for assessment/matching (`env.AI`, `env.PROFILE_VECTORS`)
 - **Wrangler 4** — dev and deploy (`wrangler.jsonc`)
 - **pnpm** — package manager
@@ -134,8 +134,8 @@ src/
 │   │   ├── match-vector-service.ts, match-selection.ts, match-scoring.ts, …
 │   └── platform/
 │       └── platform-stats-service.ts  # anonymous lifetime counters
-├── crypto/
-│   └── crypto-service.ts
+├── ticketing/
+│   └── ticketing-service.ts
 ├── storage/
 │   ├── user-state-do.ts
 │   ├── user-state-client.ts         # only place for UserStateDO fetch calls
@@ -155,7 +155,7 @@ migrations/
 └── 0002_platform_stats.sql            # anonymous aggregate counters
 
 tools/
-├── verify-crypto.ts                   # pnpm test:crypto
+├── verify-ticketing.ts                # pnpm test:ticketing
 ├── verify-assessment.ts               # pnpm test:assessment
 ├── verify-matching.ts                 # pnpm test:matching
 ├── flush-remote-d1.sql
@@ -244,14 +244,14 @@ Do not hardcode new English bot strings unless the task explicitly asks for loca
 
 ## Message and Crypto Rules
 
-Read `src/crypto/crypto-service.ts` before changing storage or inbox behavior.
+Read `src/ticketing/ticketing-service.ts` before changing storage or inbox behavior.
 
 | Concept                 | Role                                                                 |
 |-------------------------|----------------------------------------------------------------------|
 | `ticketId`              | 256-bit random opaque handle (base64url) per message                 |
 | `capability`            | 24-byte base64url token held only in Telegram callback buttons       |
 | `ref`                   | stored lookup hash for a capability, not a raw callback token        |
-| `conversationId`        | legacy field; do not use for V1 anonymous D1 routing                 |
+| `conversationId`        | ticket-local compatibility field; do not use for anonymous D1 routing |
 | `APP_MASTER_KEY`        | Encryption IKM for payloads, chat ids, nicknames                     |
 | `APP_HMAC_PEPPER`       | HMAC key for `telegram_user_hash` — never store raw Telegram ids in D1 |
 
@@ -323,7 +323,7 @@ Prefer:
 
 Avoid:
 
-- legacy key shapes: `user:`, `conversation:`, `userUUIDtoId:`, `stats:`
+- forbidden key shapes: `user:`, `conversation:`, `userUUIDtoId:`, `stats:`
 - storing ciphertext, profiles, blocks, or inbox data in KV
 - unbounded `list()` in request paths
 
@@ -566,7 +566,7 @@ pnpm knip
 pnpm check
 ```
 
-`pnpm check` runs typecheck, lint, knip, `test:crypto`, `test:assessment`, and `test:matching`.
+`pnpm check` runs typecheck, lint, knip, `test:ticketing`, `test:assessment`, and `test:matching`.
 
 Only run when explicitly requested or clearly required:
 
@@ -601,4 +601,4 @@ Before finalizing a Worker/bot change, verify:
 - Does account reset hard-delete user data (not soft-delete)?
 - Are webhook secrets and crypto material never logged?
 - Did this avoid unnecessary dependencies and abstraction layers?
-- Did this avoid legacy `user:`, `conversation:`, `userUUIDtoId:`, or `stats:` KV keys?
+- Did this avoid forbidden `user:`, `conversation:`, `userUUIDtoId:`, or `stats:` KV keys?

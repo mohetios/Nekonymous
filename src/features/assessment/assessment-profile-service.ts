@@ -1,5 +1,5 @@
 import type { Environment } from "../../types";
-import { generateOpaqueId } from "../../crypto/crypto-service";
+import { generateOpaqueId } from "../../ticketing/ticketing-service";
 import type { AssessmentResultSummary, AssessmentScores } from "./scoring";
 import {
   computePrimaryIntent,
@@ -27,6 +27,23 @@ export type AssessmentProfileRow = {
 };
 
 export { scoresToJson, parseDimensionScores } from "./assessment-scores";
+
+export const getProfileConfidence = (row: AssessmentProfileRow): number => {
+  try {
+    const parsed = JSON.parse(row.result_summary_json) as {
+      quality?: { confidence?: unknown };
+    };
+    const confidence = parsed.quality?.confidence;
+    return typeof confidence === "number" && Number.isFinite(confidence)
+      ? Math.min(1, Math.max(0, confidence))
+      : 0.75;
+  } catch {
+    return 0.75;
+  }
+};
+
+export const isMatchEligibleProfile = (row: AssessmentProfileRow): boolean =>
+  row.status === "completed" && getProfileConfidence(row) >= 0.5;
 
 export const createAssessmentAttempt = async (
   userId: string,
@@ -199,6 +216,13 @@ export const setDiscoverable = async (
   enabled: boolean,
   env: Environment
 ): Promise<void> => {
+  if (enabled) {
+    const profile = await getLatestAssessmentProfile(userId, env);
+    if (!profile || !isMatchEligibleProfile(profile)) {
+      return;
+    }
+  }
+
   const now = Date.now();
   await env.DB.prepare(
     `UPDATE assessment_profiles

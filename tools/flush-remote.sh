@@ -21,7 +21,7 @@ WRANGLER=(npx wrangler)
 DB_BINDING="DB"
 KV_BINDING="NEKO_KV"
 VECTOR_INDEX="nekonymous-profile-vectors"
-VECTOR_DIM=768
+VECTOR_DIM=1024
 
 run_d1_flush() {
   local target="$1" # --remote or --local
@@ -67,15 +67,14 @@ run_vectorize_recreate() {
   "${WRANGLER[@]}" vectorize create "$VECTOR_INDEX" \
     --dimensions="$VECTOR_DIM" \
     --metric=cosine \
-    --description="Nekonymous profile embeddings (embeddinggemma-300m)"
+    --description="Nekonymous profile embeddings (bge-m3)"
 
   echo "==> Vectorize metadata indexes"
   "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=locale --type=string
   "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=discoverable --type=boolean
-  "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=safetyTier --type=string
+  "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=matchEligible --type=boolean
   "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=profileVersion --type=string
-  "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=intentPrimary --type=string
-  "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=profileBucket --type=number
+  "${WRANGLER[@]}" vectorize create-metadata-index "$VECTOR_INDEX" --propertyName=updatedAtEpoch --type=number
 }
 
 echo "!!! DESTRUCTIVE REMOTE RESET for Nekonymous !!!"

@@ -8,9 +8,6 @@ import {
 } from "./question-bank";
 import {
   buildResultSummary,
-  computePrimaryIntent,
-  computeProfileBucket,
-  computeSafetyTier,
   computeAssessmentScores,
   hasCompleteAnswers,
 } from "./scoring";
@@ -144,9 +141,6 @@ export const scheduleProfileIndexing = (
     resultSummary: params.summary,
     profileSummaryText: params.profileSummaryText,
     discoverable: false,
-    safetyTier: computeSafetyTier(params.scores),
-    primaryIntent: computePrimaryIntent(params.scores),
-    profileBucket: computeProfileBucket(params.scores),
     env: params.env,
   });
 

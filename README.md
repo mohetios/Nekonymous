@@ -25,8 +25,9 @@ The UI is Telegram only. A single Cloudflare Worker handles the webhook, storage
 ### 3. Anonymous matching (opt-in)
 
 - User completes assessment, then enables discoverability.
-- Vectorize finds semantic candidates; deterministic scoring ranks them.
+- Vectorize finds semantic candidates; deterministic TypeScript ranks them.
 - Requester sends an encrypted intro; **candidate must accept** before a normal inbox ticket is created.
+- Matching is approximate and opt-in. The assessment is a conversation-style product signal, not a diagnosis.
 
 Nekonymous is **not** a dating app, social network, clinical tool, or E2EE messenger.
 
@@ -89,7 +90,7 @@ flowchart TB
 |--------|------------|------|
 | Entry | Cloudflare Worker | Webhook only (`POST /bot`) |
 | Bot | Grammy | Commands, messages, callbacks |
-| Relational data | D1 | Users, links, assessment, matching, anonymous stats |
+| Relational data | D1 | Users, links, reports, assessment, matching, anonymous stats |
 | Hot per-user state | UserState DO (SQLite) | Inbox, drafts, blocks, labels, assessment session |
 | Routing cache | KV | `tg:{hash}`, `link:{slug}` |
 | Async Telegram | Queue + Outbox DO | Idempotent non-critical sends |
@@ -101,7 +102,8 @@ flowchart TB
 - Minimize plaintext at rest; encrypt message payloads and chat ids.
 - Clear message payloads from DO after `/inbox` delivery.
 - KV is cache only — never authority for inbox or profiles.
-- Vectorize narrows candidates; final ranking is deterministic code.
+- Vectorize is used for candidate discovery, not final decision.
+- Final ranking is deterministic code.
 - Matching is opt-in; discoverability defaults to off.
 - Account reset **hard-deletes** user-linked D1 rows; only anonymous aggregate counters remain.
 
@@ -113,7 +115,6 @@ flowchart TB
 |------|--------|
 | User identity, encrypted chat id | D1 `users` |
 | Public slug | D1 `public_links` + KV `link:{slug}` |
-| Conversation counts (no body) | D1 `conversations` |
 | Assessment profile & attempts | D1 `assessment_*` |
 | Match requests, suggestions, blocks | D1 `match_*` |
 | Anonymous lifetime stats | D1 `platform_stats` (no user ids) |
@@ -127,7 +128,7 @@ flowchart TB
 
 Migrations: `0001_init.sql`, `0002_platform_stats.sql`.
 
-**Core:** `users`, `public_links`, `conversations`, `reports`, `consents`
+**Core:** `users`, `public_links`, `reports`, `consents`
 
 **Assessment:** `assessment_profiles`, `assessment_attempts`, `assessment_answers`, `profile_vector_index_events`
 
@@ -135,7 +136,7 @@ Migrations: `0001_init.sql`, `0002_platform_stats.sql`.
 
 **Stats:** `platform_stats` — single row with `messages_relayed`, `assessment_completions`, `match_requests` (incremented on events; survives account deletion)
 
-D1 never stores plaintext message bodies, raw Telegram ids, or raw assessment answers in profile summaries shown to others.
+D1 never stores plaintext message bodies or raw Telegram ids. Matching never uses raw answers after the profile is created.
 
 ---
 
@@ -144,7 +145,7 @@ D1 never stores plaintext message bodies, raw Telegram ids, or raw assessment an
 On confirm, `clearUserAccountAndRecreate`:
 
 1. Purges the user's Durable Object (inbox, drafts, blocks, assessment session, …).
-2. Hard-deletes all D1 rows for that user (assessment, matches, conversations, links, user row).
+2. Hard-deletes all D1 rows for that user (assessment, matches, links, user row).
 3. Deletes Vectorize vector and KV routing keys.
 4. Creates a **new** internal user id and public link.
 
@@ -155,19 +156,21 @@ On confirm, `clearUserAccountAndRecreate`:
 ## Matching pipeline
 
 ```text
-Requester (discoverable, indexed profile)
-  → Vectorize topK (metadata: discoverable, locale, safetyTier, profileVersion=v1)
+Requester (discoverable, match-eligible profile)
+  → Vectorize topK=30 (metadata: discoverable, matchEligible, locale, profileVersion=v1)
   → merge bounded discoverable D1 profiles (sparse-index fallback)
   → load assessment_profiles for pool
-  → deterministic score + safety filters
+  → hard filters + deterministic ranking
   → top 5 suggestions
   → intro → encrypted match_request → candidate accept/decline
   → on accept: normal inbox ticket
 ```
 
+Accepted matches use the same anonymous ticketing system as normal messages. Decline creates no ticket.
+
 ---
 
-## Crypto (summary)
+## Ticketing Encryption
 
 | Secret | Purpose |
 |--------|---------|
@@ -232,7 +235,7 @@ pnpm db:migrations:apply:local
 ### Checks
 
 ```bash
-pnpm check                  # typecheck + lint + knip + test:crypto + test:assessment + test:matching
+pnpm check                  # typecheck + lint + knip + test:ticketing + test:assessment + test:matching
 ```
 
 ### Deploy
@@ -306,5 +309,5 @@ Explicitly out of scope for V1:
 
 - Public HTML pages / marketing site in the Worker
 - `/test` command or `test_*` schema (renamed to `assessment_*`)
-- Legacy KV conversation storage
+- KV conversation storage
 - Soft-deleted user accounts

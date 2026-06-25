@@ -1,194 +1,179 @@
 import type { AssessmentProfileRow } from "../assessment/assessment-profile-service";
+import {
+  getProfileConfidence,
+  isMatchEligibleProfile,
+} from "../assessment/assessment-profile-service";
 import { scoresFromJson } from "../assessment/assessment-scores";
-import { ASSESSMENT_VERSION } from "../assessment/question-bank";
-import type { AssessmentDimension, AssessmentScores } from "../assessment/scoring";
+import { ASSESSMENT_VERSION, type AssessmentDimension } from "../assessment/question-bank";
+import type { AssessmentScores } from "../assessment/scoring";
+import { clamp01 } from "../assessment/scoring";
 import { getMatchQualityLabel } from "./match-quality";
 import type { MatchCandidate, MatchExplanation } from "./match-types";
 
-const clamp = (value: number, min = 0, max = 100): number =>
-  Math.min(max, Math.max(min, value));
+type TraitMetric = "closeness" | "floor" | "mixed";
 
-export const MATCHING_SIGNAL_GROUPS = {
-  directionalSafety: [
-    "boundaryRespect",
-    "honestyTransparency",
-    "warmthEmpathy",
-    "reliabilityConsistency",
-    "emotionalRegulation",
-  ],
-  similarityPreference: [
-    "depthPreference",
-    "replyPacePreference",
-    "directnessPreference",
-    "socialEnergy",
-    "curiosityDepth",
-    "anonymityComfort",
-  ],
-  supportCompatibility: [
-    "supportPreference",
-    "warmthEmpathy",
-    "emotionalSensitivity",
-    "emotionalRegulation",
-  ],
-  repairCompatibility: [
-    "conflictRepair",
-    "directnessPreference",
-    "emotionalRegulation",
-  ],
-} as const satisfies Record<string, AssessmentDimension[]>;
+export const V1_TRAIT_WEIGHTS = {
+  boundaryRespect: { weight: 0.12, metric: "floor" },
+  honestyTransparency: { weight: 0.08, metric: "floor" },
+  emotionalRegulation: { weight: 0.09, metric: "floor" },
+  conflictRepair: { weight: 0.08, metric: "floor" },
+  reliabilityConsistency: { weight: 0.07, metric: "floor" },
 
-const similarity = (a: number, b: number): number =>
-  clamp(100 - Math.abs(a - b));
+  depthPreference: { weight: 0.09, metric: "closeness" },
+  replyPacePreference: { weight: 0.08, metric: "closeness" },
+  directnessPreference: { weight: 0.07, metric: "closeness" },
+  anonymityComfort: { weight: 0.06, metric: "closeness" },
+  curiosityDepth: { weight: 0.06, metric: "closeness" },
+  socialEnergy: { weight: 0.03, metric: "closeness" },
 
-const average = (values: number[]): number =>
-  values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  warmthEmpathy: { weight: 0.07, metric: "mixed" },
+  emotionalSensitivity: { weight: 0.05, metric: "mixed" },
+  supportPreference: { weight: 0.05, metric: "mixed" },
+} as const satisfies Record<
+  AssessmentDimension,
+  { weight: number; metric: TraitMetric }
+>;
 
-const groupSimilarity = (
-  requester: AssessmentScores,
-  candidate: AssessmentScores,
-  keys: ReadonlyArray<AssessmentDimension>
-): number => {
-  const values = keys.map((key) => similarity(requester[key], candidate[key]));
-  return average(values);
+export type MatchPenalties = {
+  lowConfidence: number;
+  staleProfile: number;
+  repeatedExposure: number;
+  dismissedRecently: number;
 };
 
-const directionalAverage = (
-  scores: AssessmentScores,
-  keys: ReadonlyArray<AssessmentDimension>
-): number => average(keys.map((key) => scores[key]));
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+export const closeness = (a: number, b: number): number =>
+  1 - Math.abs(clamp01(a) - clamp01(b));
+
+export const floorFit = (a: number, b: number): number =>
+  Math.min(clamp01(a), clamp01(b));
+
+export const mixedFit = (a: number, b: number): number =>
+  0.65 * closeness(a, b) + 0.35 * floorFit(a, b);
+
+const metricScore = (metric: TraitMetric, a: number, b: number): number => {
+  if (metric === "floor") {
+    return floorFit(a, b);
+  }
+  if (metric === "mixed") {
+    return mixedFit(a, b);
+  }
+  return closeness(a, b);
+};
+
+const daysBetween = (a: Date, b: Date): number =>
+  Math.max(0, Math.abs(b.getTime() - a.getTime()) / MS_PER_DAY);
+
+export const freshnessFit = (updatedAt: Date, now = new Date()): number => {
+  const ageDays = daysBetween(updatedAt, now);
+  if (ageDays <= 30) {
+    return 1;
+  }
+  if (ageDays >= 180) {
+    return 0;
+  }
+  return 1 - (ageDays - 30) / 150;
+};
+
+const staleProfilePenalty = (updatedAt: Date, now = new Date()): number => {
+  const ageDays = daysBetween(updatedAt, now);
+  if (ageDays <= 90) {
+    return 0;
+  }
+  if (ageDays >= 180) {
+    return 0.05;
+  }
+  return ((ageDays - 90) / 90) * 0.05;
+};
 
 export const normalizeVectorScore = (score: number | undefined): number => {
   if (score === undefined || Number.isNaN(score)) {
-    return 50;
+    return 0.5;
   }
-  if (score <= 1) {
-    return clamp(score * 100);
-  }
-  return clamp(score);
+  return clamp01(score);
 };
 
-const computeEmotionalSupportFit = (
+export const traitFit = (
   requester: AssessmentScores,
   candidate: AssessmentScores
 ): number => {
-  const supportSim = similarity(
-    requester.supportPreference,
-    candidate.supportPreference
-  );
-
-  if (requester.emotionalSensitivity >= 60) {
-    const warmthFit = candidate.warmthEmpathy;
-    const regulationFit = candidate.emotionalRegulation;
-    return clamp(0.35 * supportSim + 0.35 * warmthFit + 0.3 * regulationFit);
+  let score = 0;
+  for (const key of Object.keys(V1_TRAIT_WEIGHTS) as AssessmentDimension[]) {
+    const config = V1_TRAIT_WEIGHTS[key];
+    score += config.weight * metricScore(config.metric, requester[key], candidate[key]);
   }
-
-  return groupSimilarity(
-    requester,
-    candidate,
-    MATCHING_SIGNAL_GROUPS.supportCompatibility
-  );
+  return clamp01(score);
 };
 
-const computePenalties = (
-  requester: AssessmentScores,
-  candidate: AssessmentScores,
+const languageFit = (
+  requesterProfile: AssessmentProfileRow,
   candidateProfile: AssessmentProfileRow
 ): number => {
-  let penalty = 0;
-
-  if (candidate.boundaryRespect < 35) {
-    penalty += 15;
-  }
-  if (candidate.warmthEmpathy < 35) {
-    penalty += 10;
-  }
-  if (candidate.reliabilityConsistency < 30) {
-    penalty += 10;
-  }
-  if (
-    requester.emotionalSensitivity > 70 &&
-    candidate.warmthEmpathy < 50
-  ) {
-    penalty += 12;
-  }
-  if (
-    Math.abs(requester.replyPacePreference - candidate.replyPacePreference) > 55
-  ) {
-    penalty += 8;
-  }
-  if (
-    Math.abs(requester.directnessPreference - candidate.directnessPreference) >
-    55
-  ) {
-    penalty += 6;
-  }
-
-  if (candidateProfile.safety_tier === "limited") {
-    penalty += 10;
-  }
-
-  return penalty;
+  const requesterLocale = requesterProfile.version === ASSESSMENT_VERSION ? 1 : 0;
+  const candidateLocale = candidateProfile.version === ASSESSMENT_VERSION ? 1 : 0;
+  return requesterLocale && candidateLocale ? 1 : 0;
 };
 
-const pickExplanationTitle = (
+const preferenceFit = (
   requester: AssessmentScores,
-  candidate: AssessmentScores
-): string => {
-  const depth =
-    (requester.depthPreference +
-      requester.curiosityDepth +
-      candidate.depthPreference +
-      candidate.curiosityDepth) /
-    4;
-  const warmth =
-    (requester.warmthEmpathy + candidate.warmthEmpathy) / 2;
-  const pace =
-    (requester.replyPacePreference + candidate.replyPacePreference) / 2;
-
-  if (depth >= 65 && warmth >= 58) {
-    return "گفت‌وگوی آرام و عمیق";
-  }
-  if (pace >= 60 && depth >= 55) {
-    return "شروع آرام و محترمانه";
-  }
-  if (warmth >= 62) {
-    return "گفت‌وگوی گرم و کم‌فشار";
-  }
-  return "گفت‌وگوی متعادل و ناشناس";
+  candidate: AssessmentScores,
+  requesterProfile: AssessmentProfileRow,
+  candidateProfile: AssessmentProfileRow
+): number => {
+  const language = languageFit(requesterProfile, candidateProfile);
+  const depth = closeness(requester.depthPreference, candidate.depthPreference);
+  const pace = closeness(requester.replyPacePreference, candidate.replyPacePreference);
+  const freshness = freshnessFit(new Date(candidateProfile.updated_at ?? candidateProfile.completed_at));
+  return clamp01(0.5 * language + 0.2 * depth + 0.2 * pace + 0.1 * freshness);
 };
+
+export const computeMatchPenalties = (params: {
+  confidenceFit: number;
+  candidateUpdatedAt: Date;
+  seenInLast14Days?: boolean;
+  dismissedInLast14Days?: boolean;
+  now?: Date;
+}): MatchPenalties => ({
+  lowConfidence: params.confidenceFit < 0.65 ? 0.04 : 0,
+  staleProfile: staleProfilePenalty(params.candidateUpdatedAt, params.now),
+  repeatedExposure: params.seenInLast14Days ? 0.02 : 0,
+  dismissedRecently: params.dismissedInLast14Days ? 0.03 : 0,
+});
+
+const penaltyTotal = (penalties: MatchPenalties): number =>
+  penalties.lowConfidence +
+  penalties.staleProfile +
+  penalties.repeatedExposure +
+  penalties.dismissedRecently;
 
 const buildReasons = (
   requester: AssessmentScores,
   candidate: AssessmentScores
 ): string[] => {
-  const reasons: string[] = [];
+  const scored = [
+    {
+      value: floorFit(requester.boundaryRespect, candidate.boundaryRespect),
+      text: "در احترام به مرزها به هم نزدیک هستید.",
+    },
+    {
+      value: closeness(requester.depthPreference, candidate.depthPreference),
+      text: "سبک گفت‌وگوی شما از نظر عمق گفتگو نزدیک است.",
+    },
+    {
+      value: floorFit(requester.conflictRepair, candidate.conflictRepair),
+      text: "هر دو در سوءتفاهم‌ها تمایل به ترمیم گفتگو دارید.",
+    },
+    {
+      value: mixedFit(requester.warmthEmpathy, candidate.warmthEmpathy),
+      text: "لحن و گرمی گفت‌وگو می‌تواند برای هر دو کم‌فشار باشد.",
+    },
+  ];
 
-  if (
-    Math.abs(requester.replyPacePreference - candidate.replyPacePreference) <=
-      25 &&
-    Math.abs(requester.warmthEmpathy - candidate.warmthEmpathy) <= 30
-  ) {
-    reasons.push("هر دو گفت‌وگوی کم‌فشار و محترمانه را ترجیح می‌دهید.");
-  }
-
-  if (
-    Math.abs(requester.curiosityDepth - candidate.curiosityDepth) <= 25 ||
-    Math.abs(requester.depthPreference - candidate.depthPreference) <= 25
-  ) {
-    reasons.push("شباهت خوبی در عمق گفت‌وگو و کنجکاوی دیده می‌شود.");
-  }
-
-  if (
-    Math.abs(requester.boundaryRespect - candidate.boundaryRespect) <= 25
-  ) {
-    reasons.push("هر دو به مرزهای گفت‌وگو اهمیت می‌دهید.");
-  }
-
-  if (reasons.length === 0) {
-    reasons.push("چند نقطه مشترک در سبک ارتباطی دیده می‌شود.");
-  }
-
-  return reasons.slice(0, 3);
+  return scored
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 3)
+    .map((item) => item.text);
 };
 
 const buildCautions = (
@@ -196,30 +181,12 @@ const buildCautions = (
   candidate: AssessmentScores
 ): string[] => {
   const cautions: string[] = [];
-
-  if (
-    Math.abs(requester.replyPacePreference - candidate.replyPacePreference) >=
-    35
-  ) {
-    cautions.push(
-      "سرعت پاسخ‌دهی ممکن است کمی متفاوت باشد؛ شروع آرام بهتر است."
-    );
+  if (closeness(requester.replyPacePreference, candidate.replyPacePreference) < 0.65) {
+    cautions.push("در سرعت پاسخ‌دادن کمی تفاوت دارید.");
   }
-
-  if (
-    Math.abs(requester.depthPreference - candidate.depthPreference) >= 40
-  ) {
-    cautions.push(
-      "ترجیح عمق گفت‌وگو ممکن است متفاوت باشد؛ بهتر است انتظارات را زود روشن کنید."
-    );
+  if (closeness(requester.directnessPreference, candidate.directnessPreference) < 0.6) {
+    cautions.push("در مستقیم گفتن خواسته‌ها ممکن است کمی تفاوت داشته باشید.");
   }
-
-  if (cautions.length === 0) {
-    cautions.push(
-      "در گفت‌وگوی ناشناس، روشن گفتن انتظاراتت (سرعت، عمق، موضوع) مفید است."
-    );
-  }
-
   return cautions.slice(0, 2);
 };
 
@@ -230,10 +197,15 @@ export const scoreMatchPair = (params: {
   requesterProfile: AssessmentProfileRow;
   candidateProfile: AssessmentProfileRow;
   vectorScore?: number;
+  seenInLast14Days?: boolean;
+  dismissedInLast14Days?: boolean;
+  now?: Date;
 }): MatchCandidate | null => {
   if (
     !isCurrentAssessmentProfile(params.requesterProfile) ||
-    !isCurrentAssessmentProfile(params.candidateProfile)
+    !isCurrentAssessmentProfile(params.candidateProfile) ||
+    !isMatchEligibleProfile(params.requesterProfile) ||
+    !isMatchEligibleProfile(params.candidateProfile)
   ) {
     return null;
   }
@@ -247,77 +219,55 @@ export const scoreMatchPair = (params: {
     params.candidateProfile.user_id
   );
 
-  const hasVector =
-    params.vectorScore !== undefined && !Number.isNaN(params.vectorScore);
-  const vectorSemantic = hasVector
-    ? normalizeVectorScore(params.vectorScore)
-    : undefined;
-
-  const preferenceSimilarity = groupSimilarity(
+  const trait = traitFit(requesterScores, candidateScores);
+  const semanticSimilarity = normalizeVectorScore(params.vectorScore);
+  const preference = preferenceFit(
     requesterScores,
     candidateScores,
-    MATCHING_SIGNAL_GROUPS.similarityPreference
-  );
-
-  const safetyReadiness = directionalAverage(
-    candidateScores,
-    MATCHING_SIGNAL_GROUPS.directionalSafety
-  );
-
-  const emotionalSupportFit = computeEmotionalSupportFit(
-    requesterScores,
-    candidateScores
-  );
-
-  const repairFit = groupSimilarity(
-    requesterScores,
-    candidateScores,
-    MATCHING_SIGNAL_GROUPS.repairCompatibility
-  );
-
-  const reliabilityFit = candidateScores.reliabilityConsistency;
-
-  const penalties = computePenalties(
-    requesterScores,
-    candidateScores,
+    params.requesterProfile,
     params.candidateProfile
   );
+  const requesterConfidence = getProfileConfidence(params.requesterProfile);
+  const candidateConfidence = getProfileConfidence(params.candidateProfile);
+  const confidence = Math.sqrt(requesterConfidence * candidateConfidence);
+  const candidateUpdatedAt = new Date(
+    params.candidateProfile.updated_at ?? params.candidateProfile.completed_at
+  );
+  const freshness = freshnessFit(candidateUpdatedAt, params.now);
+  const penalties = computeMatchPenalties({
+    confidenceFit: confidence,
+    candidateUpdatedAt,
+    seenInLast14Days: params.seenInLast14Days,
+    dismissedInLast14Days: params.dismissedInLast14Days,
+    now: params.now,
+  });
 
-  const deterministicScore = clamp(
-    0.35 * preferenceSimilarity +
-      0.25 * safetyReadiness +
-      0.25 * emotionalSupportFit +
-      0.1 * repairFit +
-      0.05 * reliabilityFit -
-      penalties
+  const finalScore = clamp01(
+    0.72 * trait +
+      0.1 * semanticSimilarity +
+      0.08 * preference +
+      0.06 * confidence +
+      0.04 * freshness -
+      penaltyTotal(penalties)
   );
 
-  const finalScore = hasVector
-    ? clamp(
-        0.2 * (vectorSemantic ?? 0) +
-          0.25 * preferenceSimilarity +
-          0.2 * safetyReadiness +
-          0.2 * emotionalSupportFit +
-          0.1 * repairFit +
-          0.05 * reliabilityFit -
-          penalties
-      )
-    : deterministicScore;
-
-  const roundedScore = Math.round(finalScore);
-
   const explanation: MatchExplanation = {
-    title: pickExplanationTitle(requesterScores, candidateScores),
+    title: "پیشنهاد گفت‌وگو",
     reasons: buildReasons(requesterScores, candidateScores),
     cautions: buildCautions(requesterScores, candidateScores),
   };
 
   return {
     userId: params.candidateProfile.user_id,
-    score: roundedScore,
-    vectorScore: vectorSemantic,
-    deterministicScore: Math.round(deterministicScore),
-    qualityLabel: getMatchQualityLabel(roundedScore),
+    score: finalScore,
+    vectorScore: semanticSimilarity,
+    deterministicScore: finalScore,
+    traitFit: trait,
+    preferenceFit: preference,
+    confidenceFit: confidence,
+    freshnessFit: freshness,
+    penalties,
+    qualityLabel: getMatchQualityLabel(finalScore),
     explanation,
   };
 };
@@ -336,18 +286,49 @@ export const parseMatchExplanation = (raw: string): MatchExplanation => {
     // fall through
   }
   return {
-    title: "گفت‌وگوی ناشناس",
+    title: "پیشنهاد گفت‌وگو",
     reasons: ["چند نقطه مشترک در سبک ارتباطی دیده می‌شود."],
     cautions: [],
   };
 };
 
 export const compareCandidateRanking = (
-  requesterVersion: string,
-  candidateAVersion: string,
-  candidateBVersion: string
+  requesterProfile: AssessmentProfileRow,
+  candidateAProfile: AssessmentProfileRow,
+  candidateBProfile: AssessmentProfileRow,
+  candidateA: MatchCandidate,
+  candidateB: MatchCandidate
 ): number => {
-  const sameA = candidateAVersion === requesterVersion ? 1 : 0;
-  const sameB = candidateBVersion === requesterVersion ? 1 : 0;
-  return sameB - sameA;
+  if (candidateB.score !== candidateA.score) {
+    return candidateB.score - candidateA.score;
+  }
+
+  const requesterScores = scoresFromJson(
+    requesterProfile.dimension_scores_json,
+    requesterProfile.user_id
+  );
+  const scoresA = scoresFromJson(
+    candidateAProfile.dimension_scores_json,
+    candidateAProfile.user_id
+  );
+  const scoresB = scoresFromJson(
+    candidateBProfile.dimension_scores_json,
+    candidateBProfile.user_id
+  );
+  const boundaryA = floorFit(requesterScores.boundaryRespect, scoresA.boundaryRespect);
+  const boundaryB = floorFit(requesterScores.boundaryRespect, scoresB.boundaryRespect);
+  if (boundaryB !== boundaryA) {
+    return boundaryB - boundaryA;
+  }
+  const confidenceA = candidateA.confidenceFit ?? 0;
+  const confidenceB = candidateB.confidenceFit ?? 0;
+  if (confidenceB !== confidenceA) {
+    return confidenceB - confidenceA;
+  }
+  const updatedA = candidateAProfile.updated_at ?? candidateAProfile.completed_at;
+  const updatedB = candidateBProfile.updated_at ?? candidateBProfile.completed_at;
+  if (updatedB !== updatedA) {
+    return updatedB - updatedA;
+  }
+  return candidateA.userId.localeCompare(candidateB.userId);
 };

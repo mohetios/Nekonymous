@@ -2,7 +2,7 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "nekonymous",
   "main": "src/index.ts",
-  "compatibility_date": "2026-06-15",
+  "compatibility_date": "2026-06-25",
   "workers_dev": true,
   "placement": {
     "mode": "smart"
@@ -59,6 +59,8 @@
       ]
     },
     {
+      // Historical Cloudflare migration marker; required for deploy history.
+      // The deleted class is not bound or exported by the V1 Worker.
       "tag": "v2-delete-legacy-inbox",
       "deleted_classes": ["InboxSqliteDurableObject"]
     }

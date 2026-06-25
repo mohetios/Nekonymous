@@ -66,7 +66,7 @@ import {
   declineMatchRequest,
   listPendingMatchRequests,
 } from "./match-request-service";
-import { decryptMatchIntro } from "../../crypto/crypto-service";
+import { decryptMatchIntro } from "../../ticketing/ticketing-service";
 import { parseMatchExplanation } from "./match-scoring";
 import { getMatchQualityLabel } from "./match-quality";
 

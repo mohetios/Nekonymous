@@ -1,5 +1,5 @@
 import type { Environment, InboxTicket, UserDraft } from "../types";
-import { createCapabilityLookupHash } from "../crypto/crypto-service";
+import { createCapabilityLookupHash } from "../ticketing/ticketing-service";
 
 type UserStateSnapshot = {
   paused: boolean;

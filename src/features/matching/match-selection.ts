@@ -70,9 +70,11 @@ export const scoreCandidatePool = (
     }
 
     return compareCandidateRanking(
-      requesterProfile.version,
-      profileA.version,
-      profileB.version
+      requesterProfile,
+      profileA,
+      profileB,
+      a,
+      b
     );
   });
   return scored;

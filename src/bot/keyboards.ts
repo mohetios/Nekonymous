@@ -3,7 +3,7 @@ import type { MatchHubMenuVariant } from "../features/matching/match-types";
 import {
   encodeCapabilityCallbackData,
   type CapabilityAction,
-} from "../crypto/crypto-service";
+} from "../ticketing/ticketing-service";
 import { MENU } from "./menu-labels";
 
 const INBOX_BUTTON = {

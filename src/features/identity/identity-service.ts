@@ -7,7 +7,7 @@ import {
   encryptTelegramChatId,
   generateOpaqueId,
   hmacTelegramUserId,
-} from "../../crypto/crypto-service";
+} from "../../ticketing/ticketing-service";
 import { getUserState, initUserState, purgeUserState } from "../../storage/user-state-client";
 
 export const ensureUserStateInitialized = async (

@@ -9,10 +9,9 @@ import {
   ASSESSMENT_QUESTIONS,
   ASSESSMENT_VERSION,
   EXPECTED_QUESTIONS_PER_DIMENSION,
-  type AssessmentDimension,
-  type AssessmentQuestion,
   validateAssessmentQuestionBank,
 } from "../src/features/assessment/question-bank.ts";
+import type { AssessmentDimension } from "../src/features/assessment/question-bank.ts";
 
 const fail = (message: string): never => {
   console.error(message);
@@ -25,69 +24,72 @@ const assert = (condition: boolean, message: string): void => {
   }
 };
 
-const clampScore = (value: number): number => {
-  if (!Number.isFinite(value)) {
-    return 0;
+const clamp01 = (value: number): number =>
+  Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0;
+
+const normalizeLikertAnswer = (raw: number, reverse: boolean): number => {
+  if (!Number.isInteger(raw) || raw < 1 || raw > 5) {
+    throw new Error("Invalid Likert answer");
   }
-  return Math.min(100, Math.max(0, Math.round(value)));
+  return reverse ? 6 - raw : raw;
 };
 
-const scoredValue = (question: AssessmentQuestion, answer: number): number =>
-  question.reverse ? 6 - answer : answer;
+const scoreDimension = (values: number[]): number => {
+  if (values.length === 0) {
+    throw new Error("Missing dimension answers");
+  }
+  const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return clamp01((avg - 1) / 4);
+};
 
 const computeAssessmentScores = (
   answers: Record<string, number>
 ): Record<AssessmentDimension, number> => {
   const scores = {} as Record<AssessmentDimension, number>;
-
   for (const dimension of ASSESSMENT_DIMENSIONS) {
-    const items = ASSESSMENT_QUESTIONS.filter((q) => q.dimension === dimension);
-    let sum = 0;
-    for (const item of items) {
-      const raw = answers[item.id];
-      if (raw === undefined || raw < 1 || raw > 5) {
-        throw new Error(`Missing answers for dimension: ${dimension}`);
-      }
-      sum += scoredValue(item, raw);
-    }
-    const avg = sum / items.length;
-    scores[dimension] = clampScore(((avg - 1) / 4) * 100);
+    const values = ASSESSMENT_QUESTIONS.filter((q) => q.dimension === dimension).map(
+      (q) => normalizeLikertAnswer(answers[q.id], q.reverse === true)
+    );
+    scores[dimension] = scoreDimension(values);
   }
-
   return scores;
 };
 
-const bucket = (score: number): string => {
-  if (score >= 67) {
-    return "high";
+const mostRepeatedAnswerRatio = (rawAnswers: number[]): number => {
+  const counts = new Map<number, number>();
+  for (const answer of rawAnswers) {
+    counts.set(answer, (counts.get(answer) ?? 0) + 1);
   }
-  if (score >= 34) {
-    return "medium";
-  }
-  return "low";
+  return Math.max(...counts.values()) / rawAnswers.length;
+};
+
+const scoreConfidence = (params: {
+  pairConsistency: number;
+  rawAnswers: number[];
+}): number => {
+  const repeatedRatio = mostRepeatedAnswerRatio(params.rawAnswers);
+  const straightlinePenalty = clamp01((repeatedRatio - 0.55) / 0.35);
+  return clamp01(
+    0.25 + 0.55 * params.pairConsistency + 0.2 * (1 - straightlinePenalty)
+  );
 };
 
 const buildProfileEmbeddingText = (
   scores: Record<AssessmentDimension, number>,
-  locale: string,
   version: string
-): string => {
-  const lines = [
-    `Language: ${locale}.`,
-    `Assessment version: ${version}.`,
-    "Conversation profile:",
-    `- ${bucket(scores.boundaryRespect)} boundary respect`,
-    `- ${bucket(scores.emotionalSensitivity)} emotional sensitivity`,
-    `- ${bucket(scores.emotionalRegulation)} emotional regulation`,
-    `- ${bucket(scores.curiosityDepth)} curiosity and depth`,
-    "Matching notes:",
-    "- good for low-pressure, respectful anonymous conversation",
-  ];
-  return lines.join("\n");
-};
+): string =>
+  [
+    "زبان: fa.",
+    `نسخه ارزیابی: ${version}.`,
+    "خلاصه سبک گفت‌وگو:",
+    `احترام به مرزها: ${scores.boundaryRespect >= 0.67 ? "بالا" : "میانه"}.`,
+    `ترجیح عمق گفتگو: ${scores.depthPreference >= 0.67 ? "بالا" : "میانه"}.`,
+    "این کاربر برای شروع گفتگو به سیگنال‌های آرام، محترمانه و ناشناس تکیه می‌کند.",
+  ].join("\n");
 
 validateAssessmentQuestionBank();
 
+assert(ASSESSMENT_VERSION === "v1", "assessment version frozen to v1");
 assert(ASSESSMENT_QUESTION_COUNT === 56, "exactly 56 questions");
 assert(ASSESSMENT_DIMENSIONS.length === 14, "exactly 14 dimensions");
 
@@ -110,53 +112,76 @@ for (const dimension of ASSESSMENT_DIMENSIONS) {
 }
 
 assert(reverseCount >= 10 && reverseCount <= 18, "reverse count reasonable");
+assert(normalizeLikertAnswer(1, false) === 1, "normal item keeps value");
+assert(normalizeLikertAnswer(1, true) === 5, "reverse item: 1 -> 5");
+assert(normalizeLikertAnswer(5, true) === 1, "reverse item: 5 -> 1");
+
+let invalidThrew = false;
+try {
+  normalizeLikertAnswer(6, false);
+} catch {
+  invalidThrew = true;
+}
+assert(invalidThrew, "invalid Likert answer throws");
+
+assert(scoreDimension([1, 1, 1]) === 0, "dimension min -> 0");
+assert(scoreDimension([5, 5, 5]) === 1, "dimension max -> 1");
+assert(scoreDimension([3]) === 0.5, "dimension midpoint -> 0.5");
 
 const minAnswers = Object.fromEntries(
   ASSESSMENT_QUESTIONS.map((q) => [q.id, q.reverse ? 5 : 1])
 ) as Record<string, number>;
-
 const maxAnswers = Object.fromEntries(
   ASSESSMENT_QUESTIONS.map((q) => [q.id, q.reverse ? 1 : 5])
 ) as Record<string, number>;
 
 const scoresMin = computeAssessmentScores(minAnswers);
-for (const dimension of ASSESSMENT_DIMENSIONS) {
-  assert(scoresMin[dimension] === 0, `min normalized -> 0 for ${dimension}`);
-}
-
 const scoresMax = computeAssessmentScores(maxAnswers);
 for (const dimension of ASSESSMENT_DIMENSIONS) {
-  assert(scoresMax[dimension] === 100, `max normalized -> 100 for ${dimension}`);
+  assert(scoresMin[dimension] === 0, `min normalized -> 0 for ${dimension}`);
+  assert(scoresMax[dimension] === 1, `max normalized -> 1 for ${dimension}`);
 }
-
-const reverseQuestion = ASSESSMENT_QUESTIONS.find((q) => q.reverse);
-assert(!!reverseQuestion, "has reverse question");
-if (reverseQuestion) {
-  assert(scoredValue(reverseQuestion, 1) === 5, "reverse item: 1 -> 5");
-  assert(scoredValue(reverseQuestion, 5) === 1, "reverse item: 5 -> 1");
-}
-
-assert(!Number.isNaN(scoresMax.boundaryRespect), "no NaN when complete");
-assert(Number.isFinite(scoresMax.boundaryRespect), "no Infinity when complete");
 
 const partialAnswers = { ...minAnswers };
 delete partialAnswers[ASSESSMENT_QUESTIONS[0].id];
-
-let threw = false;
+let missingThrew = false;
 try {
   computeAssessmentScores(partialAnswers);
 } catch {
-  threw = true;
+  missingThrew = true;
 }
-assert(threw, "missing answer throws in scoring");
+assert(missingThrew, "missing answer throws in scoring");
 
-const embeddingText = buildProfileEmbeddingText(scoresMax, "fa", ASSESSMENT_VERSION);
+const straightlineConfidence = scoreConfidence({
+  pairConsistency: 0.75,
+  rawAnswers: Array(56).fill(3),
+});
+const variedConfidence = scoreConfidence({
+  pairConsistency: 0.75,
+  rawAnswers: ASSESSMENT_QUESTIONS.map((_, index) => (index % 5) + 1),
+});
+assert(straightlineConfidence < variedConfidence, "confidence decreases on straightlining");
+const lowConfidence = scoreConfidence({
+  pairConsistency: 0,
+  rawAnswers: Array(56).fill(3),
+});
+assert(lowConfidence < 0.5, "low confidence below eligibility threshold");
+
+const qualityConfidence = scoreConfidence({
+  pairConsistency: 0.75,
+  rawAnswers: ASSESSMENT_QUESTIONS.map((_, index) => (index % 5) + 1),
+});
+assert(qualityConfidence >= 0 && qualityConfidence <= 1, "confidence is 0..1");
+assert((qualityConfidence >= 0.5) === true, "match eligibility follows confidence");
+
+const embeddingText = buildProfileEmbeddingText(scoresMax, ASSESSMENT_VERSION);
 assert(!embeddingText.includes('"br1"'), "summary does not include raw answer ids");
-assert(embeddingText.includes("v1"), "summary includes v1");
-assert(embeddingText.includes("high boundary respect"), "summary includes bucket labels");
-assert(embeddingText.includes("Assessment version: v1"), "summary includes version line");
+assert(!embeddingText.includes("answer_value"), "summary does not include raw answers");
+assert(embeddingText.includes("نسخه ارزیابی: v1"), "summary includes version line");
 
-const vectorId = `profile:user-abc:${ASSESSMENT_VERSION}`;
-assert(vectorId === "profile:user-abc:v1", "vector id contains v1");
+assert(
+  `profile:user-abc:${ASSESSMENT_VERSION}` === "profile:user-abc:v1",
+  "vector id is profile:{userId}:v1"
+);
 
 console.log("Assessment V1 OK");

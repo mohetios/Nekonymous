@@ -16,7 +16,7 @@ import {
 
 /** Inline search trigger when the user is ready to match. */
 export const buildMatchSearchKeyboard = (): InlineKeyboard =>
-  new InlineKeyboard().text("پیدا کردن ۵ مچ نزدیک", MATCH_CALLBACK.search);
+  new InlineKeyboard().text("نزدیک‌ترین گزینه‌های فعلی", MATCH_CALLBACK.search);
 
 export const buildIncomingMatchRequestKeyboard = (
   requestId: string
@@ -50,9 +50,8 @@ export const formatIncomingMatchRequestMessage = (params: {
   explanation: { reasons: string[] };
   introText: string;
 }): string => {
-  const scoreText = convertToPersianNumbers(String(Math.round(params.score)));
   const similarityLine = escapeHtml(
-    formatMatchRequestSimilarityLine(scoreText, params.qualityLabel)
+    formatMatchRequestSimilarityLine(params.qualityLabel)
   );
 
   return (
@@ -74,9 +73,8 @@ export const formatOutgoingMatchRequestMessage = (params: {
   explanation: { reasons: string[] };
   introText: string;
 }): string => {
-  const scoreText = convertToPersianNumbers(String(Math.round(params.score)));
   const similarityLine = escapeHtml(
-    formatMatchRequestSimilarityLine(scoreText, params.qualityLabel)
+    formatMatchRequestSimilarityLine(params.qualityLabel)
   );
 
   return (
@@ -114,7 +112,7 @@ export const formatMatchCandidatesMessage = (
   let text =
     "🔎 نزدیک‌ترین پیشنهادهای فعلی\n\n" +
     `در حال حاضر ${convertToPersianNumbers(String(count))} گزینه پیدا شد.\n` +
-    "این درصدها تقریبی‌اند و فقط برای شروع گفت‌وگوی بهتر استفاده می‌شوند.\n";
+    "این نتیجه فقط یک سیگنال محصولی برای شروع گفت‌وگو است، نه سازگاری قطعی.\n";
 
   if (count === 1) {
     text += "\nفعلاً فقط یک گزینه قابل پیشنهاد پیدا شد.\n";
@@ -131,7 +129,7 @@ export const formatMatchCandidatesMessage = (
     const qualityLabel = MATCH_QUALITY_COPY[candidate.qualityLabel];
 
     text +=
-      `${convertToPersianNumbers(String(index + 1))}) ${qualityLabel} — ${convertToPersianNumbers(String(candidate.score))}٪\n\n` +
+      `${convertToPersianNumbers(String(index + 1))}) ${qualityLabel}\n\n` +
       `${candidate.explanation.title}\n\n` +
       "چرا ممکن است مناسب باشد؟\n" +
       `${reasons}\n`;

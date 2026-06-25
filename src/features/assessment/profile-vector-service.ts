@@ -1,5 +1,8 @@
 import type { Environment } from "../../types";
-import { generateOpaqueId } from "../../crypto/crypto-service";
+import {
+  createCapabilityLookupHash,
+  generateOpaqueId,
+} from "../../ticketing/ticketing-service";
 import {
   PROFILE_EMBEDDING_DIMENSION,
   PROFILE_EMBEDDING_MODEL,
@@ -12,13 +15,12 @@ import type { AssessmentResultSummary, AssessmentScores } from "./scoring";
 import { updateProfileVectorStatus } from "./assessment-profile-service";
 
 export type ProfileVectorMetadata = {
-  userId: string;
+  userIdHash: string;
   locale: "fa" | "en";
   discoverable: boolean;
-  safetyTier: "normal" | "limited";
+  matchEligible: boolean;
   profileVersion: string;
-  intentPrimary: string;
-  profileBucket: number;
+  updatedAtEpoch: number;
 };
 
 export const buildProfileVectorId = (
@@ -48,9 +50,6 @@ export const indexCompletedProfile = async (params: {
   resultSummary: AssessmentResultSummary;
   profileSummaryText: string;
   discoverable: boolean;
-  safetyTier: "normal" | "limited";
-  primaryIntent: string;
-  profileBucket: number;
   env: Environment;
 }): Promise<{ vectorId: string; model: string; dimension?: number }> => {
   const {
@@ -61,9 +60,6 @@ export const indexCompletedProfile = async (params: {
     resultSummary,
     profileSummaryText,
     discoverable,
-    safetyTier,
-    primaryIntent,
-    profileBucket,
     env,
   } = params;
 
@@ -73,6 +69,8 @@ export const indexCompletedProfile = async (params: {
   const text =
     profileSummaryText ||
     buildProfileEmbeddingText(scores, resultSummary, locale, version);
+  const confidence = resultSummary.quality?.confidence ?? 0.75;
+  const matchEligible = confidence >= 0.5;
 
   await env.DB.prepare(
     `INSERT INTO profile_vector_index_events (
@@ -97,13 +95,12 @@ export const indexCompletedProfile = async (params: {
     }
 
     const metadata: ProfileVectorMetadata = {
-      userId,
+      userIdHash: await createCapabilityLookupHash(userId, env.APP_HMAC_PEPPER),
       locale,
       discoverable,
-      safetyTier,
+      matchEligible,
       profileVersion: version,
-      intentPrimary: primaryIntent,
-      profileBucket,
+      updatedAtEpoch: now,
     };
 
     await env.PROFILE_VECTORS.upsert([
@@ -111,13 +108,12 @@ export const indexCompletedProfile = async (params: {
         id: vectorId,
         values,
         metadata: {
-          userId: metadata.userId,
+          userIdHash: metadata.userIdHash,
           locale: metadata.locale,
           discoverable: metadata.discoverable,
-          safetyTier: metadata.safetyTier,
+          matchEligible: metadata.matchEligible,
           profileVersion: metadata.profileVersion,
-          intentPrimary: metadata.intentPrimary,
-          profileBucket: metadata.profileBucket,
+          updatedAtEpoch: metadata.updatedAtEpoch,
         },
       },
     ]);
@@ -208,13 +204,12 @@ export const updateVectorDiscoverability = async (
       id: row.vector_id,
       values: vector.values,
       metadata: {
-        userId,
+        userIdHash: await createCapabilityLookupHash(userId, env.APP_HMAC_PEPPER),
         locale,
         discoverable: enabled,
-        safetyTier: row.safety_tier,
+        matchEligible: true,
         profileVersion: row.version,
-        intentPrimary: row.primary_intent,
-        profileBucket: row.profile_bucket,
+        updatedAtEpoch: Date.now(),
       },
     },
   ]);

@@ -1,5 +1,8 @@
 import type { Environment } from "../../types";
-import { generateOpaqueId } from "../../crypto/crypto-service";
+import {
+  createBlockHash,
+  generateOpaqueId,
+} from "../../ticketing/ticketing-service";
 import { getUserById } from "../../features/identity/identity-service";
 import {
   checkCanReceive,
@@ -7,6 +10,7 @@ import {
 } from "../../storage/user-state-client";
 import {
   getMatchProfile,
+  isMatchEligibleProfile,
   setDiscoverable,
   type AssessmentProfileRow,
 } from "../assessment/assessment-profile-service";
@@ -16,9 +20,9 @@ import {
   MATCH_DISMISS_BLOCK_MS,
   MATCH_RECENT_DECLINE_MS,
   MATCH_REQUEST_LIMIT_PER_DAY,
+  MATCH_REQUEST_TTL_MS,
   MATCH_RESULT_COUNT,
   MATCH_SEARCH_LIMIT_PER_HOUR,
-  MATCH_SEARCH_TOP_K,
 } from "./constants";
 import type {
   MatchCandidate,
@@ -96,24 +100,6 @@ export const getMatchDashboard = async (
     };
   }
 
-  if (profile.vector_status === "failed") {
-    return {
-      state: "vector_failed",
-      discoverable: profile.discoverable === 1,
-      profileVersion: profile.version,
-      vectorStatus: profile.vector_status,
-    };
-  }
-
-  if (profile.vector_status !== "indexed") {
-    return {
-      state: "vector_pending",
-      discoverable: profile.discoverable === 1,
-      profileVersion: profile.version,
-      vectorStatus: profile.vector_status,
-    };
-  }
-
   if (profile.discoverable !== 1) {
     return {
       state: "opt_in_required",
@@ -123,7 +109,7 @@ export const getMatchDashboard = async (
     };
   }
 
-  if (profile.safety_tier !== "normal") {
+  if (profile.safety_tier !== "normal" || !isMatchEligibleProfile(profile)) {
     return {
       state: "opt_in_required",
       discoverable: false,
@@ -154,8 +140,8 @@ export const resolveMatchHubMenuVariant = async (
     if (
       profile &&
       profile.status === "completed" &&
-      profile.vector_status === "indexed" &&
-      profile.safety_tier === "normal"
+      profile.safety_tier === "normal" &&
+      isMatchEligibleProfile(profile)
     ) {
       return "can_enable";
     }
@@ -166,8 +152,8 @@ export const resolveMatchHubMenuVariant = async (
 
 const canEnableDiscoverability = (profile: AssessmentProfileRow): boolean =>
   profile.status === "completed" &&
-  profile.vector_status === "indexed" &&
-  profile.safety_tier === "normal";
+  profile.safety_tier === "normal" &&
+  isMatchEligibleProfile(profile);
 
 export const enableDiscoverability = async (
   userId: string,
@@ -216,7 +202,6 @@ const loadCandidateProfiles = async (
        AND status = 'completed'
        AND version = ?
        AND discoverable = 1
-       AND vector_status = 'indexed'
        AND safety_tier = 'normal'`
   )
     .bind(...userIds, ASSESSMENT_VERSION)
@@ -232,6 +217,7 @@ const fetchD1FallbackProfiles = async (
   requesterId: string,
   env: Environment
 ): Promise<AssessmentProfileRow[]> => {
+  const since = Date.now() - 180 * DAY_MS;
   const rows = await env.DB.prepare(
     `SELECT * FROM assessment_profiles
      WHERE discoverable = 1
@@ -239,10 +225,11 @@ const fetchD1FallbackProfiles = async (
        AND version = ?
        AND user_id != ?
        AND safety_tier = 'normal'
+       AND updated_at >= ?
      ORDER BY updated_at DESC
      LIMIT ?`
   )
-    .bind(ASSESSMENT_VERSION, requesterId, MATCH_SEARCH_TOP_K)
+    .bind(ASSESSMENT_VERSION, requesterId, since, 20)
     .all<AssessmentProfileRow>();
 
   return rows.results ?? [];
@@ -347,23 +334,46 @@ const isMessagingBlocked = async (
   candidateId: string,
   requesterState?: Awaited<ReturnType<typeof getUserStateSafe>>
 ): Promise<boolean> => {
+  const [requesterUser, candidateUser] = await Promise.all([
+    getUserById(requesterId, env),
+    getUserById(candidateId, env),
+  ]);
+  if (!requesterUser || !candidateUser) {
+    return true;
+  }
+
+  const requesterBlockHash = await createBlockHash(
+    env.APP_HMAC_PEPPER,
+    requesterUser.telegram_user_hash,
+    candidateUser.telegram_user_hash
+  );
+  const candidateBlockHash = await createBlockHash(
+    env.APP_HMAC_PEPPER,
+    candidateUser.telegram_user_hash,
+    requesterUser.telegram_user_hash
+  );
+
   const requester =
     requesterState ?? (await getUserStateSafe(env, requesterId));
-  const candidateReceive = await checkCanReceive(env, candidateId, requesterId);
+  const candidateReceive = await checkCanReceive(
+    env,
+    candidateId,
+    candidateBlockHash
+  );
 
   if (!candidateReceive.ok) {
     return true;
   }
 
   if (
-    requester.blockedUserIds.includes(candidateId) ||
+    requester.blockedUserIds.includes(requesterBlockHash) ||
     candidateReceive.reason === "blocked"
   ) {
     return true;
   }
 
   const candidateState = await getUserStateSafe(env, candidateId);
-  if (candidateState.blockedUserIds.includes(requesterId)) {
+  if (candidateState.blockedUserIds.includes(candidateBlockHash)) {
     return true;
   }
 
@@ -419,8 +429,8 @@ export const isCandidateEligible = async (
       candidateProfile.status !== "completed" ||
       candidateProfile.version !== ASSESSMENT_VERSION ||
       candidateProfile.discoverable !== 1 ||
-      candidateProfile.vector_status !== "indexed" ||
-      candidateProfile.safety_tier !== "normal"
+      candidateProfile.safety_tier !== "normal" ||
+      !isMatchEligibleProfile(candidateProfile)
     ) {
       return false;
     }
@@ -614,8 +624,17 @@ export const createMatchSuggestionBatch = async (
 ): Promise<MatchSuggestionRow[]> => {
   const now = Date.now();
   const rows: MatchSuggestionRow[] = [];
+  const selected = candidates.slice(0, MATCH_RESULT_COUNT);
 
-  for (const candidate of candidates) {
+  await env.DB.prepare(
+    `UPDATE match_suggestions
+     SET status = 'expired', action_at = ?
+     WHERE user_id = ? AND profile_version = ? AND status = 'shown'`
+  )
+    .bind(now, userId, profileVersion)
+    .run();
+
+  for (const candidate of selected) {
     const candidateProfile = await getMatchProfile(
       candidate.userId,
       env
@@ -682,7 +701,7 @@ export const getMatchSuggestion = async (
     return null;
   }
 
-  const maxAge = 24 * HOUR_MS;
+  const maxAge = MATCH_REQUEST_TTL_MS;
   if (Date.now() - row.created_at > maxAge) {
     return null;
   }

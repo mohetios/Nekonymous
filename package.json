@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "homepage": "https://nekonymous.mohetios.dev",
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260625.1",
     "@eslint/js": "^10.0.1",
     "@types/node": "^25.9.3",
     "eslint": "^10.4.1",
@@ -12,7 +13,7 @@
     "knip": "^6.16.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.61.0",
-    "wrangler": "4.100.0"
+    "wrangler": "4.105.0"
   },
   "private": true,
   "scripts": {
@@ -24,14 +25,13 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "knip": "knip",
-    "test:crypto": "node --experimental-strip-types tools/verify-crypto.ts",
+    "test:ticketing": "node --experimental-strip-types tools/verify-ticketing.ts",
     "test:assessment": "node --experimental-strip-types tools/verify-assessment.ts",
     "test:matching": "node --experimental-strip-types tools/verify-matching.ts",
-    "test": "pnpm run test:crypto && pnpm run test:assessment && pnpm run test:matching",
+    "test": "pnpm run test:ticketing && pnpm run test:assessment && pnpm run test:matching",
     "check": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm run test"
   },
   "dependencies": {
-    "@cloudflare/workers-types": "^4.20260611.1",
     "grammy": "^1.43.0"
   }
 }

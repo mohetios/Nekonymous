@@ -15,7 +15,8 @@ export type AssessmentProfileQuality = {
   expectedQuestions: number;
   responseVariance: number;
   straightLine: boolean;
-  confidence: "low" | "normal";
+  confidence: number;
+  matchEligible: boolean;
 };
 
 export type AssessmentResultSummary = {
@@ -27,15 +28,35 @@ export type AssessmentResultSummary = {
   quality?: AssessmentProfileQuality;
 };
 
-const clampScore = (value: number): number => {
+export const clamp01 = (value: number): number => {
   if (!Number.isFinite(value)) {
     return 0;
   }
-  return Math.min(100, Math.max(0, Math.round(value)));
+  return Math.min(1, Math.max(0, value));
+};
+
+export const normalizeLikertAnswer = (
+  raw: number,
+  reverse: boolean
+): number => {
+  if (!Number.isInteger(raw) || raw < 1 || raw > 5) {
+    throw new Error("Invalid Likert answer");
+  }
+
+  return reverse ? 6 - raw : raw;
+};
+
+export const scoreDimension = (values: number[]): number => {
+  if (values.length === 0) {
+    throw new Error("Missing dimension answers");
+  }
+
+  const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
+  return clamp01((avg - 1) / 4);
 };
 
 export const scoredValue = (question: AssessmentQuestion, answer: number): number =>
-  question.reverse ? 6 - answer : answer;
+  normalizeLikertAnswer(answer, question.reverse === true);
 
 const dimensionAverage = (
   questions: AssessmentQuestion[],
@@ -51,7 +72,7 @@ const dimensionAverage = (
   for (const item of items) {
     const raw = answers[item.id];
     if (raw === undefined || raw < 1 || raw > 5) {
-      return NaN;
+      throw new Error("Invalid Likert answer");
     }
     sum += scoredValue(item, raw);
   }
@@ -59,12 +80,9 @@ const dimensionAverage = (
   return sum / items.length;
 };
 
-const toPercent = (average: number): number =>
-  clampScore(((average - 1) / 4) * 100);
-
 export const hasCompleteAnswers = (answers: Record<string, number>): boolean =>
   ASSESSMENT_QUESTIONS.every(
-    (q) => answers[q.id] !== undefined && answers[q.id] >= 1 && answers[q.id] <= 5
+    (q) => Number.isInteger(answers[q.id]) && answers[q.id] >= 1 && answers[q.id] <= 5
   );
 
 export const computeAssessmentScores = (
@@ -77,10 +95,35 @@ export const computeAssessmentScores = (
     if (!Number.isFinite(avg)) {
       throw new Error(`Missing answers for dimension: ${dimension}`);
     }
-    scores[dimension] = toPercent(avg);
+    scores[dimension] = scoreDimension([avg]);
   }
 
   return scores;
+};
+
+export const mostRepeatedAnswerRatio = (rawAnswers: number[]): number => {
+  if (rawAnswers.length === 0) {
+    return 1;
+  }
+
+  const counts = new Map<number, number>();
+  for (const answer of rawAnswers) {
+    counts.set(answer, (counts.get(answer) ?? 0) + 1);
+  }
+
+  return Math.max(...counts.values()) / rawAnswers.length;
+};
+
+export const scoreConfidence = (params: {
+  pairConsistency: number;
+  rawAnswers: number[];
+}): number => {
+  const repeatedRatio = mostRepeatedAnswerRatio(params.rawAnswers);
+  const straightlinePenalty = clamp01((repeatedRatio - 0.55) / 0.35);
+
+  return clamp01(
+    0.25 + 0.55 * params.pairConsistency + 0.2 * (1 - straightlinePenalty)
+  );
 };
 
 export const computeProfileQuality = (
@@ -98,7 +141,8 @@ export const computeProfileQuality = (
       expectedQuestions,
       responseVariance: 0,
       straightLine: false,
-      confidence: "low",
+      confidence: 0,
+      matchEligible: false,
     };
   }
 
@@ -108,8 +152,10 @@ export const computeProfileQuality = (
     values.reduce((sum, value) => sum + (value - mean) ** 2, 0) /
     completedQuestions;
   const straightLine = values.every((value) => value === values[0]);
-  const confidence =
-    straightLine || responseVariance < 0.15 ? "low" : "normal";
+  const confidence = scoreConfidence({
+    pairConsistency: 0.75,
+    rawAnswers: values,
+  });
 
   return {
     completedQuestions,
@@ -117,14 +163,15 @@ export const computeProfileQuality = (
     responseVariance,
     straightLine,
     confidence,
+    matchEligible: confidence >= 0.5,
   };
 };
 
 const level = (score: number): "low" | "mid" | "high" => {
-  if (score >= 67) {
+  if (score >= 0.67) {
     return "high";
   }
-  if (score <= 33) {
+  if (score <= 0.33) {
     return "low";
   }
   return "mid";
@@ -136,19 +183,19 @@ const pickTitle = (scores: AssessmentScores): string => {
   const energy = scores.socialEnergy;
   const boundary = scores.boundaryRespect;
 
-  if (depth >= 70 && warmth >= 60) {
+  if (depth >= 0.7 && warmth >= 0.6) {
     return "گفت‌وگوی آرام و عمیق";
   }
-  if (warmth >= 65 && scores.emotionalRegulation >= 55) {
+  if (warmth >= 0.65 && scores.emotionalRegulation >= 0.55) {
     return "گفت‌وگوی گرم و انسانی";
   }
-  if (energy >= 65 && depth <= 45 && scores.replyPacePreference <= 45) {
+  if (energy >= 0.65 && depth <= 0.45 && scores.replyPacePreference <= 0.45) {
     return "گفت‌وگوی سبک، سریع و کم‌فشار";
   }
-  if (boundary >= 65 && scores.anonymityComfort <= 55) {
+  if (boundary >= 0.65 && scores.anonymityComfort <= 0.55) {
     return "گفت‌وگوی محتاط و مرزدار";
   }
-  if (scores.curiosityDepth >= 65) {
+  if (scores.curiosityDepth >= 0.65) {
     return "گفت‌وگوی کنجکاو و فکری";
   }
   return "گفت‌وگوی متعادل و سازگار";
@@ -196,10 +243,10 @@ const buildHighlights = (scores: AssessmentScores): string[] => {
 
   return sorted.slice(0, 3).map((item) => {
     const score = scores[item.key];
-    if (score >= 67) {
+    if (score >= 0.67) {
       return `${item.label} — نقطه قوت نسبی`;
     }
-    if (score >= 45) {
+    if (score >= 0.45) {
       return `${item.label} — در محدوده متعادل`;
     }
     return `${item.label} — ترجیح ملایم‌تر`;
@@ -209,22 +256,22 @@ const buildHighlights = (scores: AssessmentScores): string[] => {
 const buildCautions = (scores: AssessmentScores): string[] => {
   const notes: string[] = [];
 
-  if (scores.emotionalSensitivity >= 67) {
+  if (scores.emotionalSensitivity >= 0.67) {
     notes.push(
       "ممکن است در گفت‌وگوهای مبهم یا دیرپاسخ، ذهنت بیشتر درگیر شود — مکث کوتاه می‌تواند کمک کند."
     );
   }
-  if (scores.replyPacePreference <= 33) {
+  if (scores.replyPacePreference <= 0.33) {
     notes.push(
       "فاصله زیاد بین پیام‌ها برایت سخت‌تر است — بهتر است انتظاراتت را زودتر روشن کنی."
     );
   }
-  if (scores.boundaryRespect <= 40) {
+  if (scores.boundaryRespect <= 0.4) {
     notes.push(
       "مراقب باش فشار برای ادامه گفت‌وگو، حریم طرف مقابل را فراموش نکند."
     );
   }
-  if (scores.supportPreference >= 67) {
+  if (scores.supportPreference >= 0.67) {
     notes.push(
       "دوست داری بیشتر شنیده شوی — در گفت‌وگوی ناشناس، درخواست شفاف کمک می‌کند."
     );
@@ -241,19 +288,19 @@ const buildCautions = (scores: AssessmentScores): string[] => {
 const buildMatchNotes = (scores: AssessmentScores): string[] => {
   const notes: string[] = [];
 
-  if (scores.boundaryRespect >= 55 && scores.warmthEmpathy >= 50) {
+  if (scores.boundaryRespect >= 0.55 && scores.warmthEmpathy >= 0.5) {
     notes.push("مناسب برای گفت‌وگوی ناشناس کم‌فشار و محترمانه");
   }
 
-  if (scores.replyPacePreference >= 60) {
+  if (scores.replyPacePreference >= 0.6) {
     notes.push("ترجیح می‌دهی ریتم پاسخ‌دهی آرام و بدون فشار باشد");
   }
 
-  if (scores.emotionalSensitivity >= 65) {
+  if (scores.emotionalSensitivity >= 0.65) {
     notes.push("به لحن گرم و شنیده‌شدن اهمیت می‌دهی");
   }
 
-  if (scores.depthPreference >= 65) {
+  if (scores.depthPreference >= 0.65) {
     notes.push("به گفت‌وگوی عمیق‌تر علاقه داری");
   }
 
@@ -278,13 +325,13 @@ export const buildResultSummary = (
 
 export const computePrimaryIntent = (scores: AssessmentScores): string => {
   const depth = (scores.depthPreference + scores.curiosityDepth) / 2;
-  if (depth >= 65) {
+  if (depth >= 0.65) {
     return "deep-talk";
   }
-  if (scores.socialEnergy >= 65 && scores.warmthEmpathy >= 55) {
+  if (scores.socialEnergy >= 0.65 && scores.warmthEmpathy >= 0.55) {
     return "light-chat";
   }
-  if (scores.supportPreference >= 65) {
+  if (scores.supportPreference >= 0.65) {
     return "support";
   }
   return "deep-talk";
@@ -293,7 +340,7 @@ export const computePrimaryIntent = (scores: AssessmentScores): string => {
 export const computeSafetyTier = (
   scores: AssessmentScores
 ): "normal" | "limited" => {
-  if (scores.boundaryRespect < 35 || scores.honestyTransparency < 35) {
+  if (scores.boundaryRespect < 0.35 || scores.honestyTransparency < 0.35) {
     return "limited";
   }
   return "normal";
@@ -302,7 +349,7 @@ export const computeSafetyTier = (
 export const computeProfileBucket = (scores: AssessmentScores): number => {
   const values = Object.values(scores);
   const avg = values.reduce((sum, value) => sum + value, 0) / values.length;
-  return Math.min(9, Math.floor(avg / 10));
+  return Math.min(9, Math.floor(avg * 10));
 };
 
 /** Core dimensions shown in result overview. */

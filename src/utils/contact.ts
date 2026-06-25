@@ -1,5 +1,5 @@
 import type { Environment } from "../types";
-import { encryptDisplayName } from "../crypto/crypto-service";
+import { encryptDisplayName } from "../ticketing/ticketing-service";
 import {
   buildDeliveryHeader,
   buildDeliveryHeaderLine,

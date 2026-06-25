@@ -1,7 +1,7 @@
-/** Workers AI embedding model for profile vectors (768 dims, multilingual). */
-export const PROFILE_EMBEDDING_MODEL = "@cf/google/embeddinggemma-300m";
+/** Workers AI embedding model for profile vectors (1024 dims, multilingual). */
+export const PROFILE_EMBEDDING_MODEL = "@cf/baai/bge-m3";
 
-export const PROFILE_EMBEDDING_DIMENSION = 768;
+export const PROFILE_EMBEDDING_DIMENSION = 1024;
 
 export const ASSESSMENT_CALLBACK = {
   answer: (index: number, value: number) => `t:a:${index}:${value}`,

@@ -43,14 +43,14 @@ import {
   createCapabilityLookupHash,
   createBlockHash,
   randomCapability,
-} from "../../crypto/crypto-service";
+} from "../../ticketing/ticketing-service";
 import {
   deliveryContextFromTicket,
   hasDeliverablePayload,
   notifyMessageSeen,
   notifyRecipientInbox,
   sendAnonymousMessage,
-  toLegacyConversation,
+  toTicketDeliveryConversation,
 } from "./messaging-service";
 import {
   getActiveSlugForUser,
@@ -425,7 +425,7 @@ export const handleInboxCommand = async (
           actionCapability,
           env.APP_HMAC_PEPPER
         );
-        const legacy = toLegacyConversation(
+        const deliveryConversation = toTicketDeliveryConversation(
           delivery.connection,
           delivery.payload,
           0,
@@ -434,7 +434,7 @@ export const handleInboxCommand = async (
 
         await sendDecryptedMessage(
           ctx,
-          legacy,
+          deliveryConversation,
           {
             reply_markup: createMessageKeyboard(
               actionCapability,

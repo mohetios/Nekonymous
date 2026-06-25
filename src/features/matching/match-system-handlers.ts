@@ -153,7 +153,7 @@ export const handleMatchSystemMenu = async (
   }
 };
 
-/** Legacy inline `ms:` callbacks on older messages. */
+/** Inline `ms:` callbacks on existing messages. */
 export const handleMatchSystemCallback = async (
   ctx: Context,
   env: Environment

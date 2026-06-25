@@ -13,6 +13,16 @@ export type MatchCandidate = {
   score: number;
   vectorScore?: number;
   deterministicScore: number;
+  traitFit?: number;
+  preferenceFit?: number;
+  confidenceFit?: number;
+  freshnessFit?: number;
+  penalties?: {
+    lowConfidence: number;
+    staleProfile: number;
+    repeatedExposure: number;
+    dismissedRecently: number;
+  };
   qualityLabel: MatchQualityLabel;
   explanation: MatchExplanation;
 };

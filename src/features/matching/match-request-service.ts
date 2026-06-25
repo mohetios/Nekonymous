@@ -3,7 +3,7 @@ import {
   decryptMatchIntro,
   encryptMatchIntro,
   generateOpaqueId,
-} from "../../crypto/crypto-service";
+} from "../../ticketing/ticketing-service";
 import {
   getActiveSlugForUser,
   getUserById,
@@ -562,7 +562,12 @@ export const acceptMatchRequest = async (
 
   if (sendResult.notify && sendResult.pendingCount) {
     try {
-      await notifyRecipientInbox(env, candidate, sendResult.pendingCount);
+      await notifyRecipientInbox(
+        env,
+        candidate,
+        sendResult.pendingCount,
+        sendResult.openCapability
+      );
     } catch {
       // non-fatal
     }

@@ -16,7 +16,7 @@ import {
   generateTicketId,
   getSenderAlias,
   randomCapability,
-} from "../../crypto/crypto-service";
+} from "../../ticketing/ticketing-service";
 import { ensureUserStateInitialized } from "../identity/identity-service";
 import { incrementPlatformStat } from "../platform/platform-stats-service";
 import {
@@ -303,7 +303,7 @@ export const deliveryContextFromTicket = async (
   };
 };
 
-export const toLegacyConversation = (
+export const toTicketDeliveryConversation = (
   connection: ConnectionMetadata,
   payload: MessagePayload,
   senderChatId: number,

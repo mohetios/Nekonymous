@@ -2,6 +2,10 @@
 packages:
   - "."
 
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+
 minimumReleaseAgeExclude:
   - '@cloudflare/workerd-*'
   - '@cloudflare/workers-types'
