@@ -9,6 +9,10 @@ import {
   hmacTelegramUserId,
 } from "../../ticketing/ticketing-service";
 import { getUserState, initUserState, purgeUserState } from "../../storage/user-state-client";
+import {
+  DISPLAY_NAME_EMPTY,
+  DISPLAY_NAME_FALLBACK,
+} from "../../i18n/defaults";
 
 export const ensureUserStateInitialized = async (
   env: Environment,
@@ -82,11 +86,11 @@ export const buildUserDeepLink = (
 
 const initialDisplayName = (firstName: string | undefined): string => {
   if (!firstName) {
-    return "بدون نام!";
+    return DISPLAY_NAME_EMPTY;
   }
   const cleaned = firstName.replace(/[\u0000-\u001F\u007F]/g, "").trim();
   if (!cleaned) {
-    return "کاربر";
+    return DISPLAY_NAME_FALLBACK;
   }
   return [...cleaned].slice(0, DISPLAY_NAME_MAX_CHARS).join("");
 };
@@ -421,7 +425,7 @@ export const toBotUser = async (
     throw new Error("User has no active public link");
   }
 
-  let displayName = "بدون نام!";
+  let displayName = DISPLAY_NAME_EMPTY;
   if (state.displayNameCiphertext) {
     try {
       displayName = await decryptDisplayName(
@@ -429,7 +433,7 @@ export const toBotUser = async (
         env.APP_MASTER_KEY
       );
     } catch {
-      displayName = "بدون نام!";
+      displayName = DISPLAY_NAME_EMPTY;
     }
   }
 

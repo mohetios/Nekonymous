@@ -1,4 +1,8 @@
 import type { BotUser } from "../types";
+import {
+  DISPLAY_NAME_EMPTY,
+  DISPLAY_NAME_FALLBACK,
+} from "../i18n/defaults";
 import { isReservedDisplayName } from "../bot/menu";
 
 export {
@@ -19,10 +23,10 @@ export const sanitizeDisplayName = (input: string): string | null => {
 
 export const publicDisplayName = (
   user: BotUser | null | undefined,
-  fallback = "کاربر"
+  fallback = DISPLAY_NAME_FALLBACK
 ): string => {
   const name = user?.displayName?.trim();
-  if (!name || name === "بدون نام!" || isReservedDisplayName(name)) {
+  if (!name || name === DISPLAY_NAME_EMPTY || isReservedDisplayName(name)) {
     return fallback;
   }
 

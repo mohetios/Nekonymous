@@ -1,7 +1,8 @@
 import { escapeMarkdownV2 } from "./tools";
+import { DELIVERY_HEADER_FROM } from "../i18n/labels";
 
 export const buildDeliveryHeaderLine = (nickname: string): string =>
-  `💬 از ${nickname}:`;
+  DELIVERY_HEADER_FROM(nickname);
 
 export const buildDeliveryHeader = (nickname: string): string =>
   `${buildDeliveryHeaderLine(nickname)}\n\n`;

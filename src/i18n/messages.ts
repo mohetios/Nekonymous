@@ -183,3 +183,5 @@ export const INBOX_FULL_MESSAGE = `صندوق ورودی گیرنده فعلاً
 export const SELF_MESSAGE_DISABLE_MESSAGE = `نمی‌توانید از لینک خودتان برای خودتان پیام ناشناس بفرستید.
 
 برای ارسال پیام، لینک یک کاربر دیگر را باز کنید.`;
+
+export const REPORT_SUBMITTED_MESSAGE = `<b>گزارش ثبت شد</b>`;

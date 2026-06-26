@@ -6,20 +6,9 @@ export const MATCH_SYSTEM_CALLBACK = {
   back: "ms:back",
 } as const;
 
-export const MATCH_SYSTEM_INTRO =
-  "🧭 <b>سیستم مچ‌یابی</b>\n\n" +
-  "اینجا می‌توانی پروفایل گفت‌وگوی خودت را ببینی، ارزیابی را اجرا کنی، یا بعد از آماده شدن پروفایل، افراد نزدیک‌تر برای گفت‌وگوی ناشناس پیدا کنی.\n\n" +
-  "نتیجه ارزیابی و پروفایل مچ‌یابی فقط برای همین سیستم استفاده می‌شود.\n" +
-  "هویت تلگرام و لینک شخصی تو به دیگران نمایش داده نمی‌شود.";
-
-export const MATCH_PROFILE_PRIVACY_NOTE =
-  "این پروفایل فقط برای خودت نمایش داده می‌شود.\n" +
-  "اگر مچ‌یابی را فعال کنی، فقط برای پیدا کردن پیشنهادهای ناشناس استفاده می‌شود؛ نتیجه کامل ارزیابی به دیگران نمایش داده نمی‌شود.";
-
-export const MATCH_PROFILE_NO_ASSESSMENT =
-  "هنوز پروفایل مچ‌یابی نداری.\n\n" +
-  "برای ساخت پروفایل، اول ارزیابی سبک گفت‌وگو را کامل کن.";
-
-export const MATCH_PROFILE_VECTOR_PENDING =
-  "پروفایل ارزیابی ذخیره شده، اما آماده‌سازی مچ‌یابی هنوز کامل نشده.\n" +
-  "می‌توانی بعداً دوباره امتحان کنی.";
+export {
+  MATCH_SYSTEM_INTRO,
+  MATCH_PROFILE_PRIVACY_NOTE,
+  MATCH_PROFILE_NO_ASSESSMENT,
+  MATCH_PROFILE_VECTOR_PENDING,
+} from "../../i18n/matching";

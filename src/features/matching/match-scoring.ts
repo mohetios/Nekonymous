@@ -8,8 +8,17 @@ import { ASSESSMENT_VERSION, type AssessmentDimension } from "../assessment/ques
 import type { AssessmentScores } from "../assessment/scoring";
 import { clamp01 } from "../assessment/scoring";
 import { getMatchQualityLabel } from "./match-quality";
+import {
+  MATCH_CAUTION_DIRECTNESS,
+  MATCH_CAUTION_REPLY_PACE,
+  MATCH_EXPLANATION_FALLBACK_REASON,
+  MATCH_EXPLANATION_TITLE,
+  MATCH_REASON_BOUNDARY,
+  MATCH_REASON_CONFLICT_REPAIR,
+  MATCH_REASON_DEPTH,
+  MATCH_REASON_WARMTH,
+} from "../../i18n/matching";
 import type { MatchCandidate, MatchExplanation } from "./match-types";
-
 type TraitMetric = "closeness" | "floor" | "mixed";
 
 export const V1_TRAIT_WEIGHTS = {
@@ -154,19 +163,19 @@ const buildReasons = (
   const scored = [
     {
       value: floorFit(requester.boundaryRespect, candidate.boundaryRespect),
-      text: "در احترام به مرزها به هم نزدیک هستید.",
+      text: MATCH_REASON_BOUNDARY,
     },
     {
       value: closeness(requester.depthPreference, candidate.depthPreference),
-      text: "سبک گفت‌وگوی شما از نظر عمق گفتگو نزدیک است.",
+      text: MATCH_REASON_DEPTH,
     },
     {
       value: floorFit(requester.conflictRepair, candidate.conflictRepair),
-      text: "هر دو در سوءتفاهم‌ها تمایل به ترمیم گفتگو دارید.",
+      text: MATCH_REASON_CONFLICT_REPAIR,
     },
     {
       value: mixedFit(requester.warmthEmpathy, candidate.warmthEmpathy),
-      text: "لحن و گرمی گفت‌وگو می‌تواند برای هر دو کم‌فشار باشد.",
+      text: MATCH_REASON_WARMTH,
     },
   ];
 
@@ -182,10 +191,10 @@ const buildCautions = (
 ): string[] => {
   const cautions: string[] = [];
   if (closeness(requester.replyPacePreference, candidate.replyPacePreference) < 0.65) {
-    cautions.push("در سرعت پاسخ‌دادن کمی تفاوت دارید.");
+    cautions.push(MATCH_CAUTION_REPLY_PACE);
   }
   if (closeness(requester.directnessPreference, candidate.directnessPreference) < 0.6) {
-    cautions.push("در مستقیم گفتن خواسته‌ها ممکن است کمی تفاوت داشته باشید.");
+    cautions.push(MATCH_CAUTION_DIRECTNESS);
   }
   return cautions.slice(0, 2);
 };
@@ -252,7 +261,7 @@ export const scoreMatchPair = (params: {
   );
 
   const explanation: MatchExplanation = {
-    title: "پیشنهاد گفت‌وگو",
+    title: MATCH_EXPLANATION_TITLE,
     reasons: buildReasons(requesterScores, candidateScores),
     cautions: buildCautions(requesterScores, candidateScores),
   };
@@ -286,8 +295,8 @@ export const parseMatchExplanation = (raw: string): MatchExplanation => {
     // fall through
   }
   return {
-    title: "پیشنهاد گفت‌وگو",
-    reasons: ["چند نقطه مشترک در سبک ارتباطی دیده می‌شود."],
+    title: MATCH_EXPLANATION_TITLE,
+    reasons: [MATCH_EXPLANATION_FALLBACK_REASON],
     cautions: [],
   };
 };

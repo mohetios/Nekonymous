@@ -4,15 +4,7 @@ import {
   encodeCapabilityCallbackData,
   type CapabilityAction,
 } from "../ticketing/ticketing-service";
-import { MENU } from "./menu-labels";
-
-const INBOX_BUTTON = {
-  block: "🚫 مسدود",
-  unblock: "🔓 رفع مسدودیت",
-  reply: "💬 پاسخ",
-  nickname: "🏷️ نام خصوصی",
-  report: "گزارش",
-} as const;
+import { MENU, INBOX_BUTTON } from "./menu-labels";
 
 const inboxCallback = (action: CapabilityAction, capability: string): string =>
   encodeCapabilityCallbackData(action, capability);

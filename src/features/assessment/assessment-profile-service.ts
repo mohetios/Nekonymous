@@ -8,6 +8,10 @@ import {
 } from "./scoring";
 import { scoresFromJson, scoresToJson } from "./assessment-scores";
 import { incrementPlatformStat } from "../platform/platform-stats-service";
+import {
+  ASSESSMENT_DEFAULT_SHORT_DESCRIPTION,
+  ASSESSMENT_DEFAULT_TITLE,
+} from "../../i18n/assessment-ui";
 
 export type AssessmentProfileRow = {
   user_id: string;
@@ -239,8 +243,9 @@ export const parseResultSummary = (
   try {
     const parsed = JSON.parse(row.result_summary_json) as AssessmentResultSummary;
     return {
-      title: parsed.title ?? "سبک گفت‌وگو",
-      shortDescription: parsed.shortDescription ?? "نتیجه ارزیابی ذخیره شده است.",
+      title: parsed.title ?? ASSESSMENT_DEFAULT_TITLE,
+      shortDescription:
+        parsed.shortDescription ?? ASSESSMENT_DEFAULT_SHORT_DESCRIPTION,
       highlights: Array.isArray(parsed.highlights) ? parsed.highlights : [],
       cautions: Array.isArray(parsed.cautions) ? parsed.cautions : [],
       matchNotes: Array.isArray(parsed.matchNotes) ? parsed.matchNotes : [],
@@ -248,8 +253,8 @@ export const parseResultSummary = (
     };
   } catch {
     return {
-      title: "سبک گفت‌وگو",
-      shortDescription: "نتیجه ارزیابی ذخیره شده است.",
+      title: ASSESSMENT_DEFAULT_TITLE,
+      shortDescription: ASSESSMENT_DEFAULT_SHORT_DESCRIPTION,
       highlights: [],
       cautions: [],
       matchNotes: [],

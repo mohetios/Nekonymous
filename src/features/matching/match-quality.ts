@@ -1,20 +1,14 @@
-export type MatchQualityLabel = "strong" | "good" | "moderate" | "limited";
+export type { MatchQualityLabel } from "../../i18n/matching";
+export {
+  MATCH_QUALITY_COPY,
+  MATCH_LIMITED_SIMILARITY_NOTE,
+  MATCH_SIMILARITY_DISCLAIMER,
+  formatMatchRequestSimilarityLine,
+} from "../../i18n/matching";
 
-export const MATCH_QUALITY_COPY: Record<MatchQualityLabel, string> = {
-  strong: "سبک گفت‌وگوی خیلی نزدیک",
-  good: "سبک گفت‌وگوی نزدیک",
-  moderate: "نزدیکی متوسط در سبک گفت‌وگو",
-  limited: "نزدیکی محدود در سبک گفت‌وگو",
-};
-
-export const MATCH_LIMITED_SIMILARITY_NOTE =
-  "شباهت این پیشنهاد محدود است، اما در حال حاضر یکی از نزدیک‌ترین گزینه‌های موجود است.\n" +
-  "اگر خواستی، با یک پیام کوتاه و کم‌فشار شروع کن.";
-
-export const MATCH_SIMILARITY_DISCLAIMER =
-  "این نتیجه فقط یک سیگنال محصولی برای شروع گفت‌وگو است، نه سازگاری قطعی.";
-
-export const getMatchQualityLabel = (score: number): MatchQualityLabel => {
+export const getMatchQualityLabel = (
+  score: number
+): import("../../i18n/matching").MatchQualityLabel => {
   const safe = Number.isFinite(score) ? score : 0;
   if (safe >= 0.75) {
     return "strong";
@@ -26,17 +20,4 @@ export const getMatchQualityLabel = (score: number): MatchQualityLabel => {
     return "moderate";
   }
   return "limited";
-};
-
-export const formatMatchRequestSimilarityLine = (
-  qualityLabel: MatchQualityLabel
-): string => {
-  if (qualityLabel === "limited") {
-    return (
-      "یک نفر از بین گزینه‌های فعلی می‌خواهد با تو یک گفت‌وگوی ناشناس کم‌فشار شروع کند."
-    );
-  }
-  return (
-    `یک نفر با ${MATCH_QUALITY_COPY[qualityLabel]} می‌خواهد با تو یک گفت‌وگوی ناشناس شروع کند.`
-  );
 };

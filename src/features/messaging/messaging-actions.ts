@@ -15,6 +15,7 @@ import {
   HuhMessage,
   NICKNAME_PROMPT_MESSAGE,
   NoConversationFoundMessage,
+  REPORT_SUBMITTED_MESSAGE,
   REPLAY_TO_MESSAGE,
   REPLAY_TO_NICKNAME_MESSAGE,
   SELF_MESSAGE_DISABLE_MESSAGE,
@@ -458,7 +459,7 @@ export const handleReportAction = async (
       reasonCode: "inbox_report",
     });
     await markTicketReported(env, user.id, ticket.ref);
-    await ctx.reply("گزارش ثبت شد.", withHtml());
+    await ctx.reply(REPORT_SUBMITTED_MESSAGE, withHtml());
   } catch {
     await ctx.reply(HuhMessage);
   } finally {

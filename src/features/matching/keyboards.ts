@@ -4,19 +4,27 @@ import type { MatchQualityLabel } from "./match-types";
 import { assertCallbackData } from "../../utils/telegram-limits";
 import { convertToPersianNumbers, escapeHtml } from "../../utils/tools";
 import {
+  MATCH_CANDIDATES_COUNT_FOUND,
+  MATCH_CANDIDATES_HEADER,
+  MATCH_CANDIDATES_SINGLE_ONLY,
+  MATCH_CANDIDATES_WHY_FIT,
+  MATCH_INCOMING_ACCEPT_NOTE,
+  MATCH_INCOMING_INTRO_LABEL,
+  MATCH_INCOMING_WHY_FIT,
   MATCH_LIMITED_SIMILARITY_NOTE,
+  MATCH_OUTGOING_INTRO_LABEL,
+  MATCH_OUTGOING_WAIT_NOTE,
+  MATCH_PENDING_INCOMING_LABEL,
+  MATCH_PENDING_OUTGOING_LABEL,
   MATCH_QUALITY_COPY,
   MATCH_SIMILARITY_DISCLAIMER,
   formatMatchRequestSimilarityLine,
-} from "./match-quality";
-import {
-  MATCH_PENDING_INCOMING_LABEL,
-  MATCH_PENDING_OUTGOING_LABEL,
-} from "./match-copy";
+} from "../../i18n/matching";
+import { MATCH_BUTTON } from "../../i18n/labels";
 
 /** Inline search trigger when the user is ready to match. */
 export const buildMatchSearchKeyboard = (): InlineKeyboard =>
-  new InlineKeyboard().text("نزدیک‌ترین گزینه‌های فعلی", MATCH_CALLBACK.search);
+  new InlineKeyboard().text(MATCH_BUTTON.search, MATCH_CALLBACK.search);
 
 export const buildIncomingMatchRequestKeyboard = (
   requestId: string
@@ -26,8 +34,8 @@ export const buildIncomingMatchRequestKeyboard = (
   assertCallbackData(acceptData);
   assertCallbackData(declineData);
   return new InlineKeyboard()
-    .text("قبول می‌کنم", acceptData)
-    .text("رد می‌کنم", declineData);
+    .text(MATCH_BUTTON.accept, acceptData)
+    .text(MATCH_BUTTON.decline, declineData);
 };
 
 export const buildOutgoingMatchRequestKeyboard = (
@@ -35,7 +43,7 @@ export const buildOutgoingMatchRequestKeyboard = (
 ): InlineKeyboard => {
   const cancelData = MATCH_CALLBACK.cancel(requestId);
   assertCallbackData(cancelData);
-  return new InlineKeyboard().text("لغو درخواست", cancelData);
+  return new InlineKeyboard().text(MATCH_BUTTON.cancelRequest, cancelData);
 };
 
 const formatMatchRequestReasons = (reasons: string[]): string =>
@@ -58,12 +66,11 @@ export const formatIncomingMatchRequestMessage = (params: {
     `${MATCH_PENDING_INCOMING_LABEL}\n\n` +
     `${similarityLine}\n\n` +
     `<i>${escapeHtml(MATCH_SIMILARITY_DISCLAIMER)}</i>\n\n` +
-    "<b>چرا ممکن است مناسب باشد؟</b>\n" +
+    `${MATCH_INCOMING_WHY_FIT}\n` +
     `${formatMatchRequestReasons(params.explanation.reasons)}\n\n` +
-    "<b>پیام شروع:</b>\n" +
+    `${MATCH_INCOMING_INTRO_LABEL}\n` +
     `«${escapeHtml(params.introText)}»\n\n` +
-    "اگر قبول کنی، این پیام به شکل یک گفت‌وگوی ناشناس وارد صندوقت می‌شود.\n" +
-    "اگر رد کنی، هویت هیچ‌کدام نمایش داده نمی‌شود."
+    MATCH_INCOMING_ACCEPT_NOTE
   );
 };
 
@@ -80,10 +87,9 @@ export const formatOutgoingMatchRequestMessage = (params: {
   return (
     `${MATCH_PENDING_OUTGOING_LABEL}\n\n` +
     `${similarityLine}\n\n` +
-    "<b>پیام شروع:</b>\n" +
+    `${MATCH_OUTGOING_INTRO_LABEL}\n` +
     `«${escapeHtml(params.introText)}»\n\n` +
-    "منتظر پاسخ طرف مقابل هستی.\n" +
-    "اگر دیگر نمی‌خواهی منتظر بمانی، می‌توانی درخواست را لغو کنی."
+    MATCH_OUTGOING_WAIT_NOTE
   );
 };
 
@@ -95,7 +101,7 @@ export const buildMatchResultsKeyboard = (
   suggestionIds.forEach((id, index) => {
     const data = MATCH_CALLBACK.request(id);
     assertCallbackData(data);
-    keyboard.text(`درخواست گفت‌وگو با ${index + 1}`, data).row();
+    keyboard.text(MATCH_BUTTON.requestConversation(index), data).row();
   });
 
   return keyboard;
@@ -110,12 +116,12 @@ export const formatMatchCandidatesMessage = (
 ): string => {
   const count = candidates.length;
   let text =
-    "🔎 نزدیک‌ترین پیشنهادهای فعلی\n\n" +
-    `در حال حاضر ${convertToPersianNumbers(String(count))} گزینه پیدا شد.\n` +
-    "این نتیجه فقط یک سیگنال محصولی برای شروع گفت‌وگو است، نه سازگاری قطعی.\n";
+    `${MATCH_CANDIDATES_HEADER}\n\n` +
+    `${MATCH_CANDIDATES_COUNT_FOUND(convertToPersianNumbers(String(count)))}\n` +
+    `${MATCH_SIMILARITY_DISCLAIMER}\n`;
 
   if (count === 1) {
-    text += "\nفعلاً فقط یک گزینه قابل پیشنهاد پیدا شد.\n";
+    text += `\n${MATCH_CANDIDATES_SINGLE_ONLY}\n`;
   }
 
   text += "\n";
@@ -131,7 +137,7 @@ export const formatMatchCandidatesMessage = (
     text +=
       `${convertToPersianNumbers(String(index + 1))}) ${qualityLabel}\n\n` +
       `${candidate.explanation.title}\n\n` +
-      "چرا ممکن است مناسب باشد؟\n" +
+      `${MATCH_CANDIDATES_WHY_FIT}\n` +
       `${reasons}\n`;
 
     if (candidate.qualityLabel === "limited") {

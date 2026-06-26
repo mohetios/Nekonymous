@@ -25,6 +25,7 @@ import {
 } from "../../storage/user-state-client";
 import type { getInboxTicket } from "../../storage/user-state-client";
 import { enqueueTelegramOutbox } from "../../storage/telegram-outbox-client";
+import { OPEN_INBOX_TICKET_BUTTON } from "../../i18n/labels";
 
 const parseMessagePayload = (raw: string): MessagePayload | null => {
   try {
@@ -221,7 +222,7 @@ export const notifyRecipientInbox = async (
                 inline_keyboard: [
                   [
                     {
-                      text: "باز کردن پیام",
+                      text: OPEN_INBOX_TICKET_BUTTON,
                       callback_data: encodeCapabilityCallbackData(
                         "open",
                         openCapability

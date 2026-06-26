@@ -30,8 +30,15 @@ import {
   SETTINGS_RESET_MATCH_DONE_MESSAGE,
   SETTINGS_RESET_MATCH_EMPTY_MESSAGE,
   SETTINGS_RESET_MATCH_WARNING_MESSAGE,
+  SETTINGS_RESET_MATCH_REQUESTS_CLEARED,
+  SETTINGS_RESET_MATCH_BLOCKS_CLEARED,
   TECHNICAL_ABOUT_MESSAGE,
+  SETTINGS_PAUSE_ACTIVE,
+  SETTINGS_PAUSE_DISABLE_DESC,
+  SETTINGS_PAUSE_ENABLE_DESC,
+  SETTINGS_PAUSE_INACTIVE,
 } from "./settings-copy";
+import { DISPLAY_NAME_UNSET } from "../../i18n/defaults";
 import { HuhMessage, ABOUT_PRIVACY_COMMAND_MESSAGE } from "../../i18n/messages";
 import { getPlatformStats } from "../platform/platform-stats-service";
 import {
@@ -106,18 +113,16 @@ const formatSettingsHome = (user: BotUser): string => {
   const paused = user.paused;
   return SETTINGS_HOME_MESSAGE.replace(
     "USER_NAME",
-    escapeHtml(publicDisplayName(user, "تنظیم نشده"))
+    escapeHtml(publicDisplayName(user, DISPLAY_NAME_UNSET))
   )
-    .replace("PAUSE_STATUS", paused ? "غیرفعال" : "فعال")
+    .replace("PAUSE_STATUS", paused ? SETTINGS_PAUSE_INACTIVE : SETTINGS_PAUSE_ACTIVE)
     .replace(
       "PAUSE_ACTION_LABEL",
       paused ? MENU.resumeInbox : MENU.pauseInbox
     )
     .replace(
       "PAUSE_ACTION_DESC",
-      paused
-        ? "فعال‌سازی دریافت پیام‌های جدید"
-        : "توقف موقت دریافت پیام‌های جدید"
+      paused ? SETTINGS_PAUSE_ENABLE_DESC : SETTINGS_PAUSE_DISABLE_DESC
     );
 };
 
@@ -356,12 +361,18 @@ export const handleSettingsMenu = async (
         const detailLines: string[] = [];
         if (cleared.requests > 0) {
           detailLines.push(
-            `— ${convertToPersianNumbers(cleared.requests)} درخواست مچ حذف شد`
+            SETTINGS_RESET_MATCH_REQUESTS_CLEARED.replace(
+              "COUNT",
+              convertToPersianNumbers(cleared.requests)
+            )
           );
         }
         if (cleared.blocks > 0) {
           detailLines.push(
-            `— ${convertToPersianNumbers(cleared.blocks)} بلاک مچ حذف شد`
+            SETTINGS_RESET_MATCH_BLOCKS_CLEARED.replace(
+              "COUNT",
+              convertToPersianNumbers(cleared.blocks)
+            )
           );
         }
         const detail =

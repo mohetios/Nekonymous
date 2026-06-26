@@ -31,6 +31,7 @@ import {
   USER_IS_BLOCKED_MESSAGE,
   WelcomeMessage,
 } from "../../i18n/messages";
+import { PEER_USER_FALLBACK } from "../../i18n/defaults";
 import {
   ContactLabelLimitError,
   sanitizeNickname,
@@ -135,7 +136,7 @@ export const handleStartCommand = async (
       await ctx.reply(
         RECIPIENT_PAUSED_MESSAGE.replace(
           "USER_NAME",
-          escapeHtml(publicDisplayName(recipient, "این کاربر"))
+          escapeHtml(publicDisplayName(recipient, PEER_USER_FALLBACK))
         ),
         withHtml()
       );
@@ -288,7 +289,7 @@ export const handleMessage = async (
         await ctx.reply(
           RECIPIENT_PAUSED_MESSAGE.replace(
             "USER_NAME",
-            escapeHtml(publicDisplayName(recipient, "این کاربر"))
+            escapeHtml(publicDisplayName(recipient, PEER_USER_FALLBACK))
           ),
           withHtml()
         );

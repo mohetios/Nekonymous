@@ -17,7 +17,6 @@ import {
   setAssessmentCurrentIndex,
   startAssessmentSession,
 } from "../../storage/user-state-client";
-import { ASSESSMENT_CALLBACK } from "./constants";
 import {
   buildQuestionKeyboard,
   buildResetConfirmKeyboard,
@@ -25,12 +24,20 @@ import {
   buildAssessmentDashboardKeyboard,
   dashboardStatusLine,
   formatQuestionMessage,
-  ASSESSMENT_DASHBOARD_INTRO,
+} from "./keyboards";
+import { ASSESSMENT_CALLBACK } from "./constants";
+import {
   ASSESSMENT_COMPLETION_NOTE,
+  ASSESSMENT_DASHBOARD_INTRO,
   ASSESSMENT_EXIT_SAVED,
+  ASSESSMENT_RESULT_CAUTIONS_HEADER,
+  ASSESSMENT_RESULT_HIGHLIGHTS_HEADER,
+  ASSESSMENT_RESULT_READY_TITLE,
+  ASSESSMENT_RESULT_SCORES_HEADER,
+  ASSESSMENT_STATUS_HEADER,
   ASSESSMENT_VERSION_OUTDATED_NOTE,
   ASSESSMENT_RESET_CONFIRM,
-} from "./keyboards";
+} from "../../i18n/assessment-ui";
 import {
   completeAssessmentFlow,
   resumeQuestionIndex,
@@ -55,6 +62,7 @@ import {
   ASSESSMENT_VERSION,
   isCurrentAssessmentVersion,
 } from "./question-bank";
+import { ASSESSMENT_BUTTON } from "../../i18n/labels";
 import type { NekoContext } from "../../utils/worker";
 
 const formatPercent = (value: number): string =>
@@ -73,11 +81,11 @@ const formatResultMessage = (
     .join("\n");
 
   let text =
-    "✅ <b>پروفایل گفت‌وگوی تو آماده شد.</b>\n\n" +
+    `${ASSESSMENT_RESULT_READY_TITLE}\n\n` +
     `<b>${escapeHtml(summary.title)}</b>\n\n` +
     `${escapeHtml(summary.shortDescription)}\n\n` +
-    `<b>چند سیگنال اصلی:</b>\n${highlights}\n\n` +
-    `<b>چند نکته برای گفت‌وگو:</b>\n${cautions}` +
+    `${ASSESSMENT_RESULT_HIGHLIGHTS_HEADER}\n${highlights}\n\n` +
+    `${ASSESSMENT_RESULT_CAUTIONS_HEADER}\n${cautions}` +
     ASSESSMENT_COMPLETION_NOTE;
 
   if (includeScores) {
@@ -86,7 +94,7 @@ const formatResultMessage = (
         `${ASSESSMENT_DIMENSION_LABELS[key]}: ${formatPercent(scores[key])}`
     ).join("\n");
 
-    text += `\n\n<b>نمای کلی:</b>\n${escapeHtml(scoreLines)}`;
+    text += `\n\n${ASSESSMENT_RESULT_SCORES_HEADER}\n${escapeHtml(scoreLines)}`;
   }
 
   return text;
@@ -118,7 +126,7 @@ export const sendAssessmentDashboard = async (
 
   const text =
     `${ASSESSMENT_DASHBOARD_INTRO}\n\n` +
-    `<b>وضعیت:</b>\n${escapeHtml(status)}${outdatedNote}`;
+    `<b>${ASSESSMENT_STATUS_HEADER}</b>\n${escapeHtml(status)}${outdatedNote}`;
 
   const keyboard = buildAssessmentDashboardKeyboard({
     hasProfile: !!profile,
@@ -234,7 +242,7 @@ export const handleAssessmentCallback = async (
       await cancelAssessmentSession(userId, env);
       await ctx.editMessageText(ASSESSMENT_EXIT_SAVED, {
         reply_markup: new InlineKeyboard().text(
-          "بازگشت به منو",
+          ASSESSMENT_BUTTON.backToMenu,
           ASSESSMENT_CALLBACK.menu
         ),
       });

@@ -4,10 +4,27 @@ import { ASSESSMENT_DIMENSION_LABELS } from "../assessment/question-bank";
 import type { AssessmentDimension, AssessmentScores } from "../assessment/scoring";
 import { convertToPersianNumbers, escapeHtml } from "../../utils/tools";
 import {
+  MATCH_PROFILE_DISCOVERABLE_ACTIVE,
+  MATCH_PROFILE_DISCOVERABLE_INACTIVE,
+  MATCH_PROFILE_HEADER,
+  MATCH_PROFILE_LABEL_DISCOVERABLE,
+  MATCH_PROFILE_LABEL_PREFERENCES,
+  MATCH_PROFILE_LABEL_READY,
+  MATCH_PROFILE_LABEL_SCORES,
+  MATCH_PROFILE_LABEL_STATUS,
+  MATCH_PROFILE_LABEL_SUMMARY,
+  MATCH_PROFILE_LABEL_VERSION,
   MATCH_PROFILE_NO_ASSESSMENT,
   MATCH_PROFILE_PRIVACY_NOTE,
+  MATCH_PROFILE_READY_LIMITED,
+  MATCH_PROFILE_READY_NEEDS_OPT_IN,
+  MATCH_PROFILE_READY_NO,
+  MATCH_PROFILE_READY_PENDING,
+  MATCH_PROFILE_READY_YES,
+  MATCH_PROFILE_STATUS_COMPLETED,
+  MATCH_PROFILE_STATUS_INCOMPLETE,
   MATCH_PROFILE_VECTOR_PENDING,
-} from "./match-system-callbacks";
+} from "../../i18n/matching";
 
 const PREFERENCE_DIMENSIONS: AssessmentDimension[] = [
   "depthPreference",
@@ -31,32 +48,32 @@ const formatScoreBlock = (
 
 const discoverableLabel = (profile: AssessmentProfileRow): string => {
   if (profile.discoverable === 1) {
-    return "فعال";
+    return MATCH_PROFILE_DISCOVERABLE_ACTIVE;
   }
-  return "غیرفعال";
+  return MATCH_PROFILE_DISCOVERABLE_INACTIVE;
 };
 
 const readyForMatchingLabel = (profile: AssessmentProfileRow): string => {
   if (profile.status !== "completed") {
-    return "خیر";
+    return MATCH_PROFILE_READY_NO;
   }
   if (profile.vector_status !== "indexed") {
-    return "در انتظار آماده‌سازی";
+    return MATCH_PROFILE_READY_PENDING;
   }
   if (profile.discoverable !== 1) {
-    return "نیاز به فعال‌سازی";
+    return MATCH_PROFILE_READY_NEEDS_OPT_IN;
   }
   if (profile.safety_tier !== "normal") {
-    return "محدود";
+    return MATCH_PROFILE_READY_LIMITED;
   }
-  return "بله";
+  return MATCH_PROFILE_READY_YES;
 };
 
 const completedStatusLabel = (profile: AssessmentProfileRow): string => {
   if (profile.status === "completed") {
-    return "تکمیل‌شده";
+    return MATCH_PROFILE_STATUS_COMPLETED;
   }
-  return "ناقص";
+  return MATCH_PROFILE_STATUS_INCOMPLETE;
 };
 
 export const formatMatchProfileMessage = (
@@ -84,15 +101,15 @@ export const formatMatchProfileMessage = (
   ];
 
   let text =
-    "👤 <b>پروفایل مچ‌یابی من</b>\n\n" +
-    `نسخه ارزیابی: ${escapeHtml(convertToPersianNumbers(profile.version))}\n` +
-    `وضعیت: ${escapeHtml(completedStatusLabel(profile))}\n` +
-    `آماده برای مچ‌یابی: ${escapeHtml(readyForMatchingLabel(profile))}\n` +
-    `مچ‌یابی ناشناس: ${escapeHtml(discoverableLabel(profile))}\n\n` +
-    `<b>خلاصه:</b>\n${escapeHtml(summary.title)}\n\n` +
+    `${MATCH_PROFILE_HEADER}\n\n` +
+    `${MATCH_PROFILE_LABEL_VERSION}: ${escapeHtml(convertToPersianNumbers(profile.version))}\n` +
+    `${MATCH_PROFILE_LABEL_STATUS}: ${escapeHtml(completedStatusLabel(profile))}\n` +
+    `${MATCH_PROFILE_LABEL_READY}: ${escapeHtml(readyForMatchingLabel(profile))}\n` +
+    `${MATCH_PROFILE_LABEL_DISCOVERABLE}: ${escapeHtml(discoverableLabel(profile))}\n\n` +
+    `<b>${MATCH_PROFILE_LABEL_SUMMARY}:</b>\n${escapeHtml(summary.title)}\n\n` +
     `${escapeHtml(summary.shortDescription)}\n\n` +
-    `<b>امتیازها:</b>\n${escapeHtml(formatScoreBlock(scores, coreKeys))}\n\n` +
-    `<b>ترجیح‌های گفت‌وگو:</b>\n${escapeHtml(formatScoreBlock(scores, PREFERENCE_DIMENSIONS))}\n\n` +
+    `<b>${MATCH_PROFILE_LABEL_SCORES}:</b>\n${escapeHtml(formatScoreBlock(scores, coreKeys))}\n\n` +
+    `<b>${MATCH_PROFILE_LABEL_PREFERENCES}:</b>\n${escapeHtml(formatScoreBlock(scores, PREFERENCE_DIMENSIONS))}\n\n` +
     `<i>${escapeHtml(MATCH_PROFILE_PRIVACY_NOTE)}</i>`;
 
   if (
