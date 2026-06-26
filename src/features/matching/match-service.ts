@@ -6,6 +6,7 @@ import {
 import { getUserById } from "../../features/identity/identity-service";
 import {
   checkCanReceive,
+  getAssessmentSession,
   getUserStateSafe,
 } from "../../storage/user-state-client";
 import {
@@ -15,6 +16,7 @@ import {
   type AssessmentProfileRow,
 } from "../assessment/assessment-profile-service";
 import { ASSESSMENT_VERSION } from "../assessment/question-bank";
+import { ASSESSMENT_BUTTON, MENU } from "../../i18n/labels";
 import { updateVectorDiscoverability } from "../assessment/profile-vector-service";
 import {
   MATCH_DISMISS_BLOCK_MS,
@@ -27,6 +29,7 @@ import {
 import type {
   MatchCandidate,
   MatchDashboard,
+  MatchHubMenuOptions,
   MatchHubMenuVariant,
   MatchSuggestionRow,
 } from "./match-types";
@@ -148,6 +151,32 @@ export const resolveMatchHubMenuVariant = async (
   }
 
   return "default";
+};
+
+export const resolveMatchHubMenuOptions = async (
+  userId: string,
+  env: Environment
+): Promise<MatchHubMenuOptions> => {
+  const [session, profile, dashboard] = await Promise.all([
+    getAssessmentSession(userId, env),
+    getMatchProfile(userId, env),
+    getMatchDashboard(userId, env),
+  ]);
+
+  const hasCompletedProfile = profile?.status === "completed";
+
+  let assessmentLabel: string = MENU.matchAssessment;
+  if (session) {
+    assessmentLabel = ASSESSMENT_BUTTON.continue;
+  } else if (hasCompletedProfile) {
+    assessmentLabel = MENU.matchAssessmentRetry;
+  }
+
+  return {
+    assessmentLabel,
+    showFind: dashboard.state === "ready",
+    showProfile: hasCompletedProfile,
+  };
 };
 
 const canEnableDiscoverability = (profile: AssessmentProfileRow): boolean =>

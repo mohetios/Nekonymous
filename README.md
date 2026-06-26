@@ -87,6 +87,7 @@ Telegram sees plaintext while messages travel through Telegram. The Worker sees 
 
 ```text
 🔗 لینک من
+
 🧭 پیشنهاد گفت‌وگو
 ⚙️ تنظیمات
 ```

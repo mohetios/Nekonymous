@@ -101,9 +101,10 @@ export const buildMatchResultsKeyboard = (
   suggestionIds.forEach((id, index) => {
     const data = MATCH_CALLBACK.request(id);
     assertCallbackData(data);
-    keyboard.text(MATCH_BUTTON.requestConversation(index), data).row();
+    keyboard.text(MATCH_BUTTON.writeIntro(index), data).row();
   });
 
+  keyboard.text(MATCH_BUTTON.dismiss, MATCH_CALLBACK.back);
   return keyboard;
 };
 

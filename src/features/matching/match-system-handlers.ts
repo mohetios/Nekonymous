@@ -2,7 +2,9 @@ import type { Context } from "grammy";
 import type { Environment } from "../../types";
 import { logBotError } from "../../utils/logs";
 import { HuhMessage } from "../../i18n/messages";
+import { SETTINGS_BACK_MESSAGE } from "../../i18n/settings";
 import {
+  buildMatchHubDiscoverabilityKeyboard,
   buildMatchProfileEmptyMenu,
   buildMatchProfileReadyMenu,
   buildMatchSystemMenu,
@@ -19,38 +21,47 @@ import {
   disableDiscoverability,
   enableDiscoverability,
   expireOldMatchRequests,
+  resolveMatchHubMenuOptions,
   resolveMatchHubMenuVariant,
 } from "./match-service";
 import { sendAssessmentDashboard } from "../assessment/assessment-handlers";
 import { sendMatchDashboard, sendPendingMatchRequests } from "./match-handlers";
+import { ASSESSMENT_BUTTON } from "../../i18n/labels";
 
-const MATCH_SYSTEM_MENU_LABELS = new Set<string>([
-  MENU.matchSystem,
-  MENU.matchProfile,
-  MENU.matchFind,
-  MENU.matchPending,
-  MENU.matchEnable,
-  MENU.matchDisable,
-  MENU.matchAssessment,
-  MENU.matchAssessmentRetry,
-  MENU.matchBackToHub,
-]);
+const matchHubReplyMenu = async (userId: string, env: Environment) => {
+  const options = await resolveMatchHubMenuOptions(userId, env);
+  return buildMatchSystemMenu(options);
+};
 
 export const sendMatchSystemHub = async (
   ctx: Context,
   env: Environment,
-  userId?: string
+  userId: string
 ): Promise<void> => {
-  const variant =
-    userId !== undefined
-      ? await resolveMatchHubMenuVariant(userId, env)
-      : "default";
+  const [variant, replyMenu] = await Promise.all([
+    resolveMatchHubMenuVariant(userId, env),
+    matchHubReplyMenu(userId, env),
+  ]);
+  const discoverabilityKeyboard = buildMatchHubDiscoverabilityKeyboard(variant);
 
-  await ctx.reply(
-    MATCH_SYSTEM_INTRO,
-    withHtml({ reply_markup: buildMatchSystemMenu(variant) })
-  );
+  if (discoverabilityKeyboard) {
+    await ctx.reply(MATCH_SYSTEM_INTRO, withHtml({
+      reply_markup: discoverabilityKeyboard,
+    }));
+    await ctx.reply("از دکمه‌های پایین برای ادامه استفاده کن.", {
+      reply_markup: replyMenu,
+    });
+    return;
+  }
+
+  await ctx.reply(MATCH_SYSTEM_INTRO, withHtml({ reply_markup: replyMenu }));
 };
+
+const sendMatchHubIntro = (
+  ctx: Context,
+  env: Environment,
+  userId: string
+): Promise<void> => sendMatchSystemHub(ctx, env, userId);
 
 export const sendMatchProfileScreen = async (
   ctx: Context,
@@ -59,12 +70,39 @@ export const sendMatchProfileScreen = async (
 ): Promise<void> => {
   const profile = await getLatestAssessmentProfile(userId, env);
   const { text, hasProfile } = formatMatchProfileMessage(profile);
-  const keyboard = hasProfile
+  const replyMenu = hasProfile
     ? buildMatchProfileReadyMenu()
     : buildMatchProfileEmptyMenu();
+  const variant = await resolveMatchHubMenuVariant(userId, env);
+  const discoverabilityKeyboard = buildMatchHubDiscoverabilityKeyboard(variant);
 
-  await ctx.reply(text, withHtml({ reply_markup: keyboard }));
+  if (discoverabilityKeyboard) {
+    await ctx.reply(text, withHtml({ reply_markup: discoverabilityKeyboard }));
+    await ctx.reply("از دکمه‌های پایین برای ادامه استفاده کن.", {
+      reply_markup: replyMenu,
+    });
+    return;
+  }
+
+  await ctx.reply(text, withHtml({ reply_markup: replyMenu }));
 };
+
+const isAssessmentMenuLabel = (text: string): boolean =>
+  text === MENU.matchAssessment ||
+  text === MENU.matchAssessmentRetry ||
+  text === ASSESSMENT_BUTTON.continue;
+
+const MATCH_SYSTEM_MENU_LABELS = new Set<string>([
+  MENU.matchSystem,
+  MENU.matchProfile,
+  MENU.matchFind,
+  MENU.matchPending,
+  MENU.matchAssessment,
+  MENU.matchAssessmentRetry,
+  ASSESSMENT_BUTTON.continue,
+  MENU.hubBack,
+  MENU.home,
+]);
 
 export const handleMatchSystemCommand = async (
   ctx: Context,
@@ -96,54 +134,56 @@ export const handleMatchSystemMenu = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const userId = d1User.id;
+    const hubMenu = await matchHubReplyMenu(userId, env);
 
     switch (text) {
       case MENU.matchSystem:
-      case MENU.matchBackToHub:
-        await sendMatchSystemHub(ctx, env, userId);
+        await sendMatchHubIntro(ctx, env, userId);
+        return true;
+
+      case MENU.hubBack:
+        await sendMatchHubIntro(ctx, env, userId);
+        return true;
+
+      case MENU.home:
+        await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
         return true;
 
       case MENU.matchProfile:
         await sendMatchProfileScreen(ctx, userId, env);
         return true;
 
-      case MENU.matchFind:
+      case MENU.matchFind: {
+        const options = await resolveMatchHubMenuOptions(userId, env);
+        if (!options.showFind) {
+          await ctx.reply(
+            "برای پیدا کردن گزینه‌ها، اول ارزیابی سبک گفت‌وگو را کامل کن.",
+            withHtml({ reply_markup: hubMenu })
+          );
+          return true;
+        }
         await expireOldMatchRequests(env);
         await sendMatchDashboard(ctx, userId, env);
         return true;
+      }
 
       case MENU.matchPending:
         await sendPendingMatchRequests(ctx, userId, env);
         return true;
 
-      case MENU.matchEnable: {
-        const result = await enableDiscoverability(userId, env);
-        if (!result.ok) {
-          await sendMatchDashboard(ctx, userId, env);
-          return true;
-        }
-        const variant = await resolveMatchHubMenuVariant(userId, env);
-        await ctx.reply(MATCH_ENABLED, {
-          reply_markup: buildMatchSystemMenu(variant),
-        });
-        return true;
-      }
-
-      case MENU.matchDisable: {
-        await disableDiscoverability(userId, env);
-        const variant = await resolveMatchHubMenuVariant(userId, env);
-        await ctx.reply(MATCH_DISABLED, {
-          reply_markup: buildMatchSystemMenu(variant),
-        });
-        return true;
-      }
-
       case MENU.matchAssessment:
       case MENU.matchAssessmentRetry:
-        await sendAssessmentDashboard(ctx, userId, env);
-        return true;
+        if (isAssessmentMenuLabel(text)) {
+          await sendAssessmentDashboard(ctx, userId, env);
+          return true;
+        }
+        return false;
 
       default:
+        if (text === ASSESSMENT_BUTTON.continue) {
+          await sendAssessmentDashboard(ctx, userId, env);
+          return true;
+        }
         return false;
     }
   } catch (error) {
@@ -177,24 +217,50 @@ export const handleMatchSystemCallback = async (
     switch (data) {
       case MATCH_SYSTEM_CALLBACK.hub:
       case MATCH_SYSTEM_CALLBACK.back:
-        await sendMatchSystemHub(ctx, env, userId);
+        await sendMatchHubIntro(ctx, env, userId);
         return;
 
       case MATCH_SYSTEM_CALLBACK.profile:
         await sendMatchProfileScreen(ctx, userId, env);
         return;
 
-      case MATCH_SYSTEM_CALLBACK.find:
+      case MATCH_SYSTEM_CALLBACK.find: {
+        const options = await resolveMatchHubMenuOptions(userId, env);
+        if (!options.showFind) {
+          await sendMatchHubIntro(ctx, env, userId);
+          return;
+        }
         await expireOldMatchRequests(env);
         await sendMatchDashboard(ctx, userId, env);
         return;
+      }
 
       case MATCH_SYSTEM_CALLBACK.assessment:
         await sendAssessmentDashboard(ctx, userId, env);
         return;
 
+      case MATCH_SYSTEM_CALLBACK.enable: {
+        const result = await enableDiscoverability(userId, env);
+        if (!result.ok) {
+          await sendMatchDashboard(ctx, userId, env);
+          return;
+        }
+        await ctx.reply(MATCH_ENABLED, {
+          reply_markup: await matchHubReplyMenu(userId, env),
+        });
+        return;
+      }
+
+      case MATCH_SYSTEM_CALLBACK.disable: {
+        await disableDiscoverability(userId, env);
+        await ctx.reply(MATCH_DISABLED, {
+          reply_markup: await matchHubReplyMenu(userId, env),
+        });
+        return;
+      }
+
       default:
-        await sendMatchSystemHub(ctx, env, userId);
+        await sendMatchHubIntro(ctx, env, userId);
     }
   } catch (error) {
     logBotError("handleMatchSystemCallback", error);

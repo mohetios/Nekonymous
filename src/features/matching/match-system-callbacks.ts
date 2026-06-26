@@ -4,6 +4,8 @@ export const MATCH_SYSTEM_CALLBACK = {
   find: "ms:find",
   assessment: "ms:assessment",
   back: "ms:back",
+  enable: "ms:en",
+  disable: "ms:dis",
 } as const;
 
 export {

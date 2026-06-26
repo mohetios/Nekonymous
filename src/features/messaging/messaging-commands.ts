@@ -188,7 +188,7 @@ export const handleMessage = async (
       return;
     }
 
-    if (await handleSettingsMenu(ctx, user, env, botUsername)) {
+    if (await handleSettingsMenu(ctx, user, env)) {
       return;
     }
 

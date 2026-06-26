@@ -16,7 +16,7 @@ import {
   handleMessage,
   handleStartCommand,
 } from "../features/messaging/messaging-commands";
-import { handleSettingsCommand } from "../features/settings/settings-handlers";
+import { handleSettingsCommand, handleSettingsCallback } from "../features/settings/settings-handlers";
 import {
   handleAssessmentCallback,
   handleAssessmentCommand,
@@ -110,4 +110,8 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   bot.callbackQuery(/^m:/, (ctx) => handleMatchCallback(ctx, env));
 
   bot.callbackQuery(/^ms:/, (ctx) => handleMatchSystemCallback(ctx, env));
+
+  bot.callbackQuery(/^s:/, (ctx) =>
+    handleSettingsCallback(ctx, env, BOT_USERNAME)
+  );
 };

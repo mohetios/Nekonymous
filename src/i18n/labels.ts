@@ -2,8 +2,8 @@
 
 export const MENU = {
   about: "ℹ️ درباره و حریم خصوصی",
-  privacy: "🔒 حریم خصوصی",
   link: "🔗 لینک من",
+  inbox: "🗂 صندوق پیام‌ها",
   matchSystem: "🧭 پیشنهاد گفت‌وگو",
   matchProfile: "👤 پروفایل گفت‌وگو",
   matchFind: "🔎 پیدا کردن گزینه‌ها",
@@ -12,36 +12,40 @@ export const MENU = {
   matchDisable: "⏸ توقف نمایش",
   matchAssessment: "📝 شروع ارزیابی",
   matchAssessmentRetry: "📝 ارزیابی دوباره",
-  matchBackToHub: "↩️ بازگشت",
   settings: "⚙️ تنظیمات",
-  editName: "✏️ نام",
-  cancelDraft: "↩️ لغو",
+  editName: "✏️ نام نمایشی",
+  cancelDraft: "↩️ لغو عملیات",
   pauseInbox: "⏸ توقف دریافت پیام",
   resumeInbox: "▶️ فعال‌سازی دریافت پیام",
   clearBlockList: "🚫 رفع مسدودی‌ها",
   resetMatchHistory: "♻️ بازنشانی پیشنهادها",
   clearData: "🗑️ پاک کردن حساب",
   technical: "🧾 نکات فنی",
-  back: "🏠 منوی اصلی",
-  confirmClear: "🗑️ پاک کردن حساب",
-  confirmClearBlocks: "🚫 بله، رفع همه مسدودی‌ها",
-  confirmResetMatchHistory: "♻️ بله، بازنشانی کن",
-  cancel: "↩️ انصراف",
+  hubBack: "↩️ بازگشت",
+  settingsBack: "↩️ بازگشت",
+  home: "🏠 منوی اصلی",
+} as const;
+
+/** Inline-only confirmation labels (never on reply keyboard). */
+export const CONFIRM_BUTTON = {
+  yesDelete: "🗑️ بله، پاک کن",
+  yes: "✅ تأیید",
+  noCancel: "↩️ نه، انصراف",
 } as const;
 
 export const INBOX_BUTTON = {
   block: "🚫 مسدود کردن",
-  unblock: "🔓 رفع مسدودیت",
+  unblock: "🔓 رفع مسدودی",
   reply: "💬 پاسخ دادن",
   nickname: "🏷️ نام خصوصی",
   report: "⚠️ گزارش کردن",
 } as const;
 
-export const OPEN_INBOX_TICKET_BUTTON = "باز کردن پیام";
+export const OPEN_INBOX_TICKET_BUTTON = "💬 باز کردن پیام";
 
 /** Prefix for delivered anonymous messages (nickname inserted). */
 export const DELIVERY_HEADER_FROM = (nickname: string): string =>
-  `💬 از ${nickname}:`;
+  `💬 پیام از ${nickname}:`;
 
 const MENU_LABELS = new Set<string>(Object.values(MENU));
 
@@ -55,8 +59,9 @@ export const MATCH_BUTTON = {
   search: "🔎 پیدا کردن گزینه‌ها",
   accept: "✅ پذیرفتن",
   decline: "❌ رد کردن",
-  cancelRequest: "لغو درخواست",
-  requestConversation: (index: number) => `✍️ درخواست ${index + 1}`,
+  cancelRequest: "↩️ لغو درخواست",
+  writeIntro: (index: number) => `✍️ نوشتن پیام شروع ${index + 1}`,
+  dismiss: "بعداً",
 } as const;
 
 export const ASSESSMENT_BUTTON = {
@@ -65,10 +70,10 @@ export const ASSESSMENT_BUTTON = {
   restart: "📝 ارزیابی دوباره",
   viewResult: "👤 پروفایل گفت‌وگو",
   viewResultAgain: "👤 پروفایل گفت‌وگو",
-  resetYes: "بله، از نو",
+  resetYes: "✅ تأیید",
   resetNo: "↩️ انصراف",
-  previous: "قبلی",
-  exit: "خروج",
+  previous: "⬅️ قبلی",
+  exit: "↩️ ذخیره و خروج",
   backToMenu: "↩️ بازگشت",
 } as const;
 

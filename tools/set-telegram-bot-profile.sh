@@ -84,12 +84,12 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 
 echo "==> setMyCommands"
 COMMANDS_JSON='[
-  {"command":"start","description":"شروع و دریافت لینک شخصی"},
-  {"command":"inbox","description":"صندوق پیام‌ها"},
+  {"command":"start","description":"شروع و دریافت لینک ناشناس"},
+  {"command":"inbox","description":"دیدن صندوق پیام‌ها"},
   {"command":"settings","description":"تنظیمات و حریم خصوصی"},
   {"command":"assessment","description":"ارزیابی سبک گفت‌وگو"},
-  {"command":"match","description":"پیشنهاد گفت‌وگو"},
-  {"command":"match_system","description":"پیشنهادهای گفت‌وگو"}
+  {"command":"match","description":"پیشنهادهای گفت‌وگو"},
+  {"command":"match_system","description":"نکات فنی پیشنهاد گفت‌وگو"}
 ]'
 tg_post setMyCommands \
   --data-urlencode "commands=${COMMANDS_JSON}" \

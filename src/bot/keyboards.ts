@@ -1,56 +1,75 @@
 import { InlineKeyboard, Keyboard } from "grammy";
-import type { MatchHubMenuVariant } from "../features/matching/match-types";
+import type { MatchHubMenuOptions, MatchHubMenuVariant } from "../features/matching/match-types";
+import { SETTINGS_CALLBACK } from "../features/settings/constants";
+import { MATCH_SYSTEM_CALLBACK } from "../features/matching/match-system-callbacks";
 import {
   encodeCapabilityCallbackData,
   type CapabilityAction,
 } from "../ticketing/ticketing-service";
-import { MENU, INBOX_BUTTON } from "./menu-labels";
+import { CONFIRM_BUTTON, INBOX_BUTTON, MENU } from "./menu-labels";
 
 const inboxCallback = (action: CapabilityAction, capability: string): string =>
   encodeCapabilityCallbackData(action, capability);
 
 export const mainMenu = new Keyboard()
   .text(MENU.link)
-  .text(MENU.matchSystem)
   .row()
+  .text(MENU.matchSystem)
   .text(MENU.settings)
   .resized();
 
-/** Match-system submenu on the reply keyboard (not inline under messages). */
-export const buildMatchSystemMenu = (
-  variant: MatchHubMenuVariant = "default"
-): Keyboard => {
-  const keyboard = new Keyboard()
-    .text(MENU.matchProfile)
-    .text(MENU.matchFind)
-    .row()
-    .text(MENU.matchPending)
-    .text(MENU.matchAssessment);
+/** Conversation-suggestions hub — navigation only. */
+export const buildMatchSystemMenu = (options: MatchHubMenuOptions): Keyboard => {
+  const keyboard = new Keyboard();
 
-  if (variant === "can_enable") {
-    keyboard.row().text(MENU.matchEnable);
-  } else if (variant === "can_disable") {
-    keyboard.row().text(MENU.matchDisable);
+  if (options.showFind) {
+    keyboard.text(MENU.matchFind).row();
   }
 
-  return keyboard.row().text(MENU.back).resized();
+  keyboard.text(MENU.matchPending);
+
+  if (options.showProfile) {
+    keyboard.text(MENU.matchProfile);
+  }
+
+  keyboard.row().text(options.assessmentLabel).row().text(MENU.home).resized();
+
+  return keyboard;
+};
+
+export const buildMatchHubDiscoverabilityKeyboard = (
+  variant: MatchHubMenuVariant
+): InlineKeyboard | undefined => {
+  if (variant === "can_enable") {
+    return new InlineKeyboard().text(
+      MENU.matchEnable,
+      MATCH_SYSTEM_CALLBACK.enable
+    );
+  }
+  if (variant === "can_disable") {
+    return new InlineKeyboard().text(
+      MENU.matchDisable,
+      MATCH_SYSTEM_CALLBACK.disable
+    );
+  }
+  return undefined;
 };
 
 export const buildMatchProfileEmptyMenu = (): Keyboard =>
   new Keyboard()
     .text(MENU.matchAssessment)
     .row()
-    .text(MENU.matchBackToHub)
-    .text(MENU.back)
+    .text(MENU.hubBack)
     .resized();
 
 export const buildMatchProfileReadyMenu = (): Keyboard =>
   new Keyboard()
     .text(MENU.matchFind)
+    .text(MENU.matchProfile)
+    .row()
     .text(MENU.matchAssessmentRetry)
     .row()
-    .text(MENU.matchBackToHub)
-    .text(MENU.back)
+    .text(MENU.hubBack)
     .resized();
 
 /** Shown while composing, replying, or naming — always offers a way out. */
@@ -59,45 +78,43 @@ export const buildDraftMenu = (): Keyboard =>
     .text(MENU.cancelDraft)
     .text(MENU.settings)
     .row()
-    .text(MENU.back)
+    .text(MENU.home)
     .resized();
 
-/**
- * Settings keyboard (RTL: first button on each row = right on screen).
- * Three short labels per row to avoid overflow on mobile.
- */
+/** Settings page — navigation and non-destructive actions only. */
 export const buildSettingsMenu = (paused: boolean): Keyboard =>
   new Keyboard()
     .text(MENU.editName)
     .text(paused ? MENU.resumeInbox : MENU.pauseInbox)
-    .text(MENU.clearBlockList)
     .row()
-    .text(MENU.resetMatchHistory)
     .text(MENU.about)
     .text(MENU.technical)
     .row()
+    .text(MENU.clearBlockList)
+    .text(MENU.resetMatchHistory)
+    .row()
     .text(MENU.clearData)
-    .text(MENU.cancelDraft)
-    .text(MENU.back)
+    .row()
+    .text(MENU.home)
     .resized();
 
-export const confirmClearBlocksMenu = new Keyboard()
-  .text(MENU.confirmClearBlocks)
-  .row()
-  .text(MENU.cancel)
-  .resized();
+export const buildConfirmClearDataKeyboard = (): InlineKeyboard =>
+  new InlineKeyboard()
+    .text(CONFIRM_BUTTON.yesDelete, SETTINGS_CALLBACK.confirmClearData)
+    .row()
+    .text(CONFIRM_BUTTON.noCancel, SETTINGS_CALLBACK.cancel);
 
-export const confirmResetMatchHistoryMenu = new Keyboard()
-  .text(MENU.confirmResetMatchHistory)
-  .row()
-  .text(MENU.cancel)
-  .resized();
+export const buildConfirmClearBlocksKeyboard = (): InlineKeyboard =>
+  new InlineKeyboard()
+    .text(CONFIRM_BUTTON.yes, SETTINGS_CALLBACK.confirmClearBlocks)
+    .row()
+    .text(CONFIRM_BUTTON.noCancel, SETTINGS_CALLBACK.cancel);
 
-export const confirmClearMenu = new Keyboard()
-  .text(MENU.confirmClear)
-  .row()
-  .text(MENU.cancel)
-  .resized();
+export const buildConfirmResetMatchKeyboard = (): InlineKeyboard =>
+  new InlineKeyboard()
+    .text(CONFIRM_BUTTON.yes, SETTINGS_CALLBACK.confirmResetMatch)
+    .row()
+    .text(CONFIRM_BUTTON.noCancel, SETTINGS_CALLBACK.cancel);
 
 export const createMessageKeyboard = (
   capability: string,
@@ -111,9 +128,10 @@ export const createMessageKeyboard = (
   const reportData = inboxCallback("report", capability);
 
   return new InlineKeyboard()
-    .text(isBlocked ? INBOX_BUTTON.unblock : INBOX_BUTTON.block, blockData)
     .text(INBOX_BUTTON.reply, replyData)
     .row()
     .text(INBOX_BUTTON.nickname, nicknameData)
+    .text(isBlocked ? INBOX_BUTTON.unblock : INBOX_BUTTON.block, blockData)
+    .row()
     .text(INBOX_BUTTON.report, reportData);
 };

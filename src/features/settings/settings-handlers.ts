@@ -1,10 +1,10 @@
 import type { Context } from "grammy";
 import type { BotUser, Environment } from "../../types";
 import {
+  buildConfirmClearBlocksKeyboard,
+  buildConfirmClearDataKeyboard,
+  buildConfirmResetMatchKeyboard,
   buildSettingsMenu,
-  confirmClearBlocksMenu,
-  confirmClearMenu,
-  confirmResetMatchHistoryMenu,
   mainMenu,
 } from "../../bot/keyboards";
 import { isMenuLabel, MENU } from "../../bot/menu";
@@ -61,6 +61,7 @@ import {
   countUserMatchHistory,
   resetUserMatchHistory,
 } from "../matching/match-service";
+import { SETTINGS_CALLBACK } from "./constants";
 import {
   clearBlocks,
   clearDraft,
@@ -214,8 +215,7 @@ export const handlePendingSettingsInput = async (
 export const handleSettingsMenu = async (
   ctx: Context,
   user: BotUser,
-  env: Environment,
-  botUsername: string
+  env: Environment
 ): Promise<boolean> => {
   const text = ctx.message?.text;
   if (!text || !ctx.from) {
@@ -228,13 +228,13 @@ export const handleSettingsMenu = async (
       await showSettingsHome(ctx, user);
       return true;
 
-    case MENU.back:
+    case MENU.settingsBack:
+    case MENU.home:
       await clearDraft(env, user.id);
       await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
       return true;
 
     case MENU.about:
-    case MENU.privacy:
       await showAboutPrivacy(ctx, user, env);
       return true;
 
@@ -298,28 +298,8 @@ export const handleSettingsMenu = async (
           "COUNT",
           convertToPersianNumbers(user.blockedUserIds.length)
         ),
-        withHtml({ reply_markup: confirmClearBlocksMenu })
+        withHtml({ reply_markup: buildConfirmClearBlocksKeyboard() })
       );
-      return true;
-
-    case MENU.confirmClearBlocks:
-      if (user.pendingSettings !== "confirmClearBlockList") {
-        return false;
-      }
-
-      try {
-        await clearBlocks(env, user.id);
-        await clearDraft(env, user.id);
-        await ctx.reply(
-          SETTINGS_CLEAR_BLOCKS_DONE_MESSAGE,
-          withHtml({ reply_markup: buildSettingsMenu(user.paused) })
-        );
-      } catch (error) {
-        logBotError("handleSettingsMenu:clearBlockList", error);
-        await ctx.reply(HuhMessage, {
-          reply_markup: buildSettingsMenu(user.paused),
-        });
-      }
       return true;
 
     case MENU.resetMatchHistory: {
@@ -345,49 +325,10 @@ export const handleSettingsMenu = async (
           "BLOCK_COUNT",
           convertToPersianNumbers(history.blocks)
         ),
-        withHtml({ reply_markup: confirmResetMatchHistoryMenu })
+        withHtml({ reply_markup: buildConfirmResetMatchKeyboard() })
       );
       return true;
     }
-
-    case MENU.confirmResetMatchHistory:
-      if (user.pendingSettings !== "confirmResetMatchHistory") {
-        return false;
-      }
-
-      try {
-        const cleared = await resetUserMatchHistory(user.id, env);
-        await clearDraft(env, user.id);
-        const detailLines: string[] = [];
-        if (cleared.requests > 0) {
-          detailLines.push(
-            SETTINGS_RESET_MATCH_REQUESTS_CLEARED.replace(
-              "COUNT",
-              convertToPersianNumbers(cleared.requests)
-            )
-          );
-        }
-        if (cleared.blocks > 0) {
-          detailLines.push(
-            SETTINGS_RESET_MATCH_BLOCKS_CLEARED.replace(
-              "COUNT",
-              convertToPersianNumbers(cleared.blocks)
-            )
-          );
-        }
-        const detail =
-          detailLines.length > 0 ? `${detailLines.join("\n")}\n\n` : "";
-        await ctx.reply(
-          SETTINGS_RESET_MATCH_DONE_MESSAGE.replace("DETAIL_LINES", detail),
-          withHtml({ reply_markup: buildSettingsMenu(user.paused) })
-        );
-      } catch (error) {
-        logBotError("handleSettingsMenu:resetMatchHistory", error);
-        await ctx.reply(HuhMessage, {
-          reply_markup: buildSettingsMenu(user.paused),
-        });
-      }
-      return true;
 
     case MENU.clearData:
       await setDraft(env, user.id, {
@@ -397,40 +338,74 @@ export const handleSettingsMenu = async (
       });
       await ctx.reply(
         SETTINGS_CLEAR_DATA_WARNING_MESSAGE,
-        withHtml({ reply_markup: confirmClearMenu })
+        withHtml({ reply_markup: buildConfirmClearDataKeyboard() })
       );
       return true;
 
-    case MENU.confirmClear:
-      if (user.pendingSettings !== "confirmClearData") {
-        return false;
-      }
+    default:
+      return false;
+  }
+};
 
-      try {
-        const freshD1 = await clearUserAccountAndRecreate(ctx, user.id, env);
-        const freshUser = await toBotUser(freshD1, env);
-        await clearDraft(env, freshUser.id);
-        await ctx.reply(
-          SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(
-            "UUID_USER_URL",
-            buildUserDeepLink(botUsername, freshUser.slug)
-          ),
-          withHtml({ reply_markup: mainMenu })
-        );
-      } catch (error) {
-        logBotError("handleSettingsMenu:clearData", error);
-        await ctx.reply(HuhMessage, { reply_markup: mainMenu });
-      }
-      return true;
+const resetMatchHistoryForUser = async (
+  ctx: Context,
+  user: BotUser,
+  env: Environment
+): Promise<void> => {
+  const cleared = await resetUserMatchHistory(user.id, env);
+  await clearDraft(env, user.id);
+  const detailLines: string[] = [];
+  if (cleared.requests > 0) {
+    detailLines.push(
+      SETTINGS_RESET_MATCH_REQUESTS_CLEARED.replace(
+        "COUNT",
+        convertToPersianNumbers(cleared.requests)
+      )
+    );
+  }
+  if (cleared.blocks > 0) {
+    detailLines.push(
+      SETTINGS_RESET_MATCH_BLOCKS_CLEARED.replace(
+        "COUNT",
+        convertToPersianNumbers(cleared.blocks)
+      )
+    );
+  }
+  const detail = detailLines.length > 0 ? `${detailLines.join("\n")}\n\n` : "";
+  await ctx.reply(
+    SETTINGS_RESET_MATCH_DONE_MESSAGE.replace("DETAIL_LINES", detail),
+    withHtml({ reply_markup: buildSettingsMenu(user.paused) })
+  );
+};
 
-    case MENU.cancel:
+export const handleSettingsCallback = async (
+  ctx: Context,
+  env: Environment,
+  botUsername: string
+): Promise<void> => {
+  const from = ctx.from;
+  const data = ctx.callbackQuery?.data;
+  if (!from || !data) {
+    return;
+  }
+
+  try {
+    const d1User = await resolveOrCreateUser(ctx, env);
+    const user = await toBotUser(d1User, env);
+
+    await ctx.answerCallbackQuery();
+    if (ctx.callbackQuery.message) {
+      await ctx.editMessageReplyMarkup({ reply_markup: undefined });
+    }
+
+    if (data === SETTINGS_CALLBACK.cancel) {
       if (user.pendingSettings === "confirmClearBlockList") {
         await clearDraft(env, user.id);
         await ctx.reply(
           SETTINGS_CLEAR_BLOCKS_CANCELLED_MESSAGE,
           withHtml({ reply_markup: buildSettingsMenu(user.paused) })
         );
-        return true;
+        return;
       }
       if (user.pendingSettings === "confirmClearData") {
         await clearDraft(env, user.id);
@@ -438,7 +413,7 @@ export const handleSettingsMenu = async (
           SETTINGS_CLEAR_DATA_CANCELLED_MESSAGE,
           withHtml({ reply_markup: buildSettingsMenu(user.paused) })
         );
-        return true;
+        return;
       }
       if (user.pendingSettings === "confirmResetMatchHistory") {
         await clearDraft(env, user.id);
@@ -446,16 +421,48 @@ export const handleSettingsMenu = async (
           SETTINGS_RESET_MATCH_CANCELLED_MESSAGE,
           withHtml({ reply_markup: buildSettingsMenu(user.paused) })
         );
-        return true;
       }
-      if (user.pendingSettings === "editName") {
-        await clearDraft(env, user.id);
-        await showSettingsHome(ctx, user);
-        return true;
-      }
-      return false;
+      return;
+    }
 
-    default:
-      return false;
+    if (data === SETTINGS_CALLBACK.confirmClearBlocks) {
+      if (user.pendingSettings !== "confirmClearBlockList") {
+        return;
+      }
+      await clearBlocks(env, user.id);
+      await clearDraft(env, user.id);
+      await ctx.reply(
+        SETTINGS_CLEAR_BLOCKS_DONE_MESSAGE,
+        withHtml({ reply_markup: buildSettingsMenu(user.paused) })
+      );
+      return;
+    }
+
+    if (data === SETTINGS_CALLBACK.confirmResetMatch) {
+      if (user.pendingSettings !== "confirmResetMatchHistory") {
+        return;
+      }
+      await resetMatchHistoryForUser(ctx, user, env);
+      return;
+    }
+
+    if (data === SETTINGS_CALLBACK.confirmClearData) {
+      if (user.pendingSettings !== "confirmClearData") {
+        return;
+      }
+      const freshD1 = await clearUserAccountAndRecreate(ctx, user.id, env);
+      const freshUser = await toBotUser(freshD1, env);
+      await clearDraft(env, freshUser.id);
+      await ctx.reply(
+        SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(
+          "UUID_USER_URL",
+          buildUserDeepLink(botUsername, freshUser.slug)
+        ),
+        withHtml({ reply_markup: mainMenu })
+      );
+    }
+  } catch (error) {
+    logBotError("handleSettingsCallback", error);
+    await ctx.reply(HuhMessage, { reply_markup: mainMenu });
   }
 };

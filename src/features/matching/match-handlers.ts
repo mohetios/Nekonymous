@@ -57,7 +57,7 @@ import {
   findTopMatches,
   getMatchDashboard,
   getMatchSuggestion,
-  resolveMatchHubMenuVariant,
+  resolveMatchHubMenuOptions,
 } from "./match-service";
 import {
   acceptMatchRequest,
@@ -145,16 +145,16 @@ export const sendMatchDashboard = async (
     return;
   }
 
-  const variant = await resolveMatchHubMenuVariant(userId, env);
-  await ctx.reply(text, withHtml({ reply_markup: buildMatchSystemMenu(variant) }));
+  const options = await resolveMatchHubMenuOptions(userId, env);
+  await ctx.reply(text, withHtml({ reply_markup: buildMatchSystemMenu(options) }));
 };
 
 const readyInlineOptions = () =>
   withHtml({ reply_markup: buildMatchSearchKeyboard() });
 
 const matchHubKeyboard = async (userId: string, env: Environment) => {
-  const variant = await resolveMatchHubMenuVariant(userId, env);
-  return buildMatchSystemMenu(variant);
+  const options = await resolveMatchHubMenuOptions(userId, env);
+  return buildMatchSystemMenu(options);
 };
 
 const formatPendingListHeader = (
@@ -382,11 +382,8 @@ export const handleMatchCallback = async (
       if (ctx.callbackQuery.message) {
         await ctx.editMessageReplyMarkup({ reply_markup: undefined });
       }
-      const variant = await resolveMatchHubMenuVariant(userId, env);
-      await ctx.reply(
-        MATCH_SYSTEM_INTRO,
-        withHtml({ reply_markup: buildMatchSystemMenu(variant) })
-      );
+      const hubMenu = await matchHubKeyboard(userId, env);
+      await ctx.reply(MATCH_SYSTEM_INTRO, withHtml({ reply_markup: hubMenu }));
       return;
     }
 

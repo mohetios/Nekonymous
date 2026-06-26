@@ -50,6 +50,12 @@ export type MatchDashboard = {
 
 export type MatchHubMenuVariant = "default" | "can_enable" | "can_disable";
 
+export type MatchHubMenuOptions = {
+  assessmentLabel: string;
+  showFind: boolean;
+  showProfile: boolean;
+};
+
 export type MatchSuggestionRow = {
   id: string;
   user_id: string;
