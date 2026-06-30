@@ -47,6 +47,14 @@
       {
         "name": "TELEGRAM_OUTBOX_DO",
         "class_name": "TelegramOutboxDurableObject"
+      },
+      {
+        "name": "TICKET_VAULT",
+        "class_name": "TicketVaultDurableObject"
+      },
+      {
+        "name": "REPORT_LEDGER",
+        "class_name": "ReportLedgerDurableObject"
       }
     ]
   },
@@ -63,6 +71,13 @@
       // The deleted class is not bound or exported by the V1 Worker.
       "tag": "v2-delete-legacy-inbox",
       "deleted_classes": ["InboxSqliteDurableObject"]
+    },
+    {
+      "tag": "v3-sealed-ticket-routing",
+      "new_sqlite_classes": [
+        "TicketVaultDurableObject",
+        "ReportLedgerDurableObject"
+      ]
     }
   ],
   "routes": [

@@ -34,25 +34,6 @@ CREATE TABLE IF NOT EXISTS public_links (
 CREATE INDEX IF NOT EXISTS idx_public_links_owner ON public_links(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_public_links_active ON public_links(is_active);
 
-CREATE TABLE IF NOT EXISTS reports (
-  id TEXT PRIMARY KEY,
-
-  reporter_user_id TEXT NOT NULL,
-  reported_user_id TEXT,
-  conversation_id TEXT,
-  ticket_ref TEXT,
-
-  reason_code TEXT NOT NULL,
-  details_ciphertext TEXT,
-  status TEXT NOT NULL DEFAULT 'open',
-
-  created_at INTEGER NOT NULL,
-  reviewed_at INTEGER
-);
-
-CREATE INDEX IF NOT EXISTS idx_reports_status_created ON reports(status, created_at);
-CREATE INDEX IF NOT EXISTS idx_reports_reported ON reports(reported_user_id, created_at);
-
 CREATE TABLE IF NOT EXISTS assessment_profiles (
   user_id TEXT PRIMARY KEY,
   version TEXT NOT NULL,

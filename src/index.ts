@@ -1,11 +1,18 @@
 import { UserStateDurableObject } from "./storage/user-state-do";
 import { TelegramOutboxDurableObject } from "./storage/telegram-outbox-do";
+import { TicketVaultDurableObject } from "./storage/ticket-vault/ticket-vault.do";
+import { ReportLedgerDurableObject } from "./storage/report-ledger/report-ledger.do";
 import type { Environment } from "./types";
 import { handleRequest } from "./bot/router";
 import { handleTelegramOutboxBatch } from "./queues/telegram-outbox.consumer";
 import type { TelegramOutboxJob } from "./queues/telegram-outbox.types";
 
-export { UserStateDurableObject, TelegramOutboxDurableObject };
+export {
+  UserStateDurableObject,
+  TelegramOutboxDurableObject,
+  TicketVaultDurableObject,
+  ReportLedgerDurableObject,
+};
 
 export default {
   fetch: async (request: Request, env: Environment, ctx: ExecutionContext) => {

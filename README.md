@@ -125,8 +125,10 @@ flowchart TD
 |--------|------------|------|
 | Entry | Cloudflare Worker | `POST /bot` webhook; `telegram-outbox` queue consumer |
 | Bot framework | Grammy | Commands, messages, inline callbacks |
-| Relational data | D1 (`nekonymous_core`) | Users, links, assessment, matching, reports, anonymous stats |
-| Per-user hot state | `UserStateDurableObject` (SQLite) | Inbox tickets, drafts, blocks, labels, rate limits, assessment session |
+| Relational data | D1 (`nekonymous_core`) | Users, links, assessment, matching, anonymous stats |
+| Per-user hot state | `UserStateDurableObject` (SQLite) | Inbox pointers, drafts, blocks, labels, rate limits, assessment session |
+| Sealed tickets | `TicketVaultDurableObject` (SQLite) | Encrypted anonymous route and payload capsules |
+| Blind reports | `ReportLedgerDurableObject` (SQLite) | Blinded abuse report tags |
 | Outbound delivery | Queue + `TelegramOutboxDurableObject` | Idempotent non-critical Telegram sends |
 | Routing cache | KV (`NEKO_KV`) | `tg:{hash}` → user id; `link:{slug}` → user id |
 | Semantic discovery | Workers AI + Vectorize | Profile embeddings; candidate discovery only |
@@ -136,7 +138,7 @@ Design constraints for V1:
 
 - KV is cache only — never the authority for inbox, profiles, or matching state.
 - Vectorize narrows candidates; final ranking is deterministic TypeScript.
-- Message payloads are cleared from the DO after inbox delivery; connection metadata may remain encrypted for reply/block/report/nickname.
+- Message payloads are cleared from the ticket vault after delivery; encrypted route capsules remain for reply/block/report/nickname.
 - Account reset hard-deletes user-linked D1 rows; anonymous aggregate counters may remain.
 
 See also [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
@@ -147,12 +149,11 @@ See also [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) 
 
 ### D1
 
-Migrations: `migrations/0001_init.sql` only (squashed V1 schema).
+Migrations live in `migrations/`; `0001_init.sql` is the squashed V1 base.
 
 | Area | Tables |
 |------|--------|
 | **Identity** | `users`, `public_links` |
-| **Safety** | `reports` |
 | **Assessment** | `assessment_profiles`, `assessment_attempts`, `assessment_answers`, `profile_vector_index_events` |
 | **Matching** | `match_suggestions`, `match_requests`, `match_blocks`, `match_events` |
 | **Anonymous stats** | `platform_stats` — single row, no user ids; survives account deletion |
@@ -166,7 +167,7 @@ D1 stores HMACed Telegram user hashes and encrypted Telegram chat ids, not raw T
 | Table | Purpose |
 |-------|---------|
 | `user_state` | Pause flag, encrypted display name, locale mirror |
-| `inbox_tickets` | Encrypted tickets; cap 50 pending |
+| `inbox_pointers` | Encrypted ticket references; cap 50 pending |
 | `drafts` | Compose / reply / settings draft state |
 | `blocks` | Per-recipient block list |
 | `contact_labels` | Private nicknames per sender |
@@ -180,6 +181,18 @@ D1 stores HMACed Telegram user hashes and encrypted Telegram chat ids, not raw T
 |-------|---------|
 | `sent_events` | Idempotent outbound send log |
 | `rate_buckets` | Reserved for outbound rate shaping (schema only in V1) |
+
+**`TicketVaultDurableObject`**:
+
+| Table | Purpose |
+|-------|---------|
+| `tickets` | `ticket_hash`, owner proof, encrypted route/payload capsules |
+
+**`ReportLedgerDurableObject`**:
+
+| Table | Purpose |
+|-------|---------|
+| `report_events` | Blinded sender/pair/link abuse tags and reporter proof |
 
 ### KV
 
@@ -216,8 +229,8 @@ Nekonymous is a **hosted anonymous relay**. It hides users from each other in no
 | Telegram user ids | HMAC-SHA-256 with `APP_HMAC_PEPPER` → `telegram_user_hash` in D1 |
 | Telegram chat ids | AES-256-GCM encryption with `APP_MASTER_KEY` |
 | Message payloads | Per-ticket HKDF-derived AES-256-GCM keys; envelope `{ v, kid, iv, ct }` |
-| Callback capabilities | Raw capability tokens live only in Telegram buttons; DO stores lookup hashes |
-| Payload retention | `payload_ciphertext` cleared after inbox delivery; `connection_ciphertext` may remain for actions |
+| Callback tickets | Raw `ticketRef` values live only in Telegram buttons; storage uses hashes or encrypted references |
+| Payload retention | `payload_enc` is cleared after delivery; `route_enc` remains for actions |
 | Webhook auth | `BOT_SECRET_KEY` as `X-Telegram-Bot-Api-Secret-Token` |
 
 ### Abuse controls and rate limits
@@ -256,7 +269,7 @@ The previous 5-second send/reply-only check was removed in favor of this single 
 #### Other safety controls
 
 - Block before accept on new messages and replies
-- Structured report flow with encrypted optional details
+- Blind Abuse Ledger reports without D1 sender-recipient report rows
 - Webhook secret validation (`BOT_SECRET_KEY`)
 
 Matching search/request limits are enforced in `match-service.ts` via `match_events` counts. Inbox, blocks, drafts, and the global throttle are enforced in `UserStateDO`.
@@ -266,7 +279,7 @@ Matching search/request limits are enforced in `match-service.ts` via `match_eve
 Settings → **پاک کردن حساب** calls `clearUserAccountAndRecreate`:
 
 1. Purge the user’s Durable Object (inbox, drafts, blocks, assessment session, …)
-2. Hard-delete all D1 rows for that user (assessment, matches, links, reports, …)
+2. Hard-delete all D1 rows for that user (assessment, matches, links, …)
 3. Delete Vectorize vector and KV routing keys
 4. Create a new internal user id and public link
 
@@ -447,10 +460,12 @@ Local secrets live in `.dev.vars` (from `.env.example`). Production secrets use 
 
 | Binding | Resource | Required | Used for |
 |---------|----------|:--------:|----------|
-| `DB` | D1 `nekonymous_core` | yes | Users, assessment, matching, reports, stats |
+| `DB` | D1 `nekonymous_core` | yes | Users, assessment, matching, stats |
 | `NEKO_KV` | KV namespace | yes | `tg:` / `link:` routing cache |
 | `USER_STATE_DO` | Durable Object | yes | Per-user inbox, drafts, blocks, assessment session |
 | `TELEGRAM_OUTBOX_DO` | Durable Object | yes | Idempotent outbound Telegram sends |
+| `TICKET_VAULT` | Durable Object | yes | Sealed Ticket Routing vault |
+| `REPORT_LEDGER` | Durable Object | yes | Blind Abuse Ledger |
 | `TELEGRAM_OUTBOX_QUEUE` | Queue `telegram-outbox` | yes | Async recipient notifications |
 | `AI` | Workers AI | yes | Profile embedding generation |
 | `PROFILE_VECTORS` | Vectorize `nekonymous-profile-vectors` | yes | Match candidate discovery |
@@ -477,7 +492,8 @@ D1 database name: **`nekonymous_core`**, binding: **`DB`**, migrations directory
 
 | File | Purpose |
 |------|---------|
-| `0001_init.sql` | Full V1 schema: users, links, assessment, matching, reports, `platform_stats` |
+| `0001_init.sql` | Full V1 schema: users, links, assessment, matching, `platform_stats` |
+| `0002_drop_legacy_reports.sql` | Remove legacy D1 report table |
 
 ```bash
 # Local (wrangler dev --local)

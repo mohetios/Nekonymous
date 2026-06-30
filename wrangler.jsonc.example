@@ -47,6 +47,14 @@
       {
         "name": "TELEGRAM_OUTBOX_DO",
         "class_name": "TelegramOutboxDurableObject"
+      },
+      {
+        "name": "TICKET_VAULT",
+        "class_name": "TicketVaultDurableObject"
+      },
+      {
+        "name": "REPORT_LEDGER",
+        "class_name": "ReportLedgerDurableObject"
       }
     ]
   },
@@ -61,6 +69,13 @@
     {
       "tag": "v2-delete-legacy-inbox",
       "deleted_classes": ["InboxSqliteDurableObject"]
+    },
+    {
+      "tag": "v3-sealed-ticket-routing",
+      "new_sqlite_classes": [
+        "TicketVaultDurableObject",
+        "ReportLedgerDurableObject"
+      ]
     }
   ],
   "routes": [

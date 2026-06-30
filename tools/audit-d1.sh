@@ -82,7 +82,6 @@ run_query "Migration status" \
 TABLES=(
   users
   public_links
-  reports
   assessment_profiles
   assessment_attempts
   assessment_answers
@@ -113,9 +112,6 @@ run_query "Users (hash + encrypted chat id)" \
 run_query "Match requests (intro ciphertext)" \
   "SELECT id, status, CASE WHEN intro_ciphertext LIKE '{%' THEN 'ok_encrypted' ELSE 'FAIL_plain_intro' END AS intro_check FROM match_requests ORDER BY created_at DESC LIMIT 20;"
 
-run_query "Reports (details ciphertext)" \
-  "SELECT id, reason_code, CASE WHEN details_ciphertext IS NULL THEN 'none' WHEN details_ciphertext LIKE '{%' THEN 'ok_encrypted' ELSE 'FAIL_plain_details' END AS details_check FROM reports ORDER BY created_at DESC LIMIT 20;"
-
 run_query "Assessment answers (Likert 1-5)" \
   "SELECT question_id, answer_value, CASE WHEN answer_value BETWEEN 1 AND 5 THEN 'ok' ELSE 'FAIL_invalid_likert' END AS answer_check FROM assessment_answers ORDER BY answered_at DESC LIMIT 10;"
 
@@ -132,11 +128,9 @@ echo ""
 echo "==> Privacy failure counts"
 USER_FAILS="$(count_failures "SELECT COUNT(*) AS fail_count FROM users WHERE telegram_user_hash GLOB '[0-9]*' OR telegram_chat_ciphertext NOT LIKE '{%';")"
 INTRO_FAILS="$(count_failures "SELECT COUNT(*) AS fail_count FROM match_requests WHERE intro_ciphertext NOT LIKE '{%';")"
-DETAIL_FAILS="$(count_failures "SELECT COUNT(*) AS fail_count FROM reports WHERE details_ciphertext IS NOT NULL AND details_ciphertext NOT LIKE '{%';")"
 ANSWER_FAILS="$(count_failures "SELECT COUNT(*) AS fail_count FROM assessment_answers WHERE answer_value NOT BETWEEN 1 AND 5;")"
 printf "  users privacy failures:              %s\n" "$USER_FAILS"
 printf "  match intro plaintext failures:      %s\n" "$INTRO_FAILS"
-printf "  report details plaintext failures:   %s\n" "$DETAIL_FAILS"
 printf "  invalid assessment answers:          %s\n" "$ANSWER_FAILS"
 
 if [[ "$TARGET" == "--remote" ]]; then
@@ -157,7 +151,7 @@ if [[ "$TARGET" == "--remote" ]]; then
   "${WRANGLER[@]}" vectorize info "$VECTOR_INDEX" 2>&1 | print_json_table || echo "  (vectorize info unavailable)"
 fi
 
-TOTAL_FAILS=$((USER_FAILS + INTRO_FAILS + DETAIL_FAILS + ANSWER_FAILS))
+TOTAL_FAILS=$((USER_FAILS + INTRO_FAILS + ANSWER_FAILS))
 echo ""
 if [[ "$TOTAL_FAILS" -gt 0 ]]; then
   echo "AUDIT RESULT: FAIL (${TOTAL_FAILS} privacy check failures)"
@@ -165,4 +159,4 @@ if [[ "$TOTAL_FAILS" -gt 0 ]]; then
 fi
 
 echo "AUDIT RESULT: OK (no D1 privacy check failures)"
-echo "Note: inbox ticket payloads live in UserStateDO and are not covered by this D1 audit."
+echo "Note: sealed tickets and blind reports live in Durable Objects, not D1."

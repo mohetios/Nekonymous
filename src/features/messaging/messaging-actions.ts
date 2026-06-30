@@ -5,14 +5,10 @@ import {
   getContactLabelForSender,
   lookupContactLabel,
 } from "../../utils/contact";
-import {
-  createBlockHash,
-  createCapabilityLookupHash,
-  createReportPeerHash,
-  randomCapability,
-} from "../../ticketing/ticketing-service";
+import { createBlockHash } from "../../ticketing/ticketing-service";
 import {
   HuhMessage,
+  EXPIRED_TICKET_MESSAGE,
   NICKNAME_PROMPT_MESSAGE,
   NoConversationFoundMessage,
   REPORT_SUBMITTED_MESSAGE,
@@ -22,56 +18,76 @@ import {
   USER_BLOCKED_MESSAGE,
   USER_IS_BLOCKED_MESSAGE,
   USER_UNBLOCKED_MESSAGE,
+  VIEWED_TICKET_SUMMARY_MESSAGE,
 } from "../../i18n/messages";
 import {
   getActiveSlugForUser,
-  getUserById,
+  getUserByTelegramHash,
   resolveOrCreateUser,
   toBotUser,
 } from "../identity/identity-service";
 import {
-  deliveryContextFromTicket,
+  deliveryContextFromResolvedTicket,
   hasDeliverablePayload,
-  loadTicketForAction,
+  markResolvedTicketViewed,
   notifyMessageSeen,
   toTicketDeliveryConversation,
 } from "./messaging-service";
-import { createReport } from "./report-service";
 import {
   addBlock,
-  markTicketReported,
-  markTicketDelivered,
+  markInboxPointerBlocked,
+  markInboxPointerReported,
   removeBlock,
   setDraft,
 } from "../../storage/user-state-client";
 import { escapeHtml, withHtml } from "../../utils/tools";
 import { sendDecryptedMessage } from "../../utils/sender";
 import { logBotError } from "../../utils/logs";
+import {
+  resolveTicketAction,
+  isExpiredTicketAction,
+  type TicketAction,
+} from "./resolve-ticket-action";
+import type { ResolveTicketActionResult } from "./resolve-ticket-action";
+import { createBlindReport } from "../moderation/create-blind-report";
+import {
+  markTicketBlocked,
+  markTicketRecordReported,
+} from "../../storage/ticket-vault/ticket-vault.client";
+import { displayNumberForTicketHash } from "./inbox-pointer";
 
-const isRecipient = (
-  recipientUserId: string,
-  currentUserId: string
-): boolean => recipientUserId === currentUserId;
+const ticketRefFromContext = (ctx: Context): string | null => {
+  const ref = ctx.match?.[1];
+  return typeof ref === "string" ? ref : null;
+};
+
+const isRecipientRoute = (
+  recipientRouteTag: string,
+  currentRouteTag: string
+): boolean => recipientRouteTag === currentRouteTag;
 
 const loadAction = async (
   ctx: Context,
   env: Environment,
-  recipientUserId: string
-) => {
-  const ref = ctx.match?.[1];
-  if (!ref) {
+  action: TicketAction,
+  actorHash: string
+): Promise<ResolveTicketActionResult | null> => {
+  const ticketRef = ticketRefFromContext(ctx);
+  if (!ticketRef) {
     return null;
   }
+  return resolveTicketAction(ctx, env, action, ticketRef, actorHash);
+};
 
-  return loadTicketForAction(env, recipientUserId, ref);
+const replyExpiredTicket = async (ctx: Context): Promise<void> => {
+  await ctx.reply(EXPIRED_TICKET_MESSAGE);
 };
 
 export const handleOpenTicketAction = async (
   ctx: Context,
   env: Environment
 ): Promise<void> => {
-  const from = ctx.from;
-  if (!from) {
+  if (!ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -79,29 +95,34 @@ export const handleOpenTicketAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded?.ticket?.payloadCiphertext) {
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "open",
+      d1User.telegram_user_hash
+    );
+
+    if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const delivery = await deliveryContextFromTicket(
-      env,
-      loaded.ticket,
-      user.contactLabels
-    );
-    if (!isRecipient(delivery.connection.recipientUserId, user.id)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-    if (!hasDeliverablePayload(delivery.payload)) {
-      await ctx.reply(HuhMessage);
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const senderD1 = await getUserById(delivery.connection.senderUserId, env);
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const senderD1 = await getUserByTelegramHash(
+      resolved.route.senderRouteTag,
+      env
+    );
     const isBlocked = senderD1
       ? user.blockedUserIds.includes(
           await createBlockHash(
@@ -112,24 +133,42 @@ export const handleOpenTicketAction = async (
         )
       : false;
 
-    const actionCapability = randomCapability();
-    const actionLookupHash = await createCapabilityLookupHash(
-      actionCapability,
-      env.APP_HMAC_PEPPER
+    if (!resolved.ticket.payloadEnc || resolved.ticket.status !== "active") {
+      await ctx.reply(
+        VIEWED_TICKET_SUMMARY_MESSAGE(
+          displayNumberForTicketHash(resolved.ticketHash)
+        ),
+        withHtml({
+          reply_markup: createMessageKeyboard(resolved.ticketRef, isBlocked),
+        })
+      );
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const delivery = await deliveryContextFromResolvedTicket(
+      resolved,
+      user.contactLabels
     );
+    if (!hasDeliverablePayload(delivery.payload)) {
+      await ctx.reply(HuhMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
     await sendDecryptedMessage(
       ctx,
-      toTicketDeliveryConversation(delivery.connection, delivery.payload, 0, 0),
-      { reply_markup: createMessageKeyboard(actionCapability, isBlocked) },
+      toTicketDeliveryConversation(resolved.route, delivery.payload, 0, 0),
+      { reply_markup: createMessageKeyboard(resolved.ticketRef, isBlocked) },
       delivery.senderLabel
     );
-    await markTicketDelivered(env, user.id, loaded.ticket.ref, actionLookupHash);
+    await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
 
     if (senderD1) {
       await notifyMessageSeen(
         env,
         senderD1,
-        delivery.connection.parent_message_id
+        resolved.route.parentMessageId
       ).catch((error) => logBotError("handleOpenTicketAction:seen", error));
     }
   } catch {
@@ -144,8 +183,7 @@ export const handleReplyAction = async (
   env: Environment
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
-  const from = ctx.from;
-  if (callbackMessageId === undefined || !from) {
+  if (callbackMessageId === undefined || !ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -153,27 +191,46 @@ export const handleReplyAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "reply",
+      d1User.telegram_user_hash
+    );
 
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded) {
+    if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const { connection } = loaded;
-    if (!isRecipient(connection.recipientUserId, user.id)) {
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    if (connection.senderUserId === user.id) {
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    if (!resolved.route.replyPolicy.canReply) {
+      await ctx.reply(NoConversationFoundMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    if (resolved.route.senderRouteTag === d1User.telegram_user_hash) {
       await ctx.reply(SELF_MESSAGE_DISABLE_MESSAGE);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const senderD1 = await getUserById(connection.senderUserId, env);
+    const senderD1 = await getUserByTelegramHash(
+      resolved.route.senderRouteTag,
+      env
+    );
     if (!senderD1) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
@@ -199,23 +256,23 @@ export const handleReplyAction = async (
       return;
     }
 
-    const senderLabel = connection.senderAlias
+    const senderLabel = resolved.route.senderAlias
       ? getContactLabelForSender(
           user.id,
-          connection.senderUserId,
+          senderD1.id,
           user.contactLabels,
-          connection.senderAlias
+          resolved.route.senderAlias
         )
       : undefined;
 
     await setDraft(env, user.id, {
       id: "primary",
       mode: "reply",
-      toUserId: connection.senderUserId,
-      linkSlug: senderSlug ?? undefined,
-      replyRef: loaded.ticket?.ref,
+      toUserId: senderD1.id,
+      linkSlug: senderSlug,
+      replyRef: resolved.ticketHash,
       parent_message_id: callbackMessageId,
-      reply_to_message_id: connection.parent_message_id,
+      reply_to_message_id: resolved.route.parentMessageId,
     });
 
     const replyPrompt = senderLabel
@@ -236,8 +293,7 @@ export const handleBlockAction = async (
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const chatId = ctx.chat?.id;
-  const from = ctx.from;
-  if (callbackMessageId === undefined || chatId === undefined || !from) {
+  if (callbackMessageId === undefined || chatId === undefined || !ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -245,20 +301,33 @@ export const handleBlockAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded || !loaded.ticket) {
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "block",
+      d1User.telegram_user_hash
+    );
+    if (!resolved) {
       await ctx.reply(HuhMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const { connection } = loaded;
-    if (!isRecipient(connection.recipientUserId, user.id)) {
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const senderD1 = await getUserById(connection.senderUserId, env);
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const senderD1 = await getUserByTelegramHash(
+      resolved.route.senderRouteTag,
+      env
+    );
     if (!senderD1) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
@@ -272,6 +341,10 @@ export const handleBlockAction = async (
     );
 
     await addBlock(env, user.id, blockHash);
+    await Promise.all([
+      markInboxPointerBlocked(env, user.id, resolved.ticketHash),
+      markTicketBlocked(env, resolved.ticketHash),
+    ]);
 
     await ctx.api.sendMessage(
       chatId,
@@ -279,7 +352,7 @@ export const handleBlockAction = async (
       withHtml({ reply_to_message_id: callbackMessageId })
     );
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-      reply_markup: createMessageKeyboard(ctx.match?.[1] ?? "", true),
+      reply_markup: createMessageKeyboard(resolved.ticketRef, true),
     });
   } catch {
     await ctx.reply(HuhMessage);
@@ -294,8 +367,7 @@ export const handleUnblockAction = async (
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const chatId = ctx.chat?.id;
-  const from = ctx.from;
-  if (callbackMessageId === undefined || chatId === undefined || !from) {
+  if (callbackMessageId === undefined || chatId === undefined || !ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -303,20 +375,33 @@ export const handleUnblockAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded || !loaded.ticket) {
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "unblock",
+      d1User.telegram_user_hash
+    );
+    if (!resolved) {
       await ctx.reply(HuhMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const { connection } = loaded;
-    if (!isRecipient(connection.recipientUserId, user.id)) {
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const senderD1 = await getUserById(connection.senderUserId, env);
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    const senderD1 = await getUserByTelegramHash(
+      resolved.route.senderRouteTag,
+      env
+    );
     if (!senderD1) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
@@ -343,7 +428,7 @@ export const handleUnblockAction = async (
       withHtml({ reply_to_message_id: callbackMessageId })
     );
     await ctx.api.editMessageReplyMarkup(chatId, callbackMessageId, {
-      reply_markup: createMessageKeyboard(ctx.match?.[1] ?? "", false),
+      reply_markup: createMessageKeyboard(resolved.ticketRef, false),
     });
   } catch {
     await ctx.reply(HuhMessage);
@@ -357,8 +442,7 @@ export const handleNicknameAction = async (
   env: Environment
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
-  const from = ctx.from;
-  if (callbackMessageId === undefined || !from) {
+  if (callbackMessageId === undefined || !ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -366,39 +450,42 @@ export const handleNicknameAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded) {
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "nickname",
+      d1User.telegram_user_hash
+    );
+    if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const { connection } = loaded;
-    if (!isRecipient(connection.recipientUserId, user.id)) {
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
       await ctx.answerCallbackQuery();
       return;
     }
 
-    const senderD1 = await getUserById(connection.senderUserId, env);
-    if (!senderD1) {
-      await ctx.reply(NoConversationFoundMessage);
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
       await ctx.answerCallbackQuery();
       return;
     }
 
-    if (!connection.senderAlias) {
+    if (!resolved.route.senderAlias) {
       await ctx.reply(HuhMessage);
       await ctx.answerCallbackQuery();
       return;
     }
 
     const currentNick =
-      lookupContactLabel(user.contactLabels, connection.senderAlias) ?? "—";
+      lookupContactLabel(user.contactLabels, resolved.route.senderAlias) ?? "-";
 
     await setDraft(env, user.id, {
       id: "primary",
       mode: "nickname",
-      pendingNicknameAlias: connection.senderAlias,
+      pendingNicknameAlias: resolved.route.senderAlias,
       parent_message_id: callbackMessageId,
     });
 
@@ -417,8 +504,7 @@ export const handleReportAction = async (
   ctx: Context,
   env: Environment
 ): Promise<void> => {
-  const from = ctx.from;
-  if (!from) {
+  if (!ctx.from) {
     await ctx.answerCallbackQuery();
     return;
   }
@@ -426,39 +512,39 @@ export const handleReportAction = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const loaded = await loadAction(ctx, env, user.id);
-    if (!loaded || !loaded.ticket) {
-      await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const { connection, ticket } = loaded;
-    if (!isRecipient(connection.recipientUserId, user.id)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const senderD1 = await getUserById(connection.senderUserId, env);
-    if (!senderD1) {
-      await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const reportedPeerHash = await createReportPeerHash(
-      env.APP_HMAC_PEPPER,
-      d1User.telegram_user_hash,
-      senderD1.telegram_user_hash
+    const resolved = await loadAction(
+      ctx,
+      env,
+      "report",
+      d1User.telegram_user_hash
     );
+    if (!resolved) {
+      await ctx.reply(NoConversationFoundMessage);
+      await ctx.answerCallbackQuery();
+      return;
+    }
 
-    await createReport(env, {
-      reporterUserId: d1User.telegram_user_hash,
-      reportedUserId: reportedPeerHash,
-      ticketRef: ticket.ref,
+    if (isExpiredTicketAction(resolved)) {
+      await replyExpiredTicket(ctx);
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+
+    await createBlindReport(env, {
+      actorHash: d1User.telegram_user_hash,
+      ticketHash: resolved.ticketHash,
+      route: resolved.route,
       reasonCode: "inbox_report",
     });
-    await markTicketReported(env, user.id, ticket.ref);
+    await Promise.all([
+      markInboxPointerReported(env, user.id, resolved.ticketHash),
+      markTicketRecordReported(env, resolved.ticketHash),
+    ]);
     await ctx.reply(REPORT_SUBMITTED_MESSAGE, withHtml());
   } catch {
     await ctx.reply(HuhMessage);

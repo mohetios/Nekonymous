@@ -1,43 +1,28 @@
 import type {
-  ConnectionMetadata,
   Conversation,
   D1User,
   Environment,
   MessagePayload,
 } from "../../types";
-import {
-  createCapabilityLookupHash,
-  createMessageDedupeKey,
-  encodeCapabilityCallbackData,
-  decryptConnectionMetadata,
-  decryptMessagePayload,
-  encryptConnectionMetadata,
-  encryptMessagePayload,
-  generateTicketId,
-  getSenderAlias,
-  randomCapability,
-} from "../../ticketing/ticketing-service";
-import { ensureUserStateInitialized } from "../identity/identity-service";
-import { incrementPlatformStat } from "../platform/platform-stats-service";
-import {
-  addInboxTicket,
-  getInboxTicketByCapability,
-} from "../../storage/user-state-client";
-import type { getInboxTicket } from "../../storage/user-state-client";
-import { enqueueTelegramOutbox } from "../../storage/telegram-outbox-client";
+import { decryptEnvelope } from "../../crypto/envelope";
+import { payloadAad } from "../../crypto/keys";
 import { OPEN_INBOX_TICKET_BUTTON } from "../../i18n/labels";
-
-const parseMessagePayload = (raw: string): MessagePayload | null => {
-  try {
-    const data = JSON.parse(raw) as MessagePayload;
-    if (!data || typeof data !== "object") {
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-};
+import {
+  MULTIPLE_NEW_INBOX_MESSAGE,
+  NEW_INBOX_MESSAGE,
+} from "../../i18n/messages";
+import { createSealedTicket, payloadCapsuleToMessagePayload } from "./create-sealed-ticket";
+import type {
+  PayloadCapsule,
+  RouteCapsule,
+} from "./create-sealed-ticket";
+import type { ResolvedTicketAction } from "./resolve-ticket-action";
+import { enqueueTelegramOutbox } from "../../storage/telegram-outbox-client";
+import {
+  markTicketViewed,
+} from "../../storage/ticket-vault/ticket-vault.client";
+import { markInboxPointerViewed } from "../../storage/user-state-client";
+import { encodeCapabilityCallbackData } from "../../ticketing/ticketing-service";
 
 export const hasDeliverablePayload = (payload: MessagePayload): boolean => {
   if (!payload.message_type) {
@@ -47,50 +32,6 @@ export const hasDeliverablePayload = (payload: MessagePayload): boolean => {
     return !!payload.message_text?.trim();
   }
   return true;
-};
-
-export const loadTicketForAction = async (
-  env: Environment,
-  recipientUserId: string,
-  capability: string
-): Promise<{
-  ticket: Awaited<ReturnType<typeof getInboxTicket>>;
-  connection: ConnectionMetadata;
-} | null> => {
-  const ticket = await getInboxTicketByCapability(env, recipientUserId, capability);
-  if (!ticket) {
-    return null;
-  }
-
-  try {
-    const connection = JSON.parse(
-      await decryptConnectionMetadata(
-        ticket.ticketId,
-        ticket.connectionCiphertext,
-        env.APP_MASTER_KEY
-      )
-    ) as ConnectionMetadata;
-    return { ticket, connection };
-  } catch {
-    return null;
-  }
-};
-
-const decryptTicketPayload = async (
-  ticketId: string,
-  payloadCiphertext: string,
-  appMasterKey: string
-): Promise<MessagePayload | null> => {
-  try {
-    const raw = await decryptMessagePayload(
-      ticketId,
-      payloadCiphertext,
-      appMasterKey
-    );
-    return parseMessagePayload(raw);
-  } catch {
-    return null;
-  }
 };
 
 export type SendMessageInput = {
@@ -114,74 +55,9 @@ export const sendAnonymousMessage = async (
   notify?: boolean;
   openCapability?: string;
 }> => {
-  const ticketId = generateTicketId();
-  const openCapability = randomCapability();
-  const lookupHash = await createCapabilityLookupHash(
-    openCapability,
-    env.APP_HMAC_PEPPER
-  );
-  const conversationId = ticketId;
-  const senderAlias = await getSenderAlias(
-    input.recipient.id,
-    input.sender.id,
-    env.APP_MASTER_KEY
-  );
-
-  const connection: ConnectionMetadata = {
-    senderUserId: input.sender.id,
-    recipientUserId: input.recipient.id,
-    conversationId,
-    ticketId,
-    senderAlias,
-    linkSlug: input.linkSlug,
-    parent_message_id: input.payload.telegramMessageId,
-    reply_to_message_id: input.isThreadReply
-      ? input.replyToMessageId
-      : undefined,
-    createdAt: input.payload.createdAt,
-  };
-
-  const [payloadCiphertext, connectionCiphertext] = await Promise.all([
-    encryptMessagePayload(
-      ticketId,
-      JSON.stringify(input.payload),
-      env.APP_MASTER_KEY
-    ),
-    encryptConnectionMetadata(
-      ticketId,
-      JSON.stringify(connection),
-      env.APP_MASTER_KEY
-    ),
-  ]);
-
-  const dedupeKey =
-    input.dedupeKey ??
-    (await createMessageDedupeKey(
-      env.APP_HMAC_PEPPER,
-      input.sender.telegram_user_hash,
-      input.recipient.telegram_user_hash,
-      input.payload.telegramMessageId
-    ));
-
-  await ensureUserStateInitialized(env, input.recipient.id);
-
-  const result = await addInboxTicket(env, input.recipient.id, {
-    ref: lookupHash,
-    ticketId,
-    senderUserId: "",
-    recipientUserId: "",
-    conversationId: "",
-    payloadCiphertext,
-    connectionCiphertext,
-    dedupeKey,
-  });
-
+  const result = await createSealedTicket(env, input);
   if (!result.ok) {
     return { ok: false, status: result.status };
-  }
-
-  if (!result.duplicate) {
-    await incrementPlatformStat(env, "messages_relayed");
   }
 
   return {
@@ -189,7 +65,7 @@ export const sendAnonymousMessage = async (
     status: 200,
     pendingCount: result.pendingCount,
     notify: !result.duplicate,
-    openCapability,
+    openCapability: result.ticketRef,
   };
 };
 
@@ -199,11 +75,11 @@ export const notifyRecipientInbox = async (
   pendingCount: number,
   openCapability?: string
 ): Promise<void> => {
-  const { NEW_INBOX_MESSAGE } = await import("../../i18n/messages");
-  const { convertToPersianNumbers } = await import("../../utils/tools");
   const { getTelegramChatId } = await import("../identity/identity-service");
 
   const chatId = await getTelegramChatId(recipient, env);
+  const text =
+    pendingCount > 1 ? MULTIPLE_NEW_INBOX_MESSAGE : NEW_INBOX_MESSAGE;
   const response = await fetch(
     `https://api.telegram.org/bot${env.SECRET_TELEGRAM_API_TOKEN}/sendMessage`,
     {
@@ -211,10 +87,7 @@ export const notifyRecipientInbox = async (
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         chat_id: chatId,
-        text: NEW_INBOX_MESSAGE.replace(
-          "COUNT",
-          convertToPersianNumbers(pendingCount)
-        ),
+        text,
         parse_mode: "HTML",
         ...(openCapability
           ? {
@@ -263,49 +136,48 @@ export const notifyMessageSeen = async (
   });
 };
 
-export const deliveryContextFromTicket = async (
-  env: Environment,
-  ticket: NonNullable<Awaited<ReturnType<typeof getInboxTicket>>>,
+export const deliveryContextFromResolvedTicket = async (
+  resolved: ResolvedTicketAction,
   ownerContactLabels: Record<string, string>
 ): Promise<{
   payload: MessagePayload;
-  connection: ConnectionMetadata;
+  route: RouteCapsule;
   senderLabel?: string;
 }> => {
-  const connection = JSON.parse(
-    await decryptConnectionMetadata(
-      ticket.ticketId,
-      ticket.connectionCiphertext,
-      env.APP_MASTER_KEY
-    )
-  ) as ConnectionMetadata;
-
-  if (!ticket.payloadCiphertext) {
+  if (!resolved.ticket.payloadEnc) {
     throw new Error("Missing payload");
   }
 
-  const payload = await decryptTicketPayload(
-    ticket.ticketId,
-    ticket.payloadCiphertext,
-    env.APP_MASTER_KEY
+  const capsule = await decryptEnvelope<PayloadCapsule>(
+    resolved.ticketKey,
+    resolved.ticket.payloadEnc,
+    payloadAad(resolved.ticketHash)
   );
-  if (!payload) {
-    throw new Error("Invalid payload");
-  }
-
-  const senderLabel = connection.senderAlias
-    ? ownerContactLabels[connection.senderAlias]
+  const payload = payloadCapsuleToMessagePayload(capsule);
+  const senderLabel = resolved.route.senderAlias
+    ? ownerContactLabels[resolved.route.senderAlias]
     : undefined;
 
   return {
     payload,
-    connection,
+    route: resolved.route,
     senderLabel,
   };
 };
 
+export const markResolvedTicketViewed = async (
+  env: Environment,
+  userId: string,
+  ticketHash: string
+): Promise<void> => {
+  await Promise.all([
+    markTicketViewed(env, ticketHash),
+    markInboxPointerViewed(env, userId, ticketHash),
+  ]);
+};
+
 export const toTicketDeliveryConversation = (
-  connection: ConnectionMetadata,
+  route: RouteCapsule,
   payload: MessagePayload,
   senderChatId: number,
   recipientChatId: number
@@ -313,9 +185,9 @@ export const toTicketDeliveryConversation = (
   connection: {
     from: senderChatId,
     to: recipientChatId,
-    senderLinkUuid: connection.linkSlug,
-    parent_message_id: connection.parent_message_id,
-    reply_to_message_id: connection.reply_to_message_id,
+    senderLinkUuid: route.linkSlug,
+    parent_message_id: route.parentMessageId,
+    reply_to_message_id: route.replyToMessageId,
   },
   payload: {
     message_type: payload.message_type,

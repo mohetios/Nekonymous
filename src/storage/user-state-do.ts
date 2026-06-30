@@ -2,6 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import type { Environment, UserDraft } from "../types";
 
 const INBOX_MAX_TICKETS = 50;
+const INBOX_PAGE_SIZE = 10;
+const INBOX_CLEANUP_LIMIT = 10;
 /** Minimum gap between user actions (messages, commands, inline buttons). */
 const RATE_LIMIT_MS = 1000;
 const RATE_LIMIT_SCOPE = "user_action";
@@ -47,16 +49,14 @@ type AssessmentSessionRow = {
   expires_at: number | null;
 };
 
-type InboxRow = {
-  ref: string;
-  ticket_id: string;
-  sender_user_id: string;
-  recipient_user_id: string;
-  conversation_id: string;
-  payload_ciphertext: string | null;
-  connection_ciphertext: string;
+type InboxPointerRow = {
+  ticket_hash: string;
+  sealed_ref_enc: string;
+  display_number: string;
   status: string;
+  created_bucket: number;
   created_at: number;
+  expires_at: number;
   delivered_at: number | null;
   dedupe_key: string | null;
 };
@@ -136,15 +136,12 @@ export class UserStateDurableObject extends DurableObject<Environment> {
 
         CREATE INDEX IF NOT EXISTS idx_drafts_updated ON drafts(updated_at);
 
-        CREATE TABLE IF NOT EXISTS inbox_tickets (
-          ref TEXT PRIMARY KEY,
-          ticket_id TEXT NOT NULL,
-          sender_user_id TEXT NOT NULL,
-          recipient_user_id TEXT NOT NULL,
-          conversation_id TEXT NOT NULL,
-          payload_ciphertext TEXT,
-          connection_ciphertext TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'pending',
+        CREATE TABLE IF NOT EXISTS inbox_pointers (
+          ticket_hash TEXT PRIMARY KEY,
+          sealed_ref_enc TEXT NOT NULL,
+          display_number TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          created_bucket INTEGER NOT NULL,
           created_at INTEGER NOT NULL,
           delivered_at INTEGER,
           replied_at INTEGER,
@@ -155,12 +152,14 @@ export class UserStateDurableObject extends DurableObject<Environment> {
           dedupe_key TEXT UNIQUE
         );
 
-        CREATE INDEX IF NOT EXISTS idx_inbox_pending
-          ON inbox_tickets(status, created_at)
-          WHERE status = 'pending';
+        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
+          ON inbox_pointers(status, created_at);
 
         CREATE INDEX IF NOT EXISTS idx_inbox_created
-          ON inbox_tickets(created_at);
+          ON inbox_pointers(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_expires
+          ON inbox_pointers(expires_at);
 
         CREATE TABLE IF NOT EXISTS blocks (
           blocked_user_id TEXT PRIMARY KEY,
@@ -234,6 +233,72 @@ export class UserStateDurableObject extends DurableObject<Environment> {
         INSERT INTO _sql_schema_migrations (id) VALUES (3);
       `);
     }
+
+    if (version < 4) {
+      this.ctx.storage.sql.exec(`
+        DROP TABLE IF EXISTS inbox_tickets;
+
+        CREATE TABLE IF NOT EXISTS inbox_pointers (
+          ticket_hash TEXT PRIMARY KEY,
+          sealed_ref_enc TEXT NOT NULL,
+          display_number TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          created_bucket INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          delivered_at INTEGER,
+          replied_at INTEGER,
+          blocked_at INTEGER,
+          reported_at INTEGER,
+          deleted_at INTEGER,
+          expires_at INTEGER,
+          dedupe_key TEXT UNIQUE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
+          ON inbox_pointers(status, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_created
+          ON inbox_pointers(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_expires
+          ON inbox_pointers(expires_at);
+
+        INSERT INTO _sql_schema_migrations (id) VALUES (4);
+      `);
+    }
+
+    if (version < 5) {
+      this.ctx.storage.sql.exec(`
+        DROP TABLE IF EXISTS inbox_pointers;
+
+        CREATE TABLE IF NOT EXISTS inbox_pointers (
+          ticket_hash TEXT PRIMARY KEY,
+          sealed_ref_enc TEXT NOT NULL,
+          display_number TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          created_bucket INTEGER NOT NULL,
+          created_at INTEGER NOT NULL,
+          delivered_at INTEGER,
+          replied_at INTEGER,
+          blocked_at INTEGER,
+          reported_at INTEGER,
+          deleted_at INTEGER,
+          expires_at INTEGER NOT NULL,
+          dedupe_key TEXT UNIQUE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
+          ON inbox_pointers(status, created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_created
+          ON inbox_pointers(created_at);
+
+        CREATE INDEX IF NOT EXISTS idx_inbox_expires
+          ON inbox_pointers(expires_at);
+
+        INSERT INTO _sql_schema_migrations (id) VALUES (5);
+      `);
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -266,17 +331,17 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     if (request.method === "POST" && pathname === "/consume-rate-limit") {
       return this.consumeRateLimit();
     }
-    if (request.method === "POST" && pathname === "/add-ticket") {
-      return this.addTicket(request);
+    if (request.method === "POST" && pathname === "/add-inbox-pointer") {
+      return this.addInboxPointer(request);
     }
     if (request.method === "GET" && pathname === "/pending-inbox") {
-      return this.pendingInbox();
+      return this.inboxPage(request);
     }
-    if (request.method === "POST" && pathname === "/mark-delivered") {
-      return this.markDelivered(request);
+    if (request.method === "GET" && pathname === "/inbox-page") {
+      return this.inboxPage(request);
     }
-    if (request.method === "GET" && pathname.startsWith("/ticket/")) {
-      return this.getTicket(pathname.slice("/ticket/".length));
+    if (request.method === "POST" && pathname === "/mark-inbox-status") {
+      return this.markInboxStatus(request);
     }
     if (request.method === "POST" && pathname === "/add-block") {
       return this.addBlock(request);
@@ -516,46 +581,59 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     return Response.json({ limited: false });
   }
 
-  private async addTicket(request: Request): Promise<Response> {
+  private async addInboxPointer(request: Request): Promise<Response> {
     const body = await request.json<{
-      ref: string;
-      ticketId: string;
-      senderUserId: string;
-      recipientUserId: string;
-      conversationId: string;
-      payloadCiphertext: string;
-      connectionCiphertext: string;
+      ticketHash: string;
+      sealedTicketRef: string;
+      displayNumber: string;
+      createdBucket: number;
+      createdAt: number;
+      expiresAt: number;
       dedupeKey: string;
     }>();
 
+    if (
+      !body.ticketHash ||
+      !body.sealedTicketRef ||
+      !body.displayNumber ||
+      !Number.isSafeInteger(body.createdBucket) ||
+      !Number.isSafeInteger(body.createdAt) ||
+      !Number.isSafeInteger(body.expiresAt) ||
+      body.expiresAt <= body.createdAt
+    ) {
+      return new Response("Invalid inbox pointer", { status: 400 });
+    }
+
     if (body.dedupeKey) {
       const existing = this.ctx.storage.sql
-        .exec<{ ref: string }>(
-          "SELECT ref FROM inbox_tickets WHERE dedupe_key = ?",
+        .exec<{ ticket_hash: string }>(
+          "SELECT ticket_hash FROM inbox_pointers WHERE dedupe_key = ?",
           body.dedupeKey
         )
         .toArray();
       if (existing.length > 0) {
-        const pending = this.pendingCount();
+        const pending = this.activeCount();
         return Response.json({ ok: true, duplicate: true, pendingCount: pending });
       }
     }
 
-    const pending = this.pendingCount();
-    if (pending >= INBOX_MAX_TICKETS) {
+    this.cleanupExpiredPointers();
+
+    const active = this.activeCount();
+    if (active >= INBOX_MAX_TICKETS) {
       return new Response("Inbox full", { status: 429 });
     }
 
     const total = this.ctx.storage.sql
-      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM inbox_tickets")
+      .exec<{ count: number }>("SELECT COUNT(*) AS count FROM inbox_pointers")
       .one().count;
 
     if (total >= INBOX_MAX_TICKETS) {
       this.ctx.storage.sql.exec(
-        `DELETE FROM inbox_tickets
-         WHERE ref IN (
-           SELECT ref FROM inbox_tickets
-           WHERE status != 'pending' OR payload_ciphertext IS NULL
+        `DELETE FROM inbox_pointers
+         WHERE ticket_hash IN (
+           SELECT ticket_hash FROM inbox_pointers
+           WHERE status != 'active'
            ORDER BY created_at ASC
            LIMIT ?
          )`,
@@ -566,119 +644,126 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     const now = Date.now();
     try {
       this.ctx.storage.sql.exec(
-        `INSERT INTO inbox_tickets (
-          ref, ticket_id, sender_user_id, recipient_user_id, conversation_id,
-          payload_ciphertext, connection_ciphertext, status, created_at, dedupe_key
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-        body.ref,
-        body.ticketId,
-        body.senderUserId,
-        body.recipientUserId,
-        body.conversationId,
-        body.payloadCiphertext,
-        body.connectionCiphertext,
-        now,
+        `INSERT INTO inbox_pointers (
+          ticket_hash, sealed_ref_enc, display_number, status,
+          created_bucket, created_at, expires_at, dedupe_key
+        ) VALUES (?, ?, ?, 'active', ?, ?, ?, ?)`,
+        body.ticketHash,
+        body.sealedTicketRef,
+        body.displayNumber,
+        body.createdBucket,
+        body.createdAt || now,
+        body.expiresAt,
         body.dedupeKey
       );
     } catch {
-      const pendingAfter = this.pendingCount();
+      const pendingAfter = this.activeCount();
       return Response.json({ ok: true, duplicate: true, pendingCount: pendingAfter });
     }
 
     return Response.json({
       ok: true,
-      pendingCount: this.pendingCount(),
+      pendingCount: this.activeCount(),
     });
   }
 
-  private pendingCount(): number {
+  private activeCount(): number {
     return this.ctx.storage.sql
       .exec<{ count: number }>(
-        "SELECT COUNT(*) AS count FROM inbox_tickets WHERE status = 'pending' AND payload_ciphertext IS NOT NULL"
+        "SELECT COUNT(*) AS count FROM inbox_pointers WHERE status = 'active' AND expires_at > ?",
+        Date.now()
       )
       .one().count;
   }
 
-  private pendingInbox(): Response {
-    const rows = this.ctx.storage.sql
-      .exec<InboxRow>(
-        `SELECT ref, ticket_id, sender_user_id, recipient_user_id, conversation_id,
-                payload_ciphertext, connection_ciphertext, status, created_at, delivered_at, dedupe_key
-         FROM inbox_tickets
-         WHERE status = 'pending' AND payload_ciphertext IS NOT NULL
-         ORDER BY created_at ASC
-         LIMIT ${INBOX_MAX_TICKETS}`
-      )
-      .toArray();
-
-    return Response.json({
-      tickets: rows.map((row) => ({
-        ref: row.ref,
-        ticketId: row.ticket_id,
-        senderUserId: row.sender_user_id,
-        recipientUserId: row.recipient_user_id,
-        conversationId: row.conversation_id,
-        payloadCiphertext: row.payload_ciphertext ?? undefined,
-        connectionCiphertext: row.connection_ciphertext,
-        status: row.status,
-        createdAt: row.created_at,
-      })),
-    });
-  }
-
-  private async markDelivered(request: Request): Promise<Response> {
-    const { ref, nextRef } = await request.json<{
-      ref: string;
-      nextRef?: string;
-    }>();
+  private cleanupExpiredPointers(): string[] {
     const now = Date.now();
-    if (nextRef) {
-      this.ctx.storage.sql.exec(
-        `UPDATE inbox_tickets
-         SET ref = ?, status = 'delivered', payload_ciphertext = NULL, delivered_at = ?
-         WHERE ref = ? AND payload_ciphertext IS NOT NULL`,
-        nextRef,
-        now,
-        ref
-      );
-    } else {
-      this.ctx.storage.sql.exec(
-        `UPDATE inbox_tickets
-         SET status = 'delivered', payload_ciphertext = NULL, delivered_at = ?
-         WHERE ref = ?`,
-        now,
-        ref
-      );
-    }
-    return Response.json({ ok: true });
-  }
-
-  private getTicket(ref: string): Response {
     const rows = this.ctx.storage.sql
-      .exec<InboxRow>(
-        `SELECT ref, ticket_id, sender_user_id, recipient_user_id, conversation_id,
-                payload_ciphertext, connection_ciphertext, status, created_at
-         FROM inbox_tickets WHERE ref = ?`,
-        ref
+      .exec<{ ticket_hash: string }>(
+        `SELECT ticket_hash FROM inbox_pointers
+         WHERE expires_at <= ?
+         ORDER BY expires_at ASC
+         LIMIT ${INBOX_CLEANUP_LIMIT}`,
+        now
       )
       .toArray();
 
     if (rows.length === 0) {
-      return new Response("Not found", { status: 404 });
+      return [];
     }
 
-    const row = rows[0];
+    const placeholders = rows.map(() => "?").join(",");
+    this.ctx.storage.sql.exec(
+      `DELETE FROM inbox_pointers WHERE ticket_hash IN (${placeholders})`,
+      ...rows.map((row) => row.ticket_hash)
+    );
+    return rows.map((row) => row.ticket_hash);
+  }
+
+  private inboxPage(request: Request): Response {
+    const url = new URL(request.url);
+    const offset = Math.max(0, Number(url.searchParams.get("offset") ?? "0") || 0);
+    const expiredTicketHashes = this.cleanupExpiredPointers();
+    const rows = this.ctx.storage.sql
+      .exec<InboxPointerRow>(
+        `SELECT ticket_hash, sealed_ref_enc, display_number, status,
+                created_bucket, created_at, expires_at, delivered_at, dedupe_key
+         FROM inbox_pointers
+         WHERE expires_at > ?
+           AND status IN ('active', 'viewed', 'replied', 'reported', 'blocked')
+         ORDER BY created_at ASC
+         LIMIT ${INBOX_PAGE_SIZE + 1}
+         OFFSET ?`,
+        Date.now(),
+        offset
+      )
+      .toArray();
+
+    const pageRows = rows.slice(0, INBOX_PAGE_SIZE);
+    const nextOffset =
+      rows.length > INBOX_PAGE_SIZE ? offset + INBOX_PAGE_SIZE : undefined;
+
     return Response.json({
-      ref: row.ref,
-      ticketId: row.ticket_id,
-      senderUserId: row.sender_user_id,
-      recipientUserId: row.recipient_user_id,
-      conversationId: row.conversation_id,
-      payloadCiphertext: row.payload_ciphertext ?? undefined,
-      connectionCiphertext: row.connection_ciphertext,
-      status: row.status,
-      createdAt: row.created_at,
+      pointers: pageRows.map((row) => ({
+        ticketHash: row.ticket_hash,
+        sealedTicketRef: row.sealed_ref_enc,
+        displayNumber: row.display_number,
+        status: row.status,
+        createdBucket: row.created_bucket,
+        createdAt: row.created_at,
+        expiresAt: row.expires_at,
+      })),
+      ...(nextOffset !== undefined ? { nextOffset } : {}),
+      expiredTicketHashes,
     });
+  }
+
+  private async markInboxStatus(request: Request): Promise<Response> {
+    const { ticketHash, status } = await request.json<{
+      ticketHash: string;
+      status: string;
+    }>();
+    if (!["viewed", "replied", "blocked", "reported"].includes(status)) {
+      return new Response("Invalid status", { status: 400 });
+    }
+    const now = Date.now();
+    const timestampColumn =
+      status === "viewed"
+        ? "delivered_at"
+        : status === "replied"
+          ? "replied_at"
+          : status === "blocked"
+            ? "blocked_at"
+            : "reported_at";
+    this.ctx.storage.sql.exec(
+      `UPDATE inbox_pointers
+       SET status = ?, ${timestampColumn} = ?
+       WHERE ticket_hash = ?`,
+      status,
+      now,
+      ticketHash
+    );
+    return Response.json({ ok: true });
   }
 
   private async addBlock(request: Request): Promise<Response> {
@@ -754,12 +839,12 @@ export class UserStateDurableObject extends DurableObject<Environment> {
   }
 
   private async markReported(request: Request): Promise<Response> {
-    const { ref } = await request.json<{ ref: string }>();
+    const { ticketHash } = await request.json<{ ticketHash: string }>();
     const now = Date.now();
     this.ctx.storage.sql.exec(
-      "UPDATE inbox_tickets SET reported_at = ? WHERE ref = ?",
+      "UPDATE inbox_pointers SET reported_at = ? WHERE ticket_hash = ?",
       now,
-      ref
+      ticketHash
     );
     return Response.json({ ok: true });
   }
@@ -955,7 +1040,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       DELETE FROM rate_limits;
       DELETE FROM contact_labels;
       DELETE FROM blocks;
-      DELETE FROM inbox_tickets;
+      DELETE FROM inbox_pointers;
       DELETE FROM drafts;
       DELETE FROM assessment_sessions;
       DELETE FROM user_state;

@@ -4,7 +4,7 @@ See also [README](../../README.md) and [SECURITY.md](../../SECURITY.md).
 
 Nekonymous V1 is a hosted anonymous Telegram relay.
 
-It hides users from each other and avoids storing a plain anonymous message transcript. Stored message payloads and route metadata are encrypted at rest. Reply routing uses short-lived capabilities held in Telegram private chat buttons.
+It hides users from each other and avoids storing a plain anonymous message transcript. Stored message payloads and route metadata are encrypted at rest. Reply routing uses short ticket references held in Telegram private chat buttons.
 
 Telegram and the Worker runtime still process delivery metadata and plaintext while delivering messages, so Nekonymous is not E2EE or zero-knowledge.
 
@@ -12,8 +12,8 @@ Telegram and the Worker runtime still process delivery metadata and plaintext wh
 
 - Raw Telegram user ids are not stored in D1, KV, DO, or Vectorize metadata.
 - Telegram chat ids are encrypted at rest.
-- Anonymous message payloads are encrypted in UserStateDO and cleared after delivery.
-- Raw callback capabilities are not stored; lookup hashes are stored instead.
+- Anonymous message payloads are encrypted in TicketVaultDO and cleared after delivery.
+- Raw callback ticket references are not stored; lookup hashes or encrypted inbox pointers are stored instead.
 - Matching embeddings use sanitized profile summaries, not raw answers.
 - Vectorize metadata does not include raw answers, Telegram ids, chat ids, or display names.
 
@@ -36,9 +36,9 @@ Assume the attacker does **not** have `APP_MASTER_KEY`, `APP_HMAC_PEPPER`, Durab
 |-------|--------|
 | Raw Telegram user id | Stored as `users.telegram_user_hash` (HMAC with pepper) |
 | Telegram chat id | Stored as `users.telegram_chat_ciphertext` (AES envelope) |
-| Anonymous message bodies | Not stored in D1; inbox payloads live in `UserStateDO` |
+| Anonymous message bodies | Not stored in D1; payloads live encrypted in `TicketVaultDO` until delivery |
 | Match intro text | `match_requests.intro_ciphertext` is encrypted |
-| Report free-text details | `reports.details_ciphertext` is encrypted when present |
+| Anonymous report relations | Stored as blind abuse tags in `ReportLedgerDO`, not D1 sender-recipient rows |
 | Telegram username / phone | Not stored in D1 |
 
 ### They can still read (plaintext in D1)
@@ -62,7 +62,7 @@ Assume the attacker does **not** have `APP_MASTER_KEY`, `APP_HMAC_PEPPER`, Durab
 | `APP_MASTER_KEY` | Decrypt chat ids, match intros, report details, DO ciphertext |
 | `APP_HMAC_PEPPER` | Link Telegram accounts to internal users via hash reversal attempts |
 
-Even with secrets, **normal delivered inbox message bodies are not in D1**. Undelivered or uncleared payloads may still exist encrypted in `UserStateDO`.
+Even with secrets, **normal delivered inbox message bodies are not in D1**. Undelivered or uncleared payloads may still exist encrypted in `TicketVaultDO`.
 
 ### Bottom line
 

@@ -11,6 +11,15 @@ import {
   generateTicketId,
   hmacTelegramUserId,
 } from "../src/ticketing/ticketing-service.ts";
+import {
+  createOwnerProofTag,
+  createTicketHash,
+  deriveTicketKey,
+  randomTicketRef,
+  routeAad,
+} from "../src/crypto/keys.ts";
+import { encryptEnvelope, decryptEnvelope } from "../src/crypto/envelope.ts";
+import { constantTimeEqual } from "../src/crypto/hmac.ts";
 
 const appMasterKey = "test-app-master-key-local-32bytes!";
 const pepper = "test-hmac-pepper-local-32bytes!!";
@@ -51,7 +60,58 @@ if (!hash || hash.length < 16) {
   process.exit(1);
 }
 
+const ticketRef = randomTicketRef();
+const sealedTicketHash = await createTicketHash(pepper, ticketRef);
+const ownerProofTag = await createOwnerProofTag(
+  pepper,
+  hash,
+  sealedTicketHash
+);
+const ownerProofCandidate = await createOwnerProofTag(
+  pepper,
+  hash,
+  sealedTicketHash
+);
+
+if (!constantTimeEqual(ownerProofTag, ownerProofCandidate)) {
+  console.error("Owner proof check failed");
+  process.exit(1);
+}
+
+const ticketKey = await deriveTicketKey(appMasterKey, sealedTicketHash);
+const route = {
+  senderRouteTag: "sender",
+  recipientRouteTag: "recipient",
+  pairTag: "pair",
+  reportSeeds: {
+    senderAbuseSeed: "sender",
+    pairAbuseSeed: "pair",
+  },
+  replyPolicy: {
+    canReply: true,
+    maxChars: 4096,
+  },
+  createdAt: Date.now(),
+};
+const sealedRoute = await encryptEnvelope(
+  ticketKey,
+  JSON.stringify(route),
+  routeAad(sealedTicketHash)
+);
+const openedRoute = await decryptEnvelope<typeof route>(
+  ticketKey,
+  sealedRoute,
+  routeAad(sealedTicketHash)
+);
+
+if (openedRoute.pairTag !== route.pairTag) {
+  console.error("Sealed route roundtrip failed");
+  process.exit(1);
+}
+
 console.log("Ticketing envelope roundtrip OK");
 console.log("Chat id roundtrip OK");
 console.log("HMAC hash OK");
+console.log("Sealed ticket route roundtrip OK");
 console.log(`ticketId length: ${ticketId.length}`);
+console.log(`ticketRef length: ${ticketRef.length}`);

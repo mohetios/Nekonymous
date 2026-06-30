@@ -16,18 +16,6 @@ export type MessagePayload = {
   createdAt: number;
 };
 
-export type ConnectionMetadata = {
-  senderUserId: string;
-  recipientUserId: string;
-  conversationId: string;
-  ticketId: string;
-  senderAlias?: string;
-  linkSlug?: string;
-  parent_message_id?: number;
-  reply_to_message_id?: number;
-  createdAt: number;
-};
-
 /** Delivery view for Telegram media helpers (chat ids, not internal ids). */
 export interface Conversation {
   connection: {
@@ -60,16 +48,14 @@ export type CipherEnvelope = {
   ct: string;
 };
 
-export type InboxTicket = {
-  ref: string;
-  ticketId: string;
-  senderUserId: string;
-  recipientUserId: string;
-  conversationId: string;
-  payloadCiphertext?: string;
-  connectionCiphertext: string;
+export type InboxPointer = {
+  ticketHash: string;
+  sealedTicketRef: string;
+  displayNumber: string;
   status: string;
+  createdBucket: number;
   createdAt: number;
+  expiresAt: number;
 };
 
 export type UserDraft = {
@@ -120,6 +106,8 @@ export interface Environment {
 
   USER_STATE_DO: DurableObjectNamespace;
   TELEGRAM_OUTBOX_DO: DurableObjectNamespace;
+  TICKET_VAULT: DurableObjectNamespace;
+  REPORT_LEDGER: DurableObjectNamespace;
 
   TELEGRAM_OUTBOX_QUEUE: Queue<TelegramOutboxJob>;
 

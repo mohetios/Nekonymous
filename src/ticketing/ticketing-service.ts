@@ -5,7 +5,6 @@ import type { CipherEnvelope } from "../types";
  * chat-id sealing, and stable private peer tags for anonymous relay tickets.
  */
 const TICKET_ENTROPY_BYTES = 32;
-const CAPABILITY_ENTROPY_BYTES = 24;
 const GCM_IV_BYTES = 12;
 const SENDER_ALIAS_BITS = 128;
 const MASTER_KID = "master:v1";
@@ -16,7 +15,6 @@ const HMAC_INFO = new TextEncoder().encode("nekonymous:tg-user:v1");
 const LOOKUP_INFO = "lookup:v1:";
 const DEDUPE_INFO = "dedupe:v1:";
 const BLOCK_INFO = "block:v1:";
-const REPORT_INFO = "report:v1:";
 
 const textEncoder = new TextEncoder();
 
@@ -191,9 +189,6 @@ export const generateTicketId = (): string => {
 export const generateOpaqueId = (bytes = 16): string =>
   bytesToBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
 
-export const randomCapability = (): string =>
-  bytesToBase64Url(crypto.getRandomValues(new Uint8Array(CAPABILITY_ENTROPY_BYTES)));
-
 const hmacSha256Base64Url = async (
   secret: string,
   message: string
@@ -235,13 +230,6 @@ export const createBlockHash = (
   peerHash: string
 ): Promise<string> =>
   hmacSha256Base64Url(lookupSecret, `${BLOCK_INFO}${ownerHash}:${peerHash}`);
-
-export const createReportPeerHash = (
-  lookupSecret: string,
-  ownerHash: string,
-  peerHash: string
-): Promise<string> =>
-  hmacSha256Base64Url(lookupSecret, `${REPORT_INFO}${ownerHash}:${peerHash}`);
 
 export type CapabilityAction =
   | "open"
@@ -303,18 +291,6 @@ export const decryptMessagePayload = async (
   return openEnvelope(wireToEnvelope(ciphertext), aesKey);
 };
 
-export const encryptConnectionMetadata = async (
-  ticketId: string,
-  metadata: string,
-  appMasterKey: string
-): Promise<string> => encryptMessagePayload(ticketId, metadata, appMasterKey);
-
-export const decryptConnectionMetadata = async (
-  ticketId: string,
-  ciphertext: string,
-  appMasterKey: string
-): Promise<string> => decryptMessagePayload(ticketId, ciphertext, appMasterKey);
-
 /** Opaque per-recipient sender handle for contact labels. */
 export const getSenderAlias = async (
   recipientUserId: string,
@@ -333,14 +309,6 @@ export const getSenderAlias = async (
     SENDER_ALIAS_BITS
   );
   return bytesToBase64Url(new Uint8Array(bits));
-};
-
-export const encryptReportDetails = async (
-  details: string,
-  appMasterKey: string
-): Promise<string> => {
-  const aesKey = await masterKey(appMasterKey);
-  return envelopeToWire(await sealWithKey(aesKey, details, MASTER_KID));
 };
 
 export const encryptMatchIntro = async (

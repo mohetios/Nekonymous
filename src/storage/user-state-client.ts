@@ -1,5 +1,4 @@
-import type { Environment, InboxTicket, UserDraft } from "../types";
-import { createCapabilityLookupHash } from "../ticketing/ticketing-service";
+import type { Environment, InboxPointer, UserDraft } from "../types";
 
 type UserStateSnapshot = {
   paused: boolean;
@@ -142,34 +141,33 @@ export const consumeUserRateLimit = async (
   return body.limited;
 };
 
-export type AddTicketInput = {
-  ref: string;
-  ticketId: string;
-  senderUserId: string;
-  recipientUserId: string;
-  conversationId: string;
-  payloadCiphertext: string;
-  connectionCiphertext: string;
+export type AddInboxPointerInput = {
+  ticketHash: string;
+  sealedTicketRef: string;
+  displayNumber: string;
+  createdBucket: number;
+  createdAt: number;
+  expiresAt: number;
   dedupeKey: string;
 };
 
-export type AddTicketResult = {
+export type AddInboxPointerResult = {
   ok: boolean;
   pendingCount?: number;
   duplicate?: boolean;
   status: number;
 };
 
-export const addInboxTicket = async (
+export const addInboxPointer = async (
   env: Environment,
   recipientUserId: string,
-  ticket: AddTicketInput
-): Promise<AddTicketResult> => {
+  pointer: AddInboxPointerInput
+): Promise<AddInboxPointerResult> => {
   const response = await stub(env, recipientUserId).fetch(
-    "https://user-state/add-ticket",
+    "https://user-state/add-inbox-pointer",
     {
       method: "POST",
-      body: JSON.stringify(ticket),
+      body: JSON.stringify(pointer),
     }
   );
 
@@ -190,58 +188,52 @@ export const addInboxTicket = async (
   return { ...body, status: response.status };
 };
 
-export const listPendingInbox = async (
-  env: Environment,
-  userId: string
-): Promise<InboxTicket[]> => {
-  const body = await doFetch<{ tickets: InboxTicket[] }>(
-    env,
-    userId,
-    "/pending-inbox"
-  );
-  return body.tickets;
+export type InboxPage = {
+  pointers: InboxPointer[];
+  nextOffset?: number;
+  expiredTicketHashes: string[];
 };
 
-export const markTicketDelivered = async (
+export const listInboxPage = async (
   env: Environment,
   userId: string,
-  ref: string,
-  nextRef?: string
+  offset = 0
+): Promise<InboxPage> =>
+  doFetch<InboxPage>(
+    env,
+    userId,
+    `/inbox-page?offset=${encodeURIComponent(String(offset))}`
+  );
+
+const markInboxPointerStatus = async (
+  env: Environment,
+  userId: string,
+  ticketHash: string,
+  status: "viewed" | "replied" | "blocked" | "reported"
 ): Promise<void> => {
-  await doFetch(env, userId, "/mark-delivered", {
+  await doFetch(env, userId, "/mark-inbox-status", {
     method: "POST",
-    body: JSON.stringify({ ref, nextRef }),
+    body: JSON.stringify({ ticketHash, status }),
   });
 };
 
-export const getInboxTicket = async (
+export const markInboxPointerViewed = (
   env: Environment,
   userId: string,
-  ref: string
-): Promise<InboxTicket | null> => {
-  const response = await stub(env, userId).fetch(
-    `https://user-state/ticket/${encodeURIComponent(ref)}`
-  );
-  if (response.status === 404) {
-    return null;
-  }
-  if (!response.ok) {
-    throw new Error(`getInboxTicket failed: ${response.status}`);
-  }
-  return response.json<InboxTicket>();
-};
+  ticketHash: string
+): Promise<void> => markInboxPointerStatus(env, userId, ticketHash, "viewed");
 
-export const getInboxTicketByCapability = async (
+export const markInboxPointerReplied = (
   env: Environment,
   userId: string,
-  capability: string
-): Promise<InboxTicket | null> => {
-  const lookupHash = await createCapabilityLookupHash(
-    capability,
-    env.APP_HMAC_PEPPER
-  );
-  return getInboxTicket(env, userId, lookupHash);
-};
+  ticketHash: string
+): Promise<void> => markInboxPointerStatus(env, userId, ticketHash, "replied");
+
+export const markInboxPointerBlocked = (
+  env: Environment,
+  userId: string,
+  ticketHash: string
+): Promise<void> => markInboxPointerStatus(env, userId, ticketHash, "blocked");
 
 export const addBlock = async (
   env: Environment,
@@ -299,15 +291,12 @@ export const setContactLabel = async (
   }
 };
 
-export const markTicketReported = async (
+export const markInboxPointerReported = async (
   env: Environment,
   userId: string,
-  ref: string
+  ticketHash: string
 ): Promise<void> => {
-  await doFetch(env, userId, "/mark-reported", {
-    method: "POST",
-    body: JSON.stringify({ ref }),
-  });
+  await markInboxPointerStatus(env, userId, ticketHash, "reported");
 };
 
 export const purgeUserState = async (

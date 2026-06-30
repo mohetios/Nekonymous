@@ -3,6 +3,8 @@ import {
   createBlockHash,
   generateOpaqueId,
 } from "../../ticketing/ticketing-service";
+import { createPairTag, createReportTag } from "../../crypto/keys";
+import { hasReportForPairTag } from "../../storage/report-ledger/report-ledger.client";
 import { getUserById } from "../../features/identity/identity-service";
 import {
   checkCanReceive,
@@ -414,18 +416,21 @@ const hasOpenReport = async (
   userA: string,
   userB: string
 ): Promise<boolean> => {
-  const row = await env.DB.prepare(
-    `SELECT id FROM reports
-     WHERE status = 'open'
-       AND (
-         (reporter_user_id = ? AND reported_user_id = ?)
-         OR (reporter_user_id = ? AND reported_user_id = ?)
-       )
-     LIMIT 1`
-  )
-    .bind(userA, userB, userB, userA)
-    .first<{ id: string }>();
-  return !!row;
+  const [firstUser, secondUser] = await Promise.all([
+    getUserById(userA, env),
+    getUserById(userB, env),
+  ]);
+  if (!firstUser || !secondUser) {
+    return false;
+  }
+
+  const pairSeed = await createPairTag(
+    env.APP_HMAC_PEPPER,
+    firstUser.telegram_user_hash,
+    secondUser.telegram_user_hash
+  );
+  const pairAbuseTag = await createReportTag(env.APP_HMAC_PEPPER, pairSeed);
+  return hasReportForPairTag(env, pairAbuseTag);
 };
 
 export type CandidateEligibilityOptions = {

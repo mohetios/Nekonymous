@@ -6,7 +6,6 @@
 -- 1) Table row counts
 SELECT 'users' AS table_name, COUNT(*) AS row_count FROM users;
 SELECT 'public_links' AS table_name, COUNT(*) AS row_count FROM public_links;
-SELECT 'reports' AS table_name, COUNT(*) AS row_count FROM reports;
 SELECT 'assessment_profiles' AS table_name, COUNT(*) AS row_count FROM assessment_profiles;
 SELECT 'assessment_attempts' AS table_name, COUNT(*) AS row_count FROM assessment_attempts;
 SELECT 'assessment_answers' AS table_name, COUNT(*) AS row_count FROM assessment_answers;
@@ -49,22 +48,7 @@ FROM match_requests
 ORDER BY created_at DESC
 LIMIT 20;
 
--- 4) Reports: optional details must not be plaintext
-SELECT
-  id,
-  reason_code,
-  CASE
-    WHEN details_ciphertext IS NULL THEN 'none'
-    WHEN details_ciphertext LIKE '{%' THEN 'ok_encrypted'
-    ELSE 'FAIL_plain_details'
-  END AS details_check,
-  reporter_user_id,
-  reported_user_id
-FROM reports
-ORDER BY created_at DESC
-LIMIT 20;
-
--- 5) Assessment answers should be Likert integers only
+-- 4) Assessment answers should be Likert integers only
 SELECT
   question_id,
   answer_value,
@@ -76,7 +60,7 @@ FROM assessment_answers
 ORDER BY answered_at DESC
 LIMIT 10;
 
--- 6) Profile summaries are controlled text, not inbox payloads
+-- 5) Profile summaries are controlled text, not inbox payloads
 SELECT
   user_id,
   discoverable,

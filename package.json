@@ -52,9 +52,10 @@
     "test:matching": "node --experimental-strip-types tools/verify-matching.ts",
     "audit:d1": "./tools/audit-d1.sh",
     "audit:d1:local": "./tools/audit-d1.sh --local",
+    "audit:ticket-storage": "./tools/audit-ticket-storage.sh",
     "bot:profile": "./tools/set-telegram-bot-profile.sh",
     "test": "pnpm run test:ticketing && pnpm run test:assessment && pnpm run test:matching",
-    "check": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm run test"
+    "check": "pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm run test && pnpm run audit:ticket-storage"
   },
   "dependencies": {
     "grammy": "^1.43.0"

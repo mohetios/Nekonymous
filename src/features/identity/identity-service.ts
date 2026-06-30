@@ -218,10 +218,6 @@ export const hardDeleteUserAccount = async (
     env.DB.prepare(
       "DELETE FROM match_events WHERE user_id = ? OR target_user_id = ?"
     ).bind(userId, userId),
-    env.DB.prepare(
-      `DELETE FROM reports
-       WHERE reporter_user_id = ? OR reported_user_id = ?`
-    ).bind(userId, userId),
     env.DB.prepare("DELETE FROM public_links WHERE owner_user_id = ?").bind(
       userId
     ),
