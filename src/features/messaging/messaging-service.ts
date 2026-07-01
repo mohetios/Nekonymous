@@ -6,6 +6,7 @@ import type {
 } from "../../types";
 import { decryptEnvelope } from "../../crypto/envelope";
 import { payloadAad } from "../../crypto/keys";
+import { OPEN_INBOX_BUTTON } from "../../i18n/labels";
 import { UNREAD_INBOX_MESSAGE } from "../../i18n/messages";
 import { createSealedTicket, payloadCapsuleToMessagePayload } from "./create-sealed-ticket";
 import type {
@@ -81,6 +82,16 @@ export const notifyRecipientInbox = async (
         chat_id: chatId,
         text,
         parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: OPEN_INBOX_BUTTON,
+                callback_data: "ib:open",
+              },
+            ],
+          ],
+        },
       }),
     }
   );

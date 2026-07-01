@@ -105,6 +105,14 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   bot.callbackQuery(/^n:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleNicknameAction));
   bot.callbackQuery(/^rp:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReportAction));
 
+  bot.callbackQuery("ib:open", async (ctx) => {
+    try {
+      await handleInboxCommand(ctx, env);
+    } finally {
+      await ctx.answerCallbackQuery();
+    }
+  });
+
   bot.callbackQuery(/^t:/, (ctx) => handleAssessmentCallback(ctx, env));
 
   bot.callbackQuery(/^m:/, (ctx) => handleMatchCallback(ctx, env));

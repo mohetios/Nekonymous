@@ -41,6 +41,8 @@ export const INBOX_BUTTON = {
   report: "⚠️ گزارش کردن",
 } as const;
 
+export const OPEN_INBOX_BUTTON = "🗂 نمایش صندوق پیام‌ها";
+
 /** Prefix for delivered anonymous messages (nickname inserted). */
 export const DELIVERY_HEADER_FROM = (nickname: string): string =>
   `💬 پیام از ${nickname}:`;
