@@ -239,12 +239,21 @@
         color: var(--accent);
       }
 
+      .theme-toggle[aria-pressed="true"] {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      .theme-toggle[aria-pressed="true"]:hover {
+        color: var(--accent-strong);
+      }
+
       .theme-icon {
         width: 20px;
         height: 20px;
         display: none;
         place-items: center;
-        font-size: 1rem;
+        font-size: 1.05rem;
         line-height: 1;
       }
 
@@ -254,8 +263,8 @@
       }
 
       .icon {
-        width: 19px;
-        height: 19px;
+        width: 20px;
+        height: 20px;
         display: block;
       }
 
@@ -394,16 +403,16 @@
       }
 
       .section-head {
-        display: flex;
-        align-items: end;
-        justify-content: space-between;
-        gap: 24px;
-        margin-bottom: 18px;
+        margin-bottom: 22px;
+      }
+
+      .section-head h2 {
+        margin-bottom: 0;
       }
 
       .section-copy {
         max-width: 760px;
-        margin-bottom: 0;
+        margin: 12px 0 0;
         color: var(--muted);
       }
 
@@ -558,9 +567,16 @@
       }
 
       .doc-list a {
-        display: block;
-        padding: 15px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 18px;
         transition: border-color 140ms ease, transform 140ms ease;
+      }
+
+      .doc-list a strong {
+        display: block;
+        color: var(--text);
       }
 
       .doc-list a:hover {
@@ -577,8 +593,24 @@
       .footer-grid {
         display: flex;
         justify-content: space-between;
+        align-items: end;
         gap: 24px;
         flex-wrap: wrap;
+      }
+
+      .footer-copy {
+        margin: 0;
+        max-width: 42rem;
+      }
+
+      .footer-copy a {
+        color: inherit;
+      }
+
+      .footer-brand {
+        margin: 0;
+        direction: ltr;
+        text-align: left;
       }
 
       @media (max-width: 900px) {
@@ -631,9 +663,8 @@
           grid-template-columns: 1fr;
         }
 
-        .section-head {
+        .footer-grid {
           align-items: flex-start;
-          flex-direction: column;
         }
 
         .info-table th {
@@ -741,10 +772,8 @@
 
       <section class="wrap" id="product">
         <div class="section-head">
-          <div>
-            <p class="eyebrow">محصول</p>
-            <h2>نکونیموس چه کاری انجام می‌دهد؟</h2>
-          </div>
+          <p class="eyebrow">محصول</p>
+          <h2>نکونیموس چه کاری انجام می‌دهد؟</h2>
           <p class="section-copy">
             تمرکز V1 روی یک تجربه کوچک، قابل فهم و قابل توضیح است: لینک ناشناس،
             صندوق پیام‌ها، پاسخ ناشناس، کنترل‌های safety، و پیشنهاد گفت‌وگوی اختیاری.
@@ -787,10 +816,8 @@
 
       <section class="wrap" id="infra">
         <div class="section-head">
-          <div>
-            <p class="eyebrow">زیرساخت</p>
-            <h2>الگوی Cloudflare-native</h2>
-          </div>
+          <p class="eyebrow">زیرساخت</p>
+          <h2>الگوی Cloudflare-native</h2>
           <p class="section-copy">
             هدف infra جدید این است که webhook سبک بماند، state حساس داخل Durable Objectها کنترل شود،
             کارهای retryable وارد Queue شوند، و آمار فقط از جدول‌های aggregate خوانده شود.
@@ -841,10 +868,8 @@
 
       <section class="wrap" id="tickets">
         <div class="section-head">
-          <div>
-            <p class="eyebrow">Storage Boundary</p>
-            <h2>مدل sealed ticket</h2>
-          </div>
+          <p class="eyebrow">Storage Boundary</p>
+          <h2>مدل sealed ticket</h2>
           <p class="section-copy">
             در نِکونیموس، پیام ناشناس به شکل ردیف معمولی <code>sender_id → recipient_id</code>
             ذخیره نمی‌شود. هر پیام یک ticket capability است.
@@ -867,10 +892,8 @@
 
       <section class="wrap" id="stats">
         <div class="section-head">
-          <div>
-            <p class="eyebrow">آمار</p>
-            <h2>آمار کلی، بدون نمایش داده قابل اتصال به کاربران</h2>
-          </div>
+          <p class="eyebrow">آمار</p>
+          <h2>آمار کلی، بدون نمایش داده قابل اتصال به کاربران</h2>
           <p class="section-copy">
             آمار نِکونیموس event-driven است: bot event وارد Queue می‌شود، consumer آن را در D1 aggregate می‌کند،
             و صفحه آمار فقط همان counterهای تجمیعی را می‌خواند.
@@ -896,10 +919,8 @@
 
       <section class="wrap" id="docs">
         <div class="section-head">
-          <div>
-            <p class="eyebrow">مستندات</p>
-            <h2>برای بررسی فنی پروژه از اینجا شروع کن</h2>
-          </div>
+          <p class="eyebrow">مستندات</p>
+          <h2>برای بررسی فنی پروژه از اینجا شروع کن</h2>
           <p class="section-copy">
             GitHub منبع کد و مستندات فنی است. Mohetios برای روایت محصول، مقاله‌ها و context عمومی استفاده می‌شود.
           </p>
@@ -920,16 +941,11 @@
 
     <footer class="footer">
       <div class="wrap footer-grid">
-        <p>
-          <strong>Mohetios.dev</strong> — Where ideas unfold into systems.
-          <br />
-          ساخته‌شده برای پروژه‌های کوچک، قابل توضیح و قابل انتشار.
-        </p>
-        <p>
+        <p class="footer-copy">
+          همه چیز به شکل شگفت‌انگیزی، خوب باید باشد.
           <a href="https://mohetios.dev">© ۱۴۰۵ مُهتیوس</a>
-          <br />
-          Built slowly. Written honestly. Kept open.
         </p>
+        <p class="footer-brand"><strong>Mohetios.dev</strong> — Where ideas unfold into systems.</p>
       </div>
     </footer>
 
