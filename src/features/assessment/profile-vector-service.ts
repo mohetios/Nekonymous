@@ -1,4 +1,5 @@
 import type { Environment } from "../../types";
+import type { ProfileVectorStatus } from "../../status";
 import {
   createCapabilityLookupHash,
   generateOpaqueId,
@@ -175,7 +176,7 @@ export const updateVectorDiscoverability = async (
     .bind(userId)
     .first<{
       vector_id: string | null;
-      vector_status: string;
+      vector_status: ProfileVectorStatus;
       version: string;
       locale?: string;
       safety_tier: string;

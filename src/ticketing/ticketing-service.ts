@@ -1,8 +1,11 @@
 import type { CipherEnvelope } from "../types";
+import { bytesToBase64Url, base64UrlToBytes } from "./base64url.ts";
+import { deriveAesGcmKey, getHkdfKeyMaterial } from "./hkdf.ts";
+import { hmacBase64Url } from "./hmac.ts";
 
 /**
- * Product crypto helpers: callback capabilities, encrypted small payloads,
- * chat-id sealing, and stable private peer tags for anonymous relay routing.
+ * Product ticketing helpers: Telegram chat sealing, scoped payloads,
+ * display names, dedupe/block HMACs, and opaque ids.
  */
 const GCM_IV_BYTES = 12;
 const SENDER_ALIAS_BITS = 128;
@@ -16,70 +19,6 @@ const DEDUPE_INFO = "dedupe:v1:";
 const BLOCK_INFO = "block:v1:";
 
 const textEncoder = new TextEncoder();
-
-export const bytesToBase64Url = (bytes: Uint8Array): string => {
-  let binary = "";
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/g, "");
-};
-
-export const base64UrlToBytes = (input: string): Uint8Array => {
-  const base64 = input.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-  const binary = atob(padded);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-};
-
-const importHkdfKey = (keyMaterial: string): Promise<CryptoKey> =>
-  crypto.subtle.importKey(
-    "raw",
-    textEncoder.encode(keyMaterial),
-    "HKDF",
-    false,
-    ["deriveKey", "deriveBits"]
-  );
-
-let cachedHkdfKey: CryptoKey | null = null;
-let cachedHkdfKeySource: string | null = null;
-
-const getHkdfKeyMaterial = async (keyMaterial: string): Promise<CryptoKey> => {
-  if (cachedHkdfKey && cachedHkdfKeySource === keyMaterial) {
-    return cachedHkdfKey;
-  }
-
-  cachedHkdfKey = await importHkdfKey(keyMaterial);
-  cachedHkdfKeySource = keyMaterial;
-  return cachedHkdfKey;
-};
-
-const hkdfParams = (salt: Uint8Array, info: Uint8Array) => ({
-  name: "HKDF" as const,
-  hash: "SHA-256" as const,
-  salt,
-  info,
-});
-
-const deriveAesKey = (
-  keyMaterial: CryptoKey,
-  salt: Uint8Array,
-  info: Uint8Array
-): Promise<CryptoKey> =>
-  crypto.subtle.deriveKey(
-    hkdfParams(salt, info),
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"]
-  );
 
 const sealWithKey = async (
   aesKey: CryptoKey,
@@ -131,10 +70,8 @@ const wireToEnvelope = (wire: string): CipherEnvelope => {
   return parsed;
 };
 
-const masterKey = async (appMasterKey: string): Promise<CryptoKey> => {
-  const material = await getHkdfKeyMaterial(appMasterKey);
-  return deriveAesKey(material, new Uint8Array(0), CHAT_INFO);
-};
+const masterKey = (appMasterKey: string): Promise<CryptoKey> =>
+  deriveAesGcmKey(appMasterKey, new Uint8Array(0), CHAT_INFO);
 
 export const hmacTelegramUserId = async (
   pepper: string,
@@ -183,29 +120,10 @@ export const decryptTelegramChatId = async (
 export const generateOpaqueId = (bytes = 16): string =>
   bytesToBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
 
-const hmacSha256Base64Url = async (
-  secret: string,
-  message: string
-): Promise<string> => {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    textEncoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    textEncoder.encode(message)
-  );
-  return bytesToBase64Url(new Uint8Array(signature));
-};
-
 export const createCapabilityLookupHash = (
   capability: string,
   lookupSecret: string
-): Promise<string> => hmacSha256Base64Url(lookupSecret, `${LOOKUP_INFO}${capability}`);
+): Promise<string> => hmacBase64Url(lookupSecret, `${LOOKUP_INFO}${capability}`);
 
 export const createMessageDedupeKey = (
   lookupSecret: string,
@@ -213,7 +131,7 @@ export const createMessageDedupeKey = (
   recipientHash: string,
   telegramMessageId: number
 ): Promise<string> =>
-  hmacSha256Base64Url(
+  hmacBase64Url(
     lookupSecret,
     `${DEDUPE_INFO}${senderHash}:${recipientHash}:${telegramMessageId}`
   );
@@ -223,48 +141,16 @@ export const createBlockHash = (
   ownerHash: string,
   peerHash: string
 ): Promise<string> =>
-  hmacSha256Base64Url(lookupSecret, `${BLOCK_INFO}${ownerHash}:${peerHash}`);
-
-export type CapabilityAction =
-  | "open"
-  | "reply"
-  | "block"
-  | "unblock"
-  | "report"
-  | "nickname";
-
-const CALLBACK_PREFIX: Record<CapabilityAction, string> = {
-  open: "o",
-  reply: "r",
-  block: "b",
-  unblock: "u",
-  report: "rp",
-  nickname: "n",
-};
-
-export const encodeCapabilityCallbackData = (
-  action: CapabilityAction,
-  capability: string
-): string => {
-  const data = `${CALLBACK_PREFIX[action]}:${capability}`;
-  if (new TextEncoder().encode(data).length > 64) {
-    throw new Error("Telegram callback_data limit exceeded");
-  }
-  return data;
-};
+  hmacBase64Url(lookupSecret, `${BLOCK_INFO}${ownerHash}:${peerHash}`);
 
 const scopedPayloadSalt = (scopeId: string): Uint8Array =>
   base64UrlToBytes(scopeId);
 
-const deriveScopedPayloadKey = async (
+const deriveScopedPayloadKey = (
   scopeId: string,
   appMasterKey: string
 ): Promise<CryptoKey> =>
-  deriveAesKey(
-    await getHkdfKeyMaterial(appMasterKey),
-    scopedPayloadSalt(scopeId),
-    AES_INFO
-  );
+  deriveAesGcmKey(appMasterKey, scopedPayloadSalt(scopeId), AES_INFO);
 
 const encryptScopedPayload = async (
   scopeId: string,

@@ -1,5 +1,11 @@
 import { DurableObject } from "cloudflare:workers";
 import type { Environment, UserDraft } from "../types";
+import type {
+  AssessmentSessionStatus,
+  InboxPointerStatus,
+  UserDraftMode,
+} from "../status";
+import { isInboxPointerTransition } from "../status";
 
 const INBOX_MAX_TICKETS = 50;
 const INBOX_PAGE_SIZE = 10;
@@ -39,7 +45,7 @@ type DraftRow = {
 type AssessmentSessionRow = {
   id: string;
   version: string;
-  status: string;
+  status: AssessmentSessionStatus;
   current_index: number;
   total_questions: number;
   answers_json: string;
@@ -53,7 +59,7 @@ type InboxPointerRow = {
   ticket_hash: string;
   sealed_ref_enc: string;
   display_number: string;
-  status: string;
+  status: InboxPointerStatus;
   created_bucket: number;
   created_at: number;
   expires_at: number;
@@ -63,7 +69,7 @@ type InboxPointerRow = {
 
 const rowToDraft = (row: DraftRow): UserDraft => ({
   id: row.id,
-  mode: row.mode,
+  mode: row.mode as UserDraftMode,
   ...(row.to_user_id ? { toUserId: row.to_user_id } : {}),
   ...(row.link_slug ? { linkSlug: row.link_slug } : {}),
   ...(row.reply_ref ? { replyRef: row.reply_ref } : {}),
@@ -637,7 +643,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       ticketHash: string;
       status: string;
     }>();
-    if (!["viewed", "replied", "blocked", "reported"].includes(status)) {
+    if (!isInboxPointerTransition(status)) {
       return new Response("Invalid status", { status: 400 });
     }
     const now = Date.now();

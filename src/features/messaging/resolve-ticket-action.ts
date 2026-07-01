@@ -1,13 +1,13 @@
 import type { Context } from "grammy";
 import type { Environment } from "../../types";
-import { decryptEnvelope } from "../../crypto/envelope";
+import { decryptEnvelope } from "../../ticketing/envelope";
 import {
   createOwnerProofTag,
   createTicketHash,
   deriveTicketKey,
   routeAad,
-} from "../../crypto/keys";
-import { constantTimeEqual } from "../../crypto/hmac";
+} from "../../ticketing/keys";
+import { constantTimeEqual } from "../../ticketing/hmac";
 import { hmacTelegramUserId } from "../../ticketing/ticketing-service";
 import {
   getTicketRecord,
@@ -15,6 +15,7 @@ import {
 } from "../../storage/ticket-vault/ticket-vault.client";
 import type { TicketVaultRecord } from "../../storage/ticket-vault/ticket-vault.types";
 import type { RouteCapsule } from "./create-sealed-ticket";
+import { isCallbackRef } from "../../utils/telegram-callbacks";
 
 export type TicketAction =
   | "open"
@@ -47,8 +48,6 @@ export const isExpiredTicketAction = (
 ): value is ExpiredTicketAction =>
   value !== null && "expired" in value && value.expired === true;
 
-const CALLBACK_REFERENCE_RE = /^[A-Za-z0-9_-]{32}$/;
-
 const isRouteCapsule = (value: RouteCapsule): boolean =>
   !!value.senderRouteTag &&
   !!value.recipientRouteTag &&
@@ -65,7 +64,7 @@ export const resolveTicketAction = async (
   actorHash?: string
 ): Promise<ResolveTicketActionResult | null> => {
   const from = ctx.from;
-  if (!from || !CALLBACK_REFERENCE_RE.test(ticketRef)) {
+  if (!from || !isCallbackRef(ticketRef)) {
     return null;
   }
 

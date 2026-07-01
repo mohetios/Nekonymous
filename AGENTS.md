@@ -102,7 +102,8 @@ There is no Nuxt, GraphQL, separate `workers/` package, public website, or front
 ```
 src/
 ├── index.ts                         # DO exports, fetch, queue
-├── types.ts                         # Environment, BotUser, D1User, ticket types
+├── status.ts                        # domain status unions (InboxPointerStatus, …)
+├── types.ts                         # Environment, BotUser, shared payloads
 ├── bot/
 │   ├── create-bot.ts
 │   ├── register-handlers.ts         # command/callback wiring
@@ -136,6 +137,7 @@ src/
 │   └── platform/
 │       └── platform-stats-service.ts  # anonymous lifetime counters
 ├── ticketing/
+│   ├── base64url.ts, hkdf.ts, hmac.ts, aes-gcm.ts, envelope.ts, keys.ts
 │   └── ticketing-service.ts
 ├── storage/
 │   ├── user-state-do.ts

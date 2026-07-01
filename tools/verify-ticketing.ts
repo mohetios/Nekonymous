@@ -17,9 +17,9 @@ import {
   deriveTicketKey,
   randomTicketRef,
   routeAad,
-} from "../src/crypto/keys.ts";
-import { encryptEnvelope, decryptEnvelope } from "../src/crypto/envelope.ts";
-import { constantTimeEqual } from "../src/crypto/hmac.ts";
+} from "../src/ticketing/keys.ts";
+import { encryptEnvelope, decryptEnvelope } from "../src/ticketing/envelope.ts";
+import { constantTimeEqual } from "../src/ticketing/hmac.ts";
 
 const appMasterKey = "test-app-master-key-local-32bytes!";
 const pepper = "test-hmac-pepper-local-32bytes!!";

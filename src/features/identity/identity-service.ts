@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import type { BotUser, D1User, Environment } from "../../types";
+import type { D1UserStatus } from "../../status";
 import {
   decryptDisplayName,
   decryptTelegramChatId,
@@ -114,7 +115,7 @@ const rowToD1User = (row: Record<string, unknown>): D1User => ({
   locale: String(row.locale),
   locale_source: String(row.locale_source),
   onboarding_completed: Number(row.onboarding_completed),
-  status: String(row.status),
+  status: String(row.status) as D1UserStatus,
   bucket_id: Number(row.bucket_id),
   created_at: Number(row.created_at),
   updated_at: Number(row.updated_at),

@@ -1,4 +1,8 @@
 import type { Environment } from "../../types";
+import type {
+  AssessmentProfileStatus,
+  ProfileVectorStatus,
+} from "../../status";
 import { generateOpaqueId } from "../../ticketing/ticketing-service";
 import type { AssessmentResultSummary, AssessmentScores } from "./scoring";
 import {
@@ -16,12 +20,12 @@ import {
 export type AssessmentProfileRow = {
   user_id: string;
   version: string;
-  status: string;
+  status: AssessmentProfileStatus;
   dimension_scores_json: string;
   result_summary_json: string;
   profile_summary_text: string | null;
   vector_id: string | null;
-  vector_status: string;
+  vector_status: ProfileVectorStatus;
   discoverable: number;
   safety_tier: string;
   primary_intent: string;
@@ -185,7 +189,7 @@ export const saveAssessmentProfile = async (
 export const updateProfileVectorStatus = async (
   userId: string,
   vectorId: string,
-  status: "indexed" | "failed" | "not_indexed",
+  status: ProfileVectorStatus,
   profileSummaryText: string,
   env: Environment
 ): Promise<void> => {

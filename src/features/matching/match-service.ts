@@ -3,7 +3,7 @@ import {
   createBlockHash,
   generateOpaqueId,
 } from "../../ticketing/ticketing-service";
-import { createPairTag, createReportTag } from "../../crypto/keys";
+import { createPairTag, createReportTag } from "../../ticketing/keys";
 import { hasReportForPairTag } from "../../storage/report-ledger/report-ledger.client";
 import { getUserById } from "../../features/identity/identity-service";
 import {
@@ -28,6 +28,7 @@ import {
   MATCH_RESULT_COUNT,
   MATCH_SEARCH_LIMIT_PER_HOUR,
 } from "./constants";
+import type { MatchSuggestionStatus } from "../../status";
 import type {
   MatchCandidate,
   MatchDashboard,
@@ -745,7 +746,7 @@ export const getMatchSuggestion = async (
 
 export const markSuggestionAction = async (
   suggestionId: string,
-  status: string,
+  status: MatchSuggestionStatus,
   env: Environment
 ): Promise<void> => {
   await env.DB.prepare(

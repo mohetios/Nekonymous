@@ -1,9 +1,10 @@
 import type { Environment, InboxPointer } from "../../types";
-import { decryptEnvelope, encryptEnvelope } from "../../crypto/envelope";
+import { decryptEnvelope, encryptEnvelope } from "../../ticketing/envelope";
 import {
   deriveTicketKey,
   inboxPointerAad,
-} from "../../crypto/keys";
+} from "../../ticketing/keys";
+import { isCallbackRef } from "../../utils/telegram-callbacks";
 
 export const INBOX_RETENTION_DAYS = 30;
 export const INBOX_RETENTION_MS = INBOX_RETENTION_DAYS * 24 * 60 * 60 * 1000;
@@ -42,9 +43,7 @@ export const openInboxTicketRef = async (
       pointer.sealedTicketRef,
       inboxPointerAad(pointer.ticketHash)
     );
-    return /^[A-Za-z0-9_-]{32}$/.test(opened.ticketRef)
-      ? opened.ticketRef
-      : null;
+    return isCallbackRef(opened.ticketRef) ? opened.ticketRef : null;
   } catch {
     return null;
   }

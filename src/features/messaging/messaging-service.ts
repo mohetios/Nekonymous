@@ -4,8 +4,8 @@ import type {
   Environment,
   MessagePayload,
 } from "../../types";
-import { decryptEnvelope } from "../../crypto/envelope";
-import { payloadAad } from "../../crypto/keys";
+import { decryptEnvelope } from "../../ticketing/envelope";
+import { payloadAad } from "../../ticketing/keys";
 import { OPEN_INBOX_BUTTON } from "../../i18n/labels";
 import { UNREAD_INBOX_MESSAGE } from "../../i18n/messages";
 import { createSealedTicket, payloadCapsuleToMessagePayload } from "./create-sealed-ticket";
@@ -20,6 +20,7 @@ import {
 } from "../../storage/ticket-vault/ticket-vault.client";
 import { markInboxPointerViewed } from "../../storage/user-state-client";
 import { convertToPersianNumbers } from "../../utils/tools";
+import { INBOX_MENU_CALLBACK } from "../../utils/telegram-callbacks";
 
 export const hasDeliverablePayload = (payload: MessagePayload): boolean => {
   if (!payload.message_type) {
@@ -87,7 +88,7 @@ export const notifyRecipientInbox = async (
             [
               {
                 text: OPEN_INBOX_BUTTON,
-                callback_data: "ib:open",
+                callback_data: INBOX_MENU_CALLBACK.open,
               },
             ],
           ],

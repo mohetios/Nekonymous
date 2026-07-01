@@ -29,21 +29,17 @@ import {
   handleMatchSystemCallback,
   handleMatchSystemCommand,
 } from "../features/matching/match-system-handlers";
+import { isBotCommand } from "./commands";
+import {
+  INBOX_MENU_CALLBACK,
+  inboxCallbackQueryRegex,
+} from "../utils/telegram-callbacks";
 
 const isCommandMessage = (message: Message): boolean =>
   message.text?.startsWith("/") === true ||
   message.entities?.some(
     (entity) => entity.type === "bot_command" && entity.offset === 0
   ) === true;
-
-const KNOWN_COMMANDS = new Set([
-  "start",
-  "inbox",
-  "settings",
-  "assessment",
-  "match",
-  "match_system",
-]);
 
 const unknownCommandName = (text: string): string | null => {
   if (!text.startsWith("/")) {
@@ -86,7 +82,7 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     }
 
     const command = unknownCommandName(text);
-    if (!command || KNOWN_COMMANDS.has(command)) {
+    if (!command || isBotCommand(command)) {
       return;
     }
 
@@ -98,14 +94,14 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     (ctx: Context) =>
       handler(ctx, env);
 
-  bot.callbackQuery(/^o:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleOpenTicketAction));
-  bot.callbackQuery(/^r:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReplyAction));
-  bot.callbackQuery(/^b:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleBlockAction));
-  bot.callbackQuery(/^u:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleUnblockAction));
-  bot.callbackQuery(/^n:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleNicknameAction));
-  bot.callbackQuery(/^rp:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReportAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("open"), onInboxCallback(handleOpenTicketAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("reply"), onInboxCallback(handleReplyAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("block"), onInboxCallback(handleBlockAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("unblock"), onInboxCallback(handleUnblockAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("nickname"), onInboxCallback(handleNicknameAction));
+  bot.callbackQuery(inboxCallbackQueryRegex("report"), onInboxCallback(handleReportAction));
 
-  bot.callbackQuery("ib:open", async (ctx) => {
+  bot.callbackQuery(INBOX_MENU_CALLBACK.open, async (ctx) => {
     try {
       await handleInboxCommand(ctx, env);
     } finally {

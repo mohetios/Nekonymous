@@ -141,7 +141,7 @@ Design constraints for V1:
 - Message payloads are cleared from the ticket vault after first successful inbox rendering; encrypted route capsules remain for reply/block/report/nickname until expiry.
 - Account reset hard-deletes user-linked D1 rows; anonymous aggregate counters may remain.
 
-See also [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
+See also [docs/onboarding.md](./docs/onboarding.md), [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md), [docs/architecture/messaging.md](./docs/architecture/messaging.md), and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
 
 ---
 
@@ -627,7 +627,7 @@ SECURITY.md
 CONTRIBUTING.md
 ```
 
-There is no separate `src/crypto/` package; cryptography lives in `src/ticketing/ticketing-service.ts`.
+There is no separate crypto package; cryptography lives in `src/ticketing/` (`ticketing-service.ts` plus flat helper modules).
 
 ---
 

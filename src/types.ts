@@ -1,4 +1,9 @@
 import type { TelegramOutboxJob } from "./queues/telegram-outbox.types";
+import type {
+  D1UserStatus,
+  InboxPointerStatus,
+  UserDraftMode,
+} from "./status";
 
 export type MessagePayload = {
   message_type?: string;
@@ -52,7 +57,7 @@ export type InboxPointer = {
   ticketHash: string;
   sealedTicketRef: string;
   displayNumber: string;
-  status: string;
+  status: InboxPointerStatus;
   createdBucket: number;
   createdAt: number;
   expiresAt: number;
@@ -60,7 +65,7 @@ export type InboxPointer = {
 
 export type UserDraft = {
   id: string;
-  mode: string;
+  mode: UserDraftMode;
   toUserId?: string;
   linkSlug?: string;
   replyRef?: string;
@@ -77,7 +82,7 @@ export type D1User = {
   locale: string;
   locale_source: string;
   onboarding_completed: number;
-  status: string;
+  status: D1UserStatus;
   bucket_id: number;
   created_at: number;
   updated_at: number;

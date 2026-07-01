@@ -3,13 +3,13 @@ import type { MatchHubMenuOptions, MatchHubMenuVariant } from "../features/match
 import { SETTINGS_CALLBACK } from "../features/settings/constants";
 import { MATCH_SYSTEM_CALLBACK } from "../features/matching/match-system-callbacks";
 import {
-  encodeCapabilityCallbackData,
-  type CapabilityAction,
-} from "../ticketing/ticketing-service";
+  encodeInboxCallbackData,
+  type InboxCallbackAction,
+} from "../utils/telegram-callbacks";
 import { CONFIRM_BUTTON, INBOX_BUTTON, MENU } from "./menu-labels";
 
-const inboxCallback = (action: CapabilityAction, capability: string): string =>
-  encodeCapabilityCallbackData(action, capability);
+const inboxCallback = (action: InboxCallbackAction, ticketRef: string): string =>
+  encodeInboxCallbackData(action, ticketRef);
 
 export const mainMenu = new Keyboard()
   .text(MENU.link)

@@ -1,4 +1,8 @@
 import type { Environment, InboxPointer, UserDraft } from "../types";
+import type {
+  AssessmentSessionStatus,
+  InboxPointerTransitionStatus,
+} from "../status";
 
 type UserStateSnapshot = {
   paused: boolean;
@@ -209,7 +213,7 @@ const markInboxPointerStatus = async (
   env: Environment,
   userId: string,
   ticketHash: string,
-  status: "viewed" | "replied" | "blocked" | "reported"
+  status: InboxPointerTransitionStatus
 ): Promise<void> => {
   await doFetch(env, userId, "/mark-inbox-status", {
     method: "POST",
@@ -311,7 +315,7 @@ export const purgeUserState = async (
 export type AssessmentSession = {
   id: string;
   version: string;
-  status: string;
+  status: AssessmentSessionStatus;
   currentIndex: number;
   totalQuestions: number;
   answers: Record<string, number>;

@@ -1,4 +1,5 @@
 import type { MatchQualityLabel } from "./match-quality";
+import type { MatchSuggestionStatus } from "../../status";
 
 export type { MatchQualityLabel };
 
@@ -66,7 +67,7 @@ export type MatchSuggestionRow = {
   vector_score: number | null;
   deterministic_score: number | null;
   explanation_json: string;
-  status: string;
+  status: MatchSuggestionStatus;
   created_at: number;
   action_at: number | null;
 };
