@@ -141,7 +141,7 @@ Design constraints for V1:
 - Message payloads are cleared from the ticket vault after first successful inbox rendering; encrypted route capsules remain for reply/block/report/nickname until expiry.
 - Account reset hard-deletes user-linked D1 rows; anonymous aggregate counters may remain.
 
-See also [docs/onboarding.md](./docs/onboarding.md), [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md), [docs/architecture/messaging.md](./docs/architecture/messaging.md), and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
+See also [docs/onboarding.md](./docs/onboarding.md), [docs/architecture/cloudflare-native-infra-pattern.md](./docs/architecture/cloudflare-native-infra-pattern.md), [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md), [docs/architecture/messaging.md](./docs/architecture/messaging.md), and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
 
 ---
 
@@ -419,6 +419,7 @@ pnpm check    # typecheck + lint + knip + all verify scripts
 | Script | What it runs |
 |--------|----------------|
 | `pnpm test:ticketing` | Crypto roundtrip: payload envelope, chat id seal, HMAC |
+| `pnpm test:idempotency` | Webhook idempotency policy + outbox event-key invariants |
 | `pnpm test:assessment` | Question bank validation and scoring invariants |
 | `pnpm test:matching` | Deterministic ranking smoke tests |
 | `pnpm audit:d1` | Read-only remote D1 privacy audit |
@@ -576,7 +577,7 @@ GitHub Actions workflows exist under [`.github/workflows/`](./.github/workflows/
 pnpm check
 ```
 
-Runs `typecheck`, `lint`, `knip`, `test:ticketing`, `test:assessment`, and `test:matching`.
+Runs `typecheck`, `lint`, `knip`, `test:ticketing`, `test:idempotency`, `test:assessment`, and `test:matching`.
 
 ### V1 release checklist
 
