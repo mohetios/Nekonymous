@@ -23,9 +23,9 @@
         --text: #0f172a;
         --muted: #475569;
         --line: #dbe3ee;
-        --accent: #f97316;
-        --accent-strong: #c2410c;
-        --accent-soft: #ffedd5;
+        --accent: #ea580c;
+        --accent-strong: #9a3412;
+        --accent-soft: #fed7aa;
         --code: #111827;
       }
 
@@ -36,9 +36,9 @@
         --text: #e5edf7;
         --muted: #a8b7ca;
         --line: #233247;
-        --accent: #fb923c;
-        --accent-strong: #fdba74;
-        --accent-soft: #43210b;
+        --accent: #f97316;
+        --accent-strong: #fed7aa;
+        --accent-soft: #3b1b08;
         --code: #d1d5db;
       }
 
@@ -53,7 +53,7 @@
       body {
         margin: 0;
         background:
-          radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 34rem),
+          radial-gradient(circle at top left, rgba(234, 88, 12, 0.14), transparent 34rem),
           var(--bg);
         color: var(--text);
         font-family:
@@ -95,6 +95,7 @@
       }
 
       .nav {
+        position: relative;
         min-height: 76px;
         display: flex;
         align-items: center;
@@ -122,53 +123,102 @@
         box-shadow: 0 8px 22px rgba(249, 115, 22, 0.2);
       }
 
-      .brand-sub {
-        color: var(--muted);
-        font-weight: 650;
-      }
-
       .links,
-      .theme {
+      .nav-actions {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 16px;
         flex-wrap: wrap;
       }
 
       .links {
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 4px;
-        background: color-mix(in srgb, var(--panel) 82%, transparent);
+        flex: 1;
+        justify-content: center;
       }
 
       .links a {
-        border-radius: 999px;
-        padding: 7px 12px;
+        position: relative;
+        padding: 4px 0;
         color: var(--muted);
         font-size: 0.95rem;
         font-weight: 650;
         line-height: 1.4;
         transition:
-          background-color 140ms ease,
           color 140ms ease;
       }
 
+      .links a::after {
+        position: absolute;
+        right: 0;
+        bottom: -5px;
+        width: 100%;
+        height: 2px;
+        border-radius: 999px;
+        background: var(--accent);
+        content: "";
+        opacity: 0;
+        transform: scaleX(0.45);
+        transition:
+          opacity 140ms ease,
+          transform 140ms ease;
+      }
+
       .links a:hover,
-      .links a:focus-visible {
-        background: var(--accent-soft);
+      .links a:focus-visible,
+      .links a.is-active {
         color: var(--accent-strong);
         outline: none;
       }
 
-      .links .nav-cta {
+      .links a:hover::after,
+      .links a:focus-visible::after,
+      .links a.is-active::after {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+
+      .nav-actions {
+        gap: 8px;
+      }
+
+      .icon-link,
+      .theme-toggle {
+        width: 38px;
+        height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background: var(--panel);
+        color: var(--muted);
+        transition:
+          border-color 140ms ease,
+          background-color 140ms ease,
+          color 140ms ease,
+          transform 140ms ease;
+      }
+
+      .icon-link:hover,
+      .icon-link:focus-visible,
+      .theme-toggle:hover,
+      .theme-toggle:focus-visible {
+        border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        outline: none;
+        transform: translateY(-1px);
+      }
+
+      .icon-link.primary {
+        border-color: var(--accent);
         background: var(--accent);
         color: #ffffff;
       }
 
-      .links .nav-cta:hover,
-      .links .nav-cta:focus-visible {
+      .icon-link.primary:hover,
+      .icon-link.primary:focus-visible {
         background: var(--accent-strong);
+        border-color: var(--accent-strong);
         color: #ffffff;
       }
 
@@ -182,57 +232,33 @@
       }
 
       .theme-toggle {
-        position: relative;
-        width: 72px;
-        height: 38px;
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 0 10px;
-        background: var(--panel);
-        color: var(--muted);
+        padding: 0;
         cursor: pointer;
-        direction: ltr;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
         font: inherit;
       }
 
       .theme-toggle:focus-visible {
-        outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
-        outline-offset: 3px;
+        outline: none;
       }
 
       .theme-icon {
-        position: relative;
-        z-index: 1;
         width: 20px;
         height: 20px;
-        display: grid;
+        display: none;
         place-items: center;
-        font-size: 0.95rem;
+        font-size: 1rem;
         line-height: 1;
-      }
-
-      .theme-knob {
-        position: absolute;
-        top: 4px;
-        left: 4px;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: var(--accent);
-        box-shadow: 0 4px 14px rgba(249, 115, 22, 0.28);
-        transition: transform 160ms ease;
-      }
-
-      html[data-theme="dark"] .theme-knob {
-        transform: translateX(34px);
       }
 
       html[data-theme="light"] .theme-icon-light,
       html[data-theme="dark"] .theme-icon-dark {
-        color: #ffffff;
+        display: grid;
+      }
+
+      .icon {
+        width: 19px;
+        height: 19px;
+        display: block;
       }
 
       .button.primary {
@@ -410,8 +436,14 @@
 
         .links {
           width: 100%;
-          border-radius: 14px;
           justify-content: flex-start;
+          gap: 14px;
+        }
+
+        .nav-actions {
+          position: absolute;
+          left: 16px;
+          top: 18px;
         }
 
         .plain-list {
@@ -435,20 +467,34 @@
   <body>
     <header class="header">
       <nav class="wrap nav" aria-label="ناوبری اصلی">
-        <a class="brand" href="#">
+        <a class="brand" href="#" aria-label="نِکونیموس">
           <span class="brand-mark" aria-hidden="true">ن</span>
-          <span>نِکونیموس</span>
-          <span class="brand-sub">/ Mohetios</span>
         </a>
         <div class="links">
-          <a href="#intro">معرفی</a>
+          <a class="is-active" href="#intro">معرفی</a>
           <a href="#infra">زیرساخت</a>
           <a href="#stats">آمار</a>
           <a href="#docs">مستندات</a>
-          <a class="nav-cta" href="https://t.me/nekonymous_bot">ربات تلگرام</a>
-          <a href="https://github.com/mohetios/Nekonymous">گیت‌هاب</a>
         </div>
-        <div class="theme" aria-label="تغییر ظاهر">
+        <div class="nav-actions" aria-label="لینک‌های اصلی">
+          <a
+            class="icon-link primary"
+            href="https://t.me/nekonymous_bot"
+            aria-label="باز کردن ربات تلگرام"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M21.7 4.3 18.5 19c-.2 1-.8 1.3-1.6.8l-4.8-3.6-2.3 2.2c-.3.3-.5.5-1 .5l.3-4.9 8.9-8c.4-.3-.1-.5-.6-.2L6.4 12.7 1.7 11.2c-1-.3-1-1 .2-1.5L20.3 2.6c.9-.3 1.7.2 1.4 1.7Z"/>
+            </svg>
+          </a>
+          <a
+            class="icon-link"
+            href="https://github.com/mohetios/Nekonymous"
+            aria-label="مشاهده سورس در GitHub"
+          >
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.2.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.5-1.3-1.2-1.6-1.2-1.6-1-.7.1-.7.1-.7 1.1.1 1.7 1.2 1.7 1.2 1 .1.8 2.3 3.4 1.6.1-.7.4-1.2.7-1.5-2.6-.3-5.4-1.3-5.4-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.6.1-3.2 0 0 1-.3 3.3 1.2a11.4 11.4 0 0 1 6 0C17.9 6.2 19 6.5 19 6.5c.6 1.6.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.3c0 .4.2.7.8.6A12 12 0 0 0 12 .5Z"/>
+            </svg>
+          </a>
           <button
             type="button"
             class="theme-toggle"
@@ -457,7 +503,6 @@
             aria-pressed="false"
           >
             <span class="theme-icon theme-icon-light" aria-hidden="true">☀</span>
-            <span class="theme-knob" aria-hidden="true"></span>
             <span class="theme-icon theme-icon-dark" aria-hidden="true">☾</span>
           </button>
         </div>
@@ -618,6 +663,50 @@
         query.addEventListener("change", () => {
           if (!storedMode()) {
             apply(resolvedMode());
+          }
+        });
+      })();
+
+      (() => {
+        const links = Array.from(document.querySelectorAll(".links a[href^='#']"));
+        const sections = links
+          .map((link) => {
+            const target = link.getAttribute("href");
+            return target ? document.querySelector(target) : null;
+          })
+          .filter(Boolean);
+
+        if (!links.length || !sections.length) {
+          return;
+        }
+
+        const setActive = (id) => {
+          links.forEach((link) => {
+            link.classList.toggle("is-active", link.getAttribute("href") === `#${id}`);
+          });
+        };
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            const visible = entries
+              .filter((entry) => entry.isIntersecting)
+              .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+            if (visible?.target.id) {
+              setActive(visible.target.id);
+            }
+          },
+          {
+            rootMargin: "-30% 0px -55% 0px",
+            threshold: [0.1, 0.35, 0.6],
+          }
+        );
+
+        sections.forEach((section) => observer.observe(section));
+
+        window.addEventListener("hashchange", () => {
+          const id = window.location.hash.slice(1);
+          if (id) {
+            setActive(id);
           }
         });
       })();
