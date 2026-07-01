@@ -204,9 +204,6 @@ export class UserStateDurableObject extends DurableObject<Environment> {
 
       CREATE INDEX IF NOT EXISTS idx_processed_events_expires
         ON processed_events(expires_at);
-      
-      CREATE INDEX IF NOT EXISTS idx_processed_events_lease
-        ON processed_events(status, lease_until);
 
       CREATE TABLE IF NOT EXISTS assessment_sessions (
         id TEXT PRIMARY KEY,
@@ -224,35 +221,10 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (1);
     `);
 
-    // Backward-compatible column backfill for already-created DO databases.
-    try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE processed_events ADD COLUMN status TEXT NOT NULL DEFAULT 'processing'"
-      );
-    } catch {
-      // column already exists
-    }
-    try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE processed_events ADD COLUMN lease_until INTEGER"
-      );
-    } catch {
-      // column already exists
-    }
-    try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE processed_events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0"
-      );
-    } catch {
-      // column already exists
-    }
-    try {
-      this.ctx.storage.sql.exec(
-        "ALTER TABLE processed_events ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0"
-      );
-    } catch {
-      // column already exists
-    }
+    this.ctx.storage.sql.exec(
+      `CREATE INDEX IF NOT EXISTS idx_processed_events_lease
+       ON processed_events(status, lease_until)`
+    );
   }
 
   async fetch(request: Request): Promise<Response> {
