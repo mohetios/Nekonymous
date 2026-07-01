@@ -76,8 +76,6 @@ export type CreateSealedTicketResult = {
   status: number;
   pendingCount?: number;
   duplicate?: boolean;
-  ticketRef?: string;
-  ticketHash?: string;
 };
 
 const payloadCapsuleFromMessage = (payload: MessagePayload): PayloadCapsule => {
@@ -228,8 +226,6 @@ export const createSealedTicket = async (
     ok: true,
     status: 200,
     pendingCount: inboxResult.pendingCount,
-    ticketRef,
-    ticketHash,
   };
 };
 

@@ -6,11 +6,7 @@ import type {
 } from "../../types";
 import { decryptEnvelope } from "../../crypto/envelope";
 import { payloadAad } from "../../crypto/keys";
-import { OPEN_INBOX_TICKET_BUTTON } from "../../i18n/labels";
-import {
-  MULTIPLE_NEW_INBOX_MESSAGE,
-  NEW_INBOX_MESSAGE,
-} from "../../i18n/messages";
+import { UNREAD_INBOX_MESSAGE } from "../../i18n/messages";
 import { createSealedTicket, payloadCapsuleToMessagePayload } from "./create-sealed-ticket";
 import type {
   PayloadCapsule,
@@ -22,7 +18,7 @@ import {
   markTicketViewed,
 } from "../../storage/ticket-vault/ticket-vault.client";
 import { markInboxPointerViewed } from "../../storage/user-state-client";
-import { encodeCapabilityCallbackData } from "../../ticketing/ticketing-service";
+import { convertToPersianNumbers } from "../../utils/tools";
 
 export const hasDeliverablePayload = (payload: MessagePayload): boolean => {
   if (!payload.message_type) {
@@ -53,7 +49,6 @@ export const sendAnonymousMessage = async (
   status: number;
   pendingCount?: number;
   notify?: boolean;
-  openCapability?: string;
 }> => {
   const result = await createSealedTicket(env, input);
   if (!result.ok) {
@@ -65,21 +60,18 @@ export const sendAnonymousMessage = async (
     status: 200,
     pendingCount: result.pendingCount,
     notify: !result.duplicate,
-    openCapability: result.ticketRef,
   };
 };
 
 export const notifyRecipientInbox = async (
   env: Environment,
   recipient: D1User,
-  pendingCount: number,
-  openCapability?: string
+  pendingCount: number
 ): Promise<void> => {
   const { getTelegramChatId } = await import("../identity/identity-service");
 
   const chatId = await getTelegramChatId(recipient, env);
-  const text =
-    pendingCount > 1 ? MULTIPLE_NEW_INBOX_MESSAGE : NEW_INBOX_MESSAGE;
+  const text = UNREAD_INBOX_MESSAGE(convertToPersianNumbers(pendingCount));
   const response = await fetch(
     `https://api.telegram.org/bot${env.SECRET_TELEGRAM_API_TOKEN}/sendMessage`,
     {
@@ -89,23 +81,6 @@ export const notifyRecipientInbox = async (
         chat_id: chatId,
         text,
         parse_mode: "HTML",
-        ...(openCapability
-          ? {
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    {
-                      text: OPEN_INBOX_TICKET_BUTTON,
-                      callback_data: encodeCapabilityCallbackData(
-                        "open",
-                        openCapability
-                      ),
-                    },
-                  ],
-                ],
-              },
-            }
-          : {}),
       }),
     }
   );

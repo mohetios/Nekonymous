@@ -1,4 +1,4 @@
-import { InlineKeyboard, type Context } from "grammy";
+import type { Context } from "grammy";
 import type { Environment } from "../../types";
 import {
   handlePendingSettingsInput,
@@ -15,7 +15,6 @@ import { handleMenuCommand } from "../../bot/menu";
 import { logBotError } from "../../utils/logs";
 import {
   EMPTY_INBOX_MESSAGE,
-  EXPIRED_TICKET_MESSAGE,
   HuhMessage,
   INBOX_FULL_MESSAGE,
   MESSAGE_SENT_MESSAGE,
@@ -31,7 +30,6 @@ import {
   StartConversationMessage,
   UnsupportedMessageTypeMessage,
   USER_IS_BLOCKED_MESSAGE,
-  VIEWED_TICKET_SUMMARY_MESSAGE,
   WelcomeMessage,
 } from "../../i18n/messages";
 import { PEER_USER_FALLBACK } from "../../i18n/defaults";
@@ -64,6 +62,7 @@ import {
   clearDraft,
   getDraft,
   listInboxPage,
+  markInboxPointerViewed,
   markInboxPointerReplied,
   setDraft,
 } from "../../storage/user-state-client";
@@ -73,13 +72,14 @@ import {
 } from "../../storage/ticket-vault/ticket-vault.client";
 import { escapeHtml, replyHtml, withHtml } from "../../utils/tools";
 import { buildUserDeepLink, isUserLinkId, publicDisplayName } from "../../utils/user";
-import { MORE_INBOX_BUTTON } from "../../i18n/labels";
 import { openInboxTicketRef } from "./inbox-pointer";
 import {
   isExpiredTicketAction,
   resolveTicketAction,
 } from "./resolve-ticket-action";
 import { sendDecryptedMessage } from "../../utils/sender";
+
+const INBOX_DRAIN_MAX_BATCHES = 5;
 
 export const handleStartCommand = async (
   ctx: Context,
@@ -342,8 +342,7 @@ export const handleMessage = async (
         await notifyRecipientInbox(
           env,
           recipientD1,
-          result.pendingCount ?? 1,
-          result.openCapability
+          result.pendingCount ?? 1
         );
       } catch (error) {
         logBotError("handleMessage:notify", error);
@@ -377,10 +376,9 @@ const expireTicketsBestEffort = async (
   );
 };
 
-const renderInboxPage = async (
+const renderInbox = async (
   ctx: Context,
-  env: Environment,
-  offset: number
+  env: Environment
 ): Promise<void> => {
   const from = ctx.from;
   if (!from) {
@@ -390,121 +388,139 @@ const renderInboxPage = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-    const page = await listInboxPage(env, user.id, offset);
-    await expireTicketsBestEffort(env, page.expiredTicketHashes);
-
-    if (page.pointers.length === 0 && offset === 0) {
-      await ctx.reply(EMPTY_INBOX_MESSAGE, withHtml({ reply_markup: mainMenu }));
-      return;
-    }
 
     let shown = 0;
     let failed = 0;
 
-    for (const pointer of page.pointers) {
-      const ticketRef = await openInboxTicketRef(env, pointer);
-      if (!ticketRef) {
-        failed += 1;
-        continue;
+    for (let batch = 0; batch < INBOX_DRAIN_MAX_BATCHES; batch += 1) {
+      const page = await listInboxPage(env, user.id, 0);
+      await expireTicketsBestEffort(env, page.expiredTicketHashes);
+
+      if (page.pointers.length === 0) {
+        break;
       }
 
-      try {
-        const resolved = await resolveTicketAction(
-          ctx,
-          env,
-          "open",
-          ticketRef,
-          d1User.telegram_user_hash
-        );
+      let progressed = false;
 
-        if (!resolved) {
+      for (const pointer of page.pointers) {
+        const ticketRef = await openInboxTicketRef(env, pointer);
+        if (!ticketRef) {
+          await markInboxPointerViewed(env, user.id, pointer.ticketHash).catch(
+            (error) => logBotError("handleInboxCommand:drop-pointer", error)
+          );
           failed += 1;
+          progressed = true;
           continue;
         }
 
-        if (isExpiredTicketAction(resolved)) {
-          await ctx.reply(EXPIRED_TICKET_MESSAGE);
-          shown += 1;
-          continue;
-        }
-
-        const senderD1 = await getUserByTelegramHash(
-          resolved.route.senderRouteTag,
-          env
-        );
-        const isBlocked = senderD1
-          ? user.blockedUserIds.includes(
-              await createBlockHash(
-                env.APP_HMAC_PEPPER,
-                d1User.telegram_user_hash,
-                senderD1.telegram_user_hash
-              )
-            )
-          : false;
-        const keyboard = createMessageKeyboard(ticketRef, isBlocked);
-
-        if (
-          resolved.ticket.status === "active" &&
-          resolved.ticket.payloadEnc
-        ) {
-          const delivery = await deliveryContextFromResolvedTicket(
-            resolved,
-            user.contactLabels
+        try {
+          const resolved = await resolveTicketAction(
+            ctx,
+            env,
+            "open",
+            ticketRef,
+            d1User.telegram_user_hash
           );
 
-          if (!hasDeliverablePayload(delivery.payload)) {
+          if (!resolved) {
+            await markInboxPointerViewed(env, user.id, pointer.ticketHash).catch(
+              (error) => logBotError("handleInboxCommand:drop-pointer", error)
+            );
             failed += 1;
+            progressed = true;
             continue;
           }
 
-          await sendDecryptedMessage(
-            ctx,
-            toTicketDeliveryConversation(
-              resolved.route,
-              delivery.payload,
-              0,
-              0
-            ),
-            { reply_markup: keyboard },
-            delivery.senderLabel
-          );
-          await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
-
-          if (senderD1) {
-            await notifyMessageSeen(
-              env,
-              senderD1,
-              resolved.route.parentMessageId
-            ).catch((error) => logBotError("handleInboxCommand:seen", error));
+          if (isExpiredTicketAction(resolved)) {
+            await Promise.all([
+              expireTicketRecord(env, pointer.ticketHash),
+              markInboxPointerViewed(env, user.id, pointer.ticketHash),
+            ]).catch((error) =>
+              logBotError("handleInboxCommand:expire-pointer", error)
+            );
+            progressed = true;
+            continue;
           }
-        } else {
-          await ctx.reply(
-            VIEWED_TICKET_SUMMARY_MESSAGE(escapeHtml(pointer.displayNumber)),
-            withHtml({ reply_markup: keyboard })
-          );
-        }
 
-        shown += 1;
-      } catch (error) {
-        failed += 1;
-        logBotError("handleInboxCommand:render", error);
+          const senderD1 = await getUserByTelegramHash(
+            resolved.route.senderRouteTag,
+            env
+          );
+          const isBlocked = senderD1
+            ? user.blockedUserIds.includes(
+                await createBlockHash(
+                  env.APP_HMAC_PEPPER,
+                  d1User.telegram_user_hash,
+                  senderD1.telegram_user_hash
+                )
+              )
+            : false;
+          const keyboard = createMessageKeyboard(ticketRef, isBlocked);
+
+          if (
+            resolved.ticket.status === "active" &&
+            resolved.ticket.payloadEnc
+          ) {
+            const delivery = await deliveryContextFromResolvedTicket(
+              resolved,
+              user.contactLabels
+            );
+
+            if (!hasDeliverablePayload(delivery.payload)) {
+              await markResolvedTicketViewed(
+                env,
+                user.id,
+                resolved.ticketHash
+              );
+              failed += 1;
+              progressed = true;
+              continue;
+            }
+
+            await sendDecryptedMessage(
+              ctx,
+              toTicketDeliveryConversation(
+                resolved.route,
+                delivery.payload,
+                0,
+                0
+              ),
+              { reply_markup: keyboard },
+              delivery.senderLabel
+            );
+            await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
+
+            if (senderD1) {
+              await notifyMessageSeen(
+                env,
+                senderD1,
+                resolved.route.parentMessageId
+              ).catch((error) => logBotError("handleInboxCommand:seen", error));
+            }
+
+            shown += 1;
+            progressed = true;
+          } else {
+            await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
+            progressed = true;
+          }
+        } catch (error) {
+          failed += 1;
+          logBotError("handleInboxCommand:render", error);
+        }
+      }
+
+      if (page.nextOffset === undefined || !progressed) {
+        break;
       }
     }
 
-    if (shown === 0 && failed > 0) {
-      await ctx.reply(HuhMessage, { reply_markup: mainMenu });
-    }
-
-    if (page.nextOffset !== undefined) {
-      await ctx.reply(
-        MORE_INBOX_BUTTON,
-        withHtml({
-          reply_markup: new InlineKeyboard().text(
-            MORE_INBOX_BUTTON,
-            `ib:${page.nextOffset}`
-          ),
-        })
-      );
+    if (shown === 0) {
+      if (failed > 0) {
+        await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+      } else {
+        await ctx.reply(EMPTY_INBOX_MESSAGE, withHtml({ reply_markup: mainMenu }));
+      }
     }
   } catch (error) {
     logBotError("handleInboxCommand", error);
@@ -516,17 +532,5 @@ export const handleInboxCommand = async (
   ctx: Context,
   env: Environment
 ): Promise<void> => {
-  await renderInboxPage(ctx, env, 0);
-};
-
-export const handleInboxPageCallback = async (
-  ctx: Context,
-  env: Environment
-): Promise<void> => {
-  const offset = Math.max(0, Number(ctx.match?.[1] ?? "0") || 0);
-  try {
-    await renderInboxPage(ctx, env, offset);
-  } finally {
-    await ctx.answerCallbackQuery();
-  }
+  await renderInbox(ctx, env);
 };

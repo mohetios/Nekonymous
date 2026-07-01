@@ -128,18 +128,15 @@ export const ABOUT_PRIVACY_COMMAND_MESSAGE = `<b>درباره و حریم خصو
 
 export const UnsupportedMessageTypeMessage = `فعلاً این نوع پیام پشتیبانی نمی‌شود. لطفاً متن یا یکی از فرمت‌های پشتیبانی‌شده را بفرست.`;
 
-export const NEW_INBOX_MESSAGE = `یک پیام ناشناس جدید داری.`;
-
-export const MULTIPLE_NEW_INBOX_MESSAGE = `چند پیام ناشناس جدید داری.`;
+export const UNREAD_INBOX_MESSAGE = (count: string): string =>
+  `${count} پیام خوانده‌نشده داری.`;
 
 export const EXPIRED_TICKET_MESSAGE = `این پیام منقضی شده و دیگر در دسترس نیست.`;
 
 export const VIEWED_TICKET_SUMMARY_MESSAGE = (displayNumber: string): string =>
   `پیام #${displayNumber} قبلاً نمایش داده شده است.`;
 
-export const EMPTY_INBOX_MESSAGE = `فعلاً پیام ناشناسی در صندوقت نیست.
-
-لینکت را با کسی که می‌خواهی به تو پیام بدهد به اشتراک بگذار.`;
+export const EMPTY_INBOX_MESSAGE = `پیامی نداری.`;
 
 export const YOUR_MESSAGE_SEEN_MESSAGE = `گیرنده پیام تو را دید.`;
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Destructive remote reset: D1 + KV + Vectorize, then re-apply schema and vector index.
+# Destructive remote reset: Durable Object generation deploy + D1 + KV + Vectorize.
 #
 # Usage:
 #   ./tools/flush-remote.sh          # remote only
 #   ./tools/flush-remote.sh --local  # also flush local D1/KV (vectorize is remote-only)
 #
-# Requires: wrangler auth (jq optional; node used as fallback)
+# Requires: wrangler auth and the current wrangler.jsonc reset migration.
 
 set -euo pipefail
 
@@ -17,11 +17,16 @@ if [[ "${1:-}" == "--local" ]]; then
   LOCAL_TOO=true
 fi
 
-WRANGLER=(npx wrangler)
+WRANGLER=(pnpm exec wrangler)
 DB_BINDING="DB"
 KV_BINDING="NEKO_KV"
 VECTOR_INDEX="nekonymous-profile-vectors"
 VECTOR_DIM=1024
+
+run_worker_deploy_for_do_reset() {
+  echo "==> Worker deploy for Durable Object reset migration"
+  "${WRANGLER[@]}" deploy --minify
+}
 
 run_d1_flush() {
   local target="$1" # --remote or --local
@@ -78,11 +83,13 @@ run_vectorize_recreate() {
 }
 
 echo "!!! DESTRUCTIVE REMOTE RESET for Nekonymous !!!"
+echo "    Durable Objects: reset only when a new class-generation migration is pending"
 echo "    D1: all tables dropped + migrations reapplied"
 echo "    KV: all keys deleted"
 echo "    Vectorize: index recreated empty"
 echo
 
+run_worker_deploy_for_do_reset
 run_d1_flush --remote
 run_kv_flush --remote
 run_vectorize_recreate
@@ -94,4 +101,5 @@ fi
 
 echo
 echo "Remote flush complete."
-echo "Users must /start again; Durable Object inbox state is NOT cleared by this script."
+echo "Users must /start again."
+echo "Note: future DO wipes require bumping the DO class generation and adding a delete migration."

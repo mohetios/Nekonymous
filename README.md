@@ -30,7 +30,7 @@ There is no public website or SPA inside the Worker in V1. The bot is the produc
 
 - **Personal anonymous link** — Each user gets a `t.me/{bot}?start={slug}` deep link to share.
 - **Anonymous messages** — Visitors open the link and send text or supported media without exposing the owner’s Telegram username.
-- **Inbox** — Owners read pending messages with `/inbox`.
+- **Inbox** — Owners receive an exact unread count and `/inbox` sends all unread messages.
 - **Anonymous reply** — Replies stay anonymous in both directions through the same relay.
 - **Block / report** — Per-sender block and structured report flow.
 - **Pause / resume** — Temporarily stop incoming messages without deleting the account.
@@ -138,7 +138,7 @@ Design constraints for V1:
 
 - KV is cache only — never the authority for inbox, profiles, or matching state.
 - Vectorize narrows candidates; final ranking is deterministic TypeScript.
-- Message payloads are cleared from the ticket vault after delivery; encrypted route capsules remain for reply/block/report/nickname.
+- Message payloads are cleared from the ticket vault after first successful inbox rendering; encrypted route capsules remain for reply/block/report/nickname until expiry.
 - Account reset hard-deletes user-linked D1 rows; anonymous aggregate counters may remain.
 
 See also [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) and [AGENTS.md](./AGENTS.md) for maintainer-oriented detail.
@@ -167,7 +167,7 @@ D1 stores HMACed Telegram user hashes and encrypted Telegram chat ids, not raw T
 | Table | Purpose |
 |-------|---------|
 | `user_state` | Pause flag, encrypted display name, locale mirror |
-| `inbox_pointers` | Encrypted ticket references; cap 50 pending |
+| `inbox_pointers` | Encrypted sealed-ticket references; cap 50 unread pointers |
 | `drafts` | Compose / reply / settings draft state |
 | `blocks` | Per-recipient block list |
 | `contact_labels` | Private nicknames per sender |
@@ -186,7 +186,7 @@ D1 stores HMACed Telegram user hashes and encrypted Telegram chat ids, not raw T
 
 | Table | Purpose |
 |-------|---------|
-| `tickets` | `ticket_hash`, owner proof, encrypted route/payload capsules |
+| `tickets` | `ticket_hash`, owner proof, encrypted route/payload capsules, status, retention timestamps |
 
 **`ReportLedgerDurableObject`**:
 
@@ -230,7 +230,7 @@ Nekonymous is a **hosted anonymous relay**. It hides users from each other in no
 | Telegram chat ids | AES-256-GCM encryption with `APP_MASTER_KEY` |
 | Message payloads | Per-ticket HKDF-derived AES-256-GCM keys; envelope `{ v, kid, iv, ct }` |
 | Callback tickets | Raw `ticketRef` values live only in Telegram buttons; storage uses hashes or encrypted references |
-| Payload retention | `payload_enc` is cleared after delivery; `route_enc` remains for actions |
+| Payload retention | `payload_enc` is cleared after first successful `/inbox` render; `route_enc` remains for actions until expiry |
 | Webhook auth | `BOT_SECRET_KEY` as `X-Telegram-Bot-Api-Secret-Token` |
 
 ### Abuse controls and rate limits
@@ -252,7 +252,7 @@ The previous 5-second send/reply-only check was removed in favor of this single 
 
 | Limit | Where | Value | Purpose |
 |-------|--------|-------|---------|
-| Inbox pending cap | `UserStateDO.inbox_tickets` | 50 | Stop inbox flooding per recipient |
+| Inbox unread cap | `UserStateDO.inbox_pointers` | 50 | Stop inbox flooding per recipient |
 | Private nicknames | `UserStateDO.contact_labels` | 200 per user | Bound label storage |
 | Display name length | settings / identity | 64 chars | Input sanitization |
 | Nickname length | contact utils | 32 chars | Input sanitization |
@@ -492,8 +492,7 @@ D1 database name: **`nekonymous_core`**, binding: **`DB`**, migrations directory
 
 | File | Purpose |
 |------|---------|
-| `0001_init.sql` | Full V1 schema: users, links, assessment, matching, `platform_stats` |
-| `0002_drop_legacy_reports.sql` | Remove legacy D1 report table |
+| `0001_init.sql` | Full squashed V1 schema: users, links, assessment, matching, `platform_stats` |
 
 ```bash
 # Local (wrangler dev --local)
@@ -505,7 +504,7 @@ pnpm db:migrations:apply:remote
 
 `pnpm deploy` applies remote migrations then runs `wrangler deploy --minify`.
 
-**Warning:** Remote migrations affect production data. Review SQL before applying. `./tools/flush-remote.sh` is destructive (D1 + KV + Vectorize recreate) and does not clear per-user Durable Object state.
+**Warning:** Remote migrations affect production data. Review SQL before applying. `./tools/flush-remote.sh` is destructive: it deploys pending Durable Object reset migrations, drops/recreates D1 from the squashed migration, deletes KV routing keys, and recreates the Vectorize index. Future Durable Object wipes require bumping the DO class generation in `wrangler.jsonc`.
 
 ---
 
@@ -543,7 +542,7 @@ Replace the URL with your Worker route or tunnel URL.
    - D1 database `nekonymous_core`
    - KV namespace `NEKO_KV`
    - Queues `telegram-outbox` and dead-letter queue
-   - Durable Object classes `UserStateDurableObject`, `TelegramOutboxDurableObject`
+   - Durable Object classes configured in `wrangler.jsonc` (`UserStateDurableObjectV2`, `TelegramOutboxDurableObjectV2`, `TicketVaultDurableObjectV2`, `ReportLedgerDurableObjectV2`)
    - Vectorize index `nekonymous-profile-vectors`
    - Workers AI binding
 3. Set all secrets (see above).
@@ -561,7 +560,7 @@ GitHub Actions workflows exist under [`.github/workflows/`](./.github/workflows/
 
 - `setWebhook` points to `https://<your-domain>/bot` with `secret_token`
 - `/start` — link created
-- `/inbox` — pending delivery path works
+- `/inbox` — all unread messages render once, then the empty state is shown on the next open
 - `/assessment` — flow starts
 - `/match` — hub loads after completed assessment
 - Settings → account reset — hard delete and new link

@@ -11,7 +11,6 @@ export type TicketVaultRecord = {
   ownerProofTag: string;
   routeEnc: string | null;
   payloadEnc: string | null;
-  metaEnc: string | null;
   status: TicketVaultStatus;
   createdAt: number;
   expiresAt: number;
@@ -22,7 +21,6 @@ export type StoreTicketInput = {
   ownerProofTag: string;
   routeEnc: string;
   payloadEnc: string;
-  metaEnc?: string | null;
   status?: TicketVaultStatus;
   createdAt: number;
   expiresAt: number;

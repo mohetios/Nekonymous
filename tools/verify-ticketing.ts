@@ -4,11 +4,11 @@
  */
 
 import {
-  decryptMessagePayload,
+  decryptMatchIntro,
   decryptTelegramChatId,
-  encryptMessagePayload,
+  encryptMatchIntro,
   encryptTelegramChatId,
-  generateTicketId,
+  generateOpaqueId,
   hmacTelegramUserId,
 } from "../src/ticketing/ticketing-service.ts";
 import {
@@ -30,20 +30,20 @@ const sample = JSON.stringify({
   createdAt: Date.now(),
 });
 
-const ticketId = generateTicketId();
-const ciphertext = await encryptMessagePayload(
-  ticketId,
+const scopedPayloadId = generateOpaqueId(12);
+const ciphertext = await encryptMatchIntro(
+  scopedPayloadId,
   sample,
   appMasterKey
 );
-const decrypted = await decryptMessagePayload(
-  ticketId,
+const decrypted = await decryptMatchIntro(
+  scopedPayloadId,
   ciphertext,
   appMasterKey
 );
 
 if (decrypted !== sample) {
-  console.error("Ticketing envelope roundtrip failed");
+  console.error("Scoped payload envelope roundtrip failed");
   process.exit(1);
 }
 
@@ -109,9 +109,9 @@ if (openedRoute.pairTag !== route.pairTag) {
   process.exit(1);
 }
 
-console.log("Ticketing envelope roundtrip OK");
+console.log("Scoped payload envelope roundtrip OK");
 console.log("Chat id roundtrip OK");
 console.log("HMAC hash OK");
 console.log("Sealed ticket route roundtrip OK");
-console.log(`ticketId length: ${ticketId.length}`);
+console.log(`scopedPayloadId length: ${scopedPayloadId.length}`);
 console.log(`ticketRef length: ${ticketRef.length}`);

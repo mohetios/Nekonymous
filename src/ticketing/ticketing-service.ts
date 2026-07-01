@@ -1,10 +1,9 @@
 import type { CipherEnvelope } from "../types";
 
 /**
- * Product ticketing core: opaque capabilities, encrypted payload envelopes,
- * chat-id sealing, and stable private peer tags for anonymous relay tickets.
+ * Product crypto helpers: callback capabilities, encrypted small payloads,
+ * chat-id sealing, and stable private peer tags for anonymous relay routing.
  */
-const TICKET_ENTROPY_BYTES = 32;
 const GCM_IV_BYTES = 12;
 const SENDER_ALIAS_BITS = 128;
 const MASTER_KID = "master:v1";
@@ -181,11 +180,6 @@ export const decryptTelegramChatId = async (
   return chatId;
 };
 
-export const generateTicketId = (): string => {
-  const entropy = crypto.getRandomValues(new Uint8Array(TICKET_ENTROPY_BYTES));
-  return bytesToBase64Url(entropy);
-};
-
 export const generateOpaqueId = (bytes = 16): string =>
   bytesToBase64Url(crypto.getRandomValues(new Uint8Array(bytes)));
 
@@ -259,35 +253,36 @@ export const encodeCapabilityCallbackData = (
   return data;
 };
 
-const ticketSalt = (ticketId: string): Uint8Array => base64UrlToBytes(ticketId);
+const scopedPayloadSalt = (scopeId: string): Uint8Array =>
+  base64UrlToBytes(scopeId);
 
-const deriveTicketAesKey = async (
-  ticketId: string,
+const deriveScopedPayloadKey = async (
+  scopeId: string,
   appMasterKey: string
 ): Promise<CryptoKey> =>
   deriveAesKey(
     await getHkdfKeyMaterial(appMasterKey),
-    ticketSalt(ticketId),
+    scopedPayloadSalt(scopeId),
     AES_INFO
   );
 
-export const encryptMessagePayload = async (
-  ticketId: string,
+const encryptScopedPayload = async (
+  scopeId: string,
   payload: string,
   appMasterKey: string
 ): Promise<string> => {
-  const aesKey = await deriveTicketAesKey(ticketId, appMasterKey);
+  const aesKey = await deriveScopedPayloadKey(scopeId, appMasterKey);
   return envelopeToWire(
-    await sealWithKey(aesKey, payload, `ticket:${ticketId.slice(0, 8)}`)
+    await sealWithKey(aesKey, payload, `payload:${scopeId.slice(0, 8)}`)
   );
 };
 
-export const decryptMessagePayload = async (
-  ticketId: string,
+const decryptScopedPayload = async (
+  scopeId: string,
   ciphertext: string,
   appMasterKey: string
 ): Promise<string> => {
-  const aesKey = await deriveTicketAesKey(ticketId, appMasterKey);
+  const aesKey = await deriveScopedPayloadKey(scopeId, appMasterKey);
   return openEnvelope(wireToEnvelope(ciphertext), aesKey);
 };
 
@@ -315,13 +310,13 @@ export const encryptMatchIntro = async (
   requestId: string,
   intro: string,
   appMasterKey: string
-): Promise<string> => encryptMessagePayload(requestId, intro, appMasterKey);
+): Promise<string> => encryptScopedPayload(requestId, intro, appMasterKey);
 
 export const decryptMatchIntro = async (
   requestId: string,
   ciphertext: string,
   appMasterKey: string
-): Promise<string> => decryptMessagePayload(requestId, ciphertext, appMasterKey);
+): Promise<string> => decryptScopedPayload(requestId, ciphertext, appMasterKey);
 
 export const encryptDisplayName = async (
   name: string,

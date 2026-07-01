@@ -4,7 +4,6 @@ export {
   INBOX_BUTTON,
   MATCH_BUTTON,
   ASSESSMENT_BUTTON,
-  OPEN_INBOX_TICKET_BUTTON,
   DELIVERY_HEADER_FROM,
   isMenuLabel,
   isReservedDisplayName,

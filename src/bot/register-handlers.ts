@@ -13,7 +13,6 @@ import {
 } from "../features/messaging/messaging-actions";
 import {
   handleInboxCommand,
-  handleInboxPageCallback,
   handleMessage,
   handleStartCommand,
 } from "../features/messaging/messaging-commands";
@@ -105,10 +104,6 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   bot.callbackQuery(/^u:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleUnblockAction));
   bot.callbackQuery(/^n:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleNicknameAction));
   bot.callbackQuery(/^rp:([A-Za-z0-9_-]{32})$/, onInboxCallback(handleReportAction));
-
-  bot.callbackQuery(/^ib:(\d{1,4})$/, (ctx) =>
-    handleInboxPageCallback(ctx, env)
-  );
 
   bot.callbackQuery(/^t:/, (ctx) => handleAssessmentCallback(ctx, env));
 

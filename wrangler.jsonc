@@ -42,19 +42,19 @@
     "bindings": [
       {
         "name": "USER_STATE_DO",
-        "class_name": "UserStateDurableObject"
+        "class_name": "UserStateDurableObjectV2"
       },
       {
         "name": "TELEGRAM_OUTBOX_DO",
-        "class_name": "TelegramOutboxDurableObject"
+        "class_name": "TelegramOutboxDurableObjectV2"
       },
       {
         "name": "TICKET_VAULT",
-        "class_name": "TicketVaultDurableObject"
+        "class_name": "TicketVaultDurableObjectV2"
       },
       {
         "name": "REPORT_LEDGER",
-        "class_name": "ReportLedgerDurableObject"
+        "class_name": "ReportLedgerDurableObjectV2"
       }
     ]
   },
@@ -75,6 +75,27 @@
     {
       "tag": "v3-sealed-ticket-routing",
       "new_sqlite_classes": [
+        "TicketVaultDurableObject",
+        "ReportLedgerDurableObject"
+      ]
+    },
+    {
+      // Destructive reset phase 1: move bindings to fresh V2 DO classes.
+      // Old classes are deleted in a follow-up deploy after this is live.
+      "tag": "v4-create-reset-durable-objects",
+      "new_sqlite_classes": [
+        "UserStateDurableObjectV2",
+        "TelegramOutboxDurableObjectV2",
+        "TicketVaultDurableObjectV2",
+        "ReportLedgerDurableObjectV2"
+      ]
+    },
+    {
+      // Destructive reset phase 2: delete all stored data from old DO classes.
+      "tag": "v5-delete-old-durable-objects",
+      "deleted_classes": [
+        "UserStateDurableObject",
+        "TelegramOutboxDurableObject",
         "TicketVaultDurableObject",
         "ReportLedgerDurableObject"
       ]

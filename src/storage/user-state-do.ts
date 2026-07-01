@@ -97,208 +97,105 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
         id INTEGER PRIMARY KEY,
         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
+      );
+
+      CREATE TABLE IF NOT EXISTS user_state (
+        user_id TEXT PRIMARY KEY,
+        locale TEXT NOT NULL DEFAULT 'fa',
+        locale_source TEXT NOT NULL DEFAULT 'fallback',
+        onboarding_completed INTEGER NOT NULL DEFAULT 0,
+        paused INTEGER NOT NULL DEFAULT 0,
+        display_name_ciphertext TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS drafts (
+        id TEXT PRIMARY KEY,
+        mode TEXT NOT NULL,
+        to_user_id TEXT,
+        link_slug TEXT,
+        reply_ref TEXT,
+        parent_message_id INTEGER,
+        reply_to_message_id INTEGER,
+        pending_nickname_alias TEXT,
+        pending_settings TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        expires_at INTEGER
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_drafts_updated ON drafts(updated_at);
+
+      CREATE TABLE IF NOT EXISTS inbox_pointers (
+        ticket_hash TEXT PRIMARY KEY,
+        sealed_ref_enc TEXT NOT NULL,
+        display_number TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        created_bucket INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        delivered_at INTEGER,
+        replied_at INTEGER,
+        blocked_at INTEGER,
+        reported_at INTEGER,
+        deleted_at INTEGER,
+        expires_at INTEGER NOT NULL,
+        dedupe_key TEXT UNIQUE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_inbox_status_created
+        ON inbox_pointers(status, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_inbox_created
+        ON inbox_pointers(created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_inbox_expires
+        ON inbox_pointers(expires_at);
+
+      CREATE TABLE IF NOT EXISTS blocks (
+        blocked_user_id TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS contact_labels (
+        alias TEXT PRIMARY KEY,
+        target_user_id TEXT NOT NULL,
+        nickname_ciphertext TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS rate_limits (
+        scope TEXT PRIMARY KEY,
+        tokens REAL,
+        last_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS processed_events (
+        key TEXT PRIMARY KEY,
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_processed_events_expires
+        ON processed_events(expires_at);
+
+      CREATE TABLE IF NOT EXISTS assessment_sessions (
+        id TEXT PRIMARY KEY,
+        version TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active',
+        current_index INTEGER NOT NULL DEFAULT 0,
+        total_questions INTEGER NOT NULL,
+        answers_json TEXT NOT NULL DEFAULT '{}',
+        attempt_id TEXT,
+        started_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        expires_at INTEGER
+      );
+
+      INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (1);
     `);
-
-    const version = this.ctx.storage.sql
-      .exec<{ version: number }>(
-        "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations"
-      )
-      .one().version;
-
-    if (version < 1) {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS user_state (
-          user_id TEXT PRIMARY KEY,
-          locale TEXT NOT NULL DEFAULT 'fa',
-          locale_source TEXT NOT NULL DEFAULT 'fallback',
-          onboarding_completed INTEGER NOT NULL DEFAULT 0,
-          paused INTEGER NOT NULL DEFAULT 0,
-          display_name_ciphertext TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS drafts (
-          id TEXT PRIMARY KEY,
-          mode TEXT NOT NULL,
-          to_user_id TEXT,
-          link_slug TEXT,
-          reply_ref TEXT,
-          parent_message_id INTEGER,
-          reply_to_message_id INTEGER,
-          pending_nickname_alias TEXT,
-          pending_settings TEXT,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          expires_at INTEGER
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_drafts_updated ON drafts(updated_at);
-
-        CREATE TABLE IF NOT EXISTS inbox_pointers (
-          ticket_hash TEXT PRIMARY KEY,
-          sealed_ref_enc TEXT NOT NULL,
-          display_number TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          created_bucket INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          delivered_at INTEGER,
-          replied_at INTEGER,
-          blocked_at INTEGER,
-          reported_at INTEGER,
-          deleted_at INTEGER,
-          expires_at INTEGER,
-          dedupe_key TEXT UNIQUE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
-          ON inbox_pointers(status, created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_created
-          ON inbox_pointers(created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_expires
-          ON inbox_pointers(expires_at);
-
-        CREATE TABLE IF NOT EXISTS blocks (
-          blocked_user_id TEXT PRIMARY KEY,
-          created_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS contact_labels (
-          alias TEXT PRIMARY KEY,
-          target_user_id TEXT NOT NULL,
-          nickname_ciphertext TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS rate_limits (
-          scope TEXT PRIMARY KEY,
-          tokens REAL,
-          last_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS processed_events (
-          key TEXT PRIMARY KEY,
-          created_at INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_processed_events_expires
-          ON processed_events(expires_at);
-
-        INSERT INTO _sql_schema_migrations (id) VALUES (1);
-      `);
-    }
-
-    if (version < 2) {
-      this.ctx.storage.sql.exec(`
-        CREATE TABLE IF NOT EXISTS assessment_sessions (
-          id TEXT PRIMARY KEY,
-          version TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          current_index INTEGER NOT NULL DEFAULT 0,
-          total_questions INTEGER NOT NULL,
-          answers_json TEXT NOT NULL DEFAULT '{}',
-          attempt_id TEXT,
-          started_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          expires_at INTEGER
-        );
-
-        INSERT INTO _sql_schema_migrations (id) VALUES (2);
-      `);
-    }
-
-    if (version < 3) {
-      this.ctx.storage.sql.exec(`
-        DROP TABLE IF EXISTS test_sessions;
-
-        CREATE TABLE IF NOT EXISTS assessment_sessions (
-          id TEXT PRIMARY KEY,
-          version TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          current_index INTEGER NOT NULL DEFAULT 0,
-          total_questions INTEGER NOT NULL,
-          answers_json TEXT NOT NULL DEFAULT '{}',
-          attempt_id TEXT,
-          started_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          expires_at INTEGER
-        );
-
-        INSERT INTO _sql_schema_migrations (id) VALUES (3);
-      `);
-    }
-
-    if (version < 4) {
-      this.ctx.storage.sql.exec(`
-        DROP TABLE IF EXISTS inbox_tickets;
-
-        CREATE TABLE IF NOT EXISTS inbox_pointers (
-          ticket_hash TEXT PRIMARY KEY,
-          sealed_ref_enc TEXT NOT NULL,
-          display_number TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          created_bucket INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          delivered_at INTEGER,
-          replied_at INTEGER,
-          blocked_at INTEGER,
-          reported_at INTEGER,
-          deleted_at INTEGER,
-          expires_at INTEGER,
-          dedupe_key TEXT UNIQUE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
-          ON inbox_pointers(status, created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_created
-          ON inbox_pointers(created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_expires
-          ON inbox_pointers(expires_at);
-
-        INSERT INTO _sql_schema_migrations (id) VALUES (4);
-      `);
-    }
-
-    if (version < 5) {
-      this.ctx.storage.sql.exec(`
-        DROP TABLE IF EXISTS inbox_pointers;
-
-        CREATE TABLE IF NOT EXISTS inbox_pointers (
-          ticket_hash TEXT PRIMARY KEY,
-          sealed_ref_enc TEXT NOT NULL,
-          display_number TEXT NOT NULL,
-          status TEXT NOT NULL DEFAULT 'active',
-          created_bucket INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          delivered_at INTEGER,
-          replied_at INTEGER,
-          blocked_at INTEGER,
-          reported_at INTEGER,
-          deleted_at INTEGER,
-          expires_at INTEGER NOT NULL,
-          dedupe_key TEXT UNIQUE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_status_created
-          ON inbox_pointers(status, created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_created
-          ON inbox_pointers(created_at);
-
-        CREATE INDEX IF NOT EXISTS idx_inbox_expires
-          ON inbox_pointers(expires_at);
-
-        INSERT INTO _sql_schema_migrations (id) VALUES (5);
-      `);
-    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -333,9 +230,6 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     }
     if (request.method === "POST" && pathname === "/add-inbox-pointer") {
       return this.addInboxPointer(request);
-    }
-    if (request.method === "GET" && pathname === "/pending-inbox") {
-      return this.inboxPage(request);
     }
     if (request.method === "GET" && pathname === "/inbox-page") {
       return this.inboxPage(request);
@@ -710,7 +604,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
                 created_bucket, created_at, expires_at, delivered_at, dedupe_key
          FROM inbox_pointers
          WHERE expires_at > ?
-           AND status IN ('active', 'viewed', 'replied', 'reported', 'blocked')
+           AND status = 'active'
          ORDER BY created_at ASC
          LIMIT ${INBOX_PAGE_SIZE + 1}
          OFFSET ?`,

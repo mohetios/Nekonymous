@@ -7,7 +7,6 @@ type TicketRow = {
   owner_proof_tag: string;
   route_enc: string | null;
   payload_enc: string | null;
-  meta_enc: string | null;
   status: string;
   created_at: number;
   expires_at: number;
@@ -18,7 +17,6 @@ const rowToRecord = (row: TicketRow): TicketVaultRecord => ({
   ownerProofTag: row.owner_proof_tag,
   routeEnc: row.route_enc,
   payloadEnc: row.payload_enc,
-  metaEnc: row.meta_enc,
   status: row.status as TicketVaultRecord["status"],
   createdAt: row.created_at,
   expiresAt: row.expires_at,
@@ -41,28 +39,13 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
       CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
         id INTEGER PRIMARY KEY,
         applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-      )
-    `);
-
-    const version = this.ctx.storage.sql
-      .exec<{ version: number }>(
-        "SELECT COALESCE(MAX(id), 0) AS version FROM _sql_schema_migrations"
-      )
-      .one().version;
-
-    if (version >= 1) {
-      return;
-    }
-
-    this.ctx.storage.sql.exec(`
-      DROP TABLE IF EXISTS tickets;
+      );
 
       CREATE TABLE IF NOT EXISTS tickets (
         ticket_hash TEXT PRIMARY KEY,
         owner_proof_tag TEXT NOT NULL,
         route_enc TEXT,
         payload_enc TEXT,
-        meta_enc TEXT,
         status TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         expires_at INTEGER NOT NULL
@@ -74,7 +57,7 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
       CREATE INDEX IF NOT EXISTS idx_tickets_expires
       ON tickets(expires_at);
 
-      INSERT INTO _sql_schema_migrations (id) VALUES (1);
+      INSERT OR IGNORE INTO _sql_schema_migrations (id) VALUES (1);
     `);
   }
 
@@ -143,14 +126,13 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
     try {
       this.ctx.storage.sql.exec(
         `INSERT INTO tickets (
-          ticket_hash, owner_proof_tag, route_enc, payload_enc, meta_enc,
+          ticket_hash, owner_proof_tag, route_enc, payload_enc,
           status, created_at, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
         body.ticketHash,
         body.ownerProofTag,
         body.routeEnc,
         body.payloadEnc,
-        body.metaEnc ?? null,
         body.status ?? "active",
         body.createdAt,
         body.expiresAt
@@ -201,7 +183,6 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
       `UPDATE tickets
        SET payload_enc = NULL,
            route_enc = NULL,
-           meta_enc = NULL,
            status = 'expired'
        WHERE ticket_hash = ?`,
       ticketHash
