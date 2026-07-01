@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>نکونیموس — پیام ناشناس با مرزهای فنی روشن</title>
+    <title>نِکونیموس — پیام ناشناس با مرزهای فنی روشن</title>
     <meta
       name="description"
-      content="نکونیموس یک ربات تلگرام فارسی‌محور برای پیام ناشناس، پاسخ ناشناس، ارزیابی سبک گفت‌وگو و پیشنهاد گفت‌وگوی اختیاری است؛ با معماری Cloudflare-native و محدودیت‌های حریم خصوصی شفاف."
+      content="نِکونیموس یک ربات تلگرام فارسی‌محور برای پیام ناشناس، پاسخ ناشناس، ارزیابی سبک گفت‌وگو و پیشنهاد گفت‌وگوی اختیاری است؛ با معماری Cloudflare-native و محدودیت‌های حریم خصوصی شفاف."
     />
-    <meta property="og:title" content="نکونیموس — پیام ناشناس با مرزهای فنی روشن" />
+    <meta property="og:title" content="نِکونیموس — پیام ناشناس با مرزهای فنی روشن" />
     <meta
       property="og:description"
       content="ربات پیام ناشناس فارسی‌محور با مدل sealed ticket، آمار تجمیعی، و مستندات فنی شفاف."
@@ -23,8 +23,9 @@
         --text: #0f172a;
         --muted: #475569;
         --line: #dbe3ee;
-        --accent: #047857;
-        --accent-soft: #d1fae5;
+        --accent: #f97316;
+        --accent-strong: #c2410c;
+        --accent-soft: #ffedd5;
         --code: #111827;
       }
 
@@ -35,8 +36,9 @@
         --text: #e5edf7;
         --muted: #a8b7ca;
         --line: #233247;
-        --accent: #34d399;
-        --accent-soft: #063526;
+        --accent: #fb923c;
+        --accent-strong: #fdba74;
+        --accent-soft: #43210b;
         --code: #d1d5db;
       }
 
@@ -51,7 +53,7 @@
       body {
         margin: 0;
         background:
-          radial-gradient(circle at top left, rgba(4, 120, 87, 0.13), transparent 34rem),
+          radial-gradient(circle at top left, rgba(249, 115, 22, 0.16), transparent 34rem),
           var(--bg);
         color: var(--text);
         font-family:
@@ -88,33 +90,88 @@
         top: 0;
         z-index: 10;
         border-bottom: 1px solid var(--line);
-        background: color-mix(in srgb, var(--bg) 86%, transparent);
-        backdrop-filter: blur(14px);
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        backdrop-filter: blur(16px);
       }
 
       .nav {
-        min-height: 72px;
+        min-height: 76px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 20px;
+        gap: 18px;
       }
 
       .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        min-width: max-content;
         font-weight: 800;
         letter-spacing: 0;
+      }
+
+      .brand-mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: var(--accent);
+        color: #ffffff;
+        box-shadow: 0 8px 22px rgba(249, 115, 22, 0.2);
+      }
+
+      .brand-sub {
+        color: var(--muted);
+        font-weight: 650;
       }
 
       .links,
       .theme {
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 6px;
         flex-wrap: wrap;
       }
 
-      .links a,
-      .theme button,
+      .links {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 4px;
+        background: color-mix(in srgb, var(--panel) 82%, transparent);
+      }
+
+      .links a {
+        border-radius: 999px;
+        padding: 7px 12px;
+        color: var(--muted);
+        font-size: 0.95rem;
+        font-weight: 650;
+        line-height: 1.4;
+        transition:
+          background-color 140ms ease,
+          color 140ms ease;
+      }
+
+      .links a:hover,
+      .links a:focus-visible {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        outline: none;
+      }
+
+      .links .nav-cta {
+        background: var(--accent);
+        color: #ffffff;
+      }
+
+      .links .nav-cta:hover,
+      .links .nav-cta:focus-visible {
+        background: var(--accent-strong);
+        color: #ffffff;
+      }
+
       .button {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -124,11 +181,60 @@
         font: inherit;
       }
 
-      .theme button {
+      .theme-toggle {
+        position: relative;
+        width: 72px;
+        height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0 10px;
+        background: var(--panel);
+        color: var(--muted);
         cursor: pointer;
+        direction: ltr;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font: inherit;
       }
 
-      .theme button[aria-pressed="true"],
+      .theme-toggle:focus-visible {
+        outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
+        outline-offset: 3px;
+      }
+
+      .theme-icon {
+        position: relative;
+        z-index: 1;
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        font-size: 0.95rem;
+        line-height: 1;
+      }
+
+      .theme-knob {
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 4px 14px rgba(249, 115, 22, 0.28);
+        transition: transform 160ms ease;
+      }
+
+      html[data-theme="dark"] .theme-knob {
+        transform: translateX(34px);
+      }
+
+      html[data-theme="light"] .theme-icon-light,
+      html[data-theme="dark"] .theme-icon-dark {
+        color: #ffffff;
+      }
+
       .button.primary {
         border-color: var(--accent);
         background: var(--accent);
@@ -140,7 +246,7 @@
       }
 
       .eyebrow {
-        color: var(--accent);
+        color: var(--accent-strong);
         font-weight: 700;
       }
 
@@ -285,7 +391,7 @@
         border-radius: 999px;
         padding: 5px 10px;
         background: var(--accent-soft);
-        color: var(--accent);
+        color: var(--accent-strong);
         font-weight: 700;
       }
 
@@ -302,6 +408,12 @@
           padding: 14px 0;
         }
 
+        .links {
+          width: 100%;
+          border-radius: 14px;
+          justify-content: flex-start;
+        }
+
         .plain-list {
           grid-template-columns: 1fr;
         }
@@ -313,9 +425,9 @@
     </style>
     <script>
       (() => {
-        const stored = localStorage.getItem("theme") || "system";
+        const stored = localStorage.getItem("theme");
         const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-        const dark = stored === "dark" || (stored === "system" && prefersDark);
+        const dark = stored === "dark" || (stored !== "light" && prefersDark);
         document.documentElement.dataset.theme = dark ? "dark" : "light";
       })();
     </script>
@@ -323,19 +435,31 @@
   <body>
     <header class="header">
       <nav class="wrap nav" aria-label="ناوبری اصلی">
-        <a class="brand" href="#">نکونیموس / Mohetios</a>
+        <a class="brand" href="#">
+          <span class="brand-mark" aria-hidden="true">ن</span>
+          <span>نِکونیموس</span>
+          <span class="brand-sub">/ Mohetios</span>
+        </a>
         <div class="links">
           <a href="#intro">معرفی</a>
           <a href="#infra">زیرساخت</a>
           <a href="#stats">آمار</a>
           <a href="#docs">مستندات</a>
-          <a href="https://t.me/nekonymous_bot">ربات تلگرام</a>
+          <a class="nav-cta" href="https://t.me/nekonymous_bot">ربات تلگرام</a>
           <a href="https://github.com/mohetios/Nekonymous">گیت‌هاب</a>
         </div>
-        <div class="theme" aria-label="انتخاب ظاهر">
-          <button type="button" data-theme="light">روشن</button>
-          <button type="button" data-theme="dark">تاریک</button>
-          <button type="button" data-theme="system">سیستم</button>
+        <div class="theme" aria-label="تغییر ظاهر">
+          <button
+            type="button"
+            class="theme-toggle"
+            data-theme-toggle
+            aria-label="تغییر ظاهر"
+            aria-pressed="false"
+          >
+            <span class="theme-icon theme-icon-light" aria-hidden="true">☀</span>
+            <span class="theme-knob" aria-hidden="true"></span>
+            <span class="theme-icon theme-icon-dark" aria-hidden="true">☾</span>
+          </button>
         </div>
       </nav>
     </header>
@@ -343,21 +467,21 @@
     <main>
       <section class="hero wrap" id="intro">
         <p class="eyebrow">ربات تلگرام فارسی‌محور، متن‌باز و Cloudflare-native</p>
-        <h1>نکونیموس؛ پیام ناشناس با مرزهای فنی روشن</h1>
+        <h1>نِکونیموس؛ پیام ناشناس با مرزهای فنی روشن</h1>
         <p class="lead">
-          نکونیموس یک ربات تلگرام برای لینک شخصی، پیام ناشناس، پاسخ ناشناس،
+          نِکونیموس یک ربات تلگرام برای لینک شخصی، پیام ناشناس، پاسخ ناشناس،
           ارزیابی سبک گفت‌وگو و پیشنهاد گفت‌وگوی اختیاری است. این صفحه فقط سطح
           معرفی و مستندات پروژه است؛ محصول اصلی داخل Telegram اجرا می‌شود.
         </p>
         <p class="note">
-          نکونیموس پیام‌رسان رمزنگاری سرتاسری نیست. تلگرام و Worker هنگام پردازش
+          نِکونیموس پیام‌رسان رمزنگاری سرتاسری نیست. تلگرام و Worker هنگام پردازش
           می‌توانند متن پیام را ببینند. تمرکز پروژه روی کمینه‌سازی داده ذخیره‌شده،
           رمزنگاری در حالت ذخیره، و شفافیت محدودیت‌هاست.
         </p>
         <div class="actions">
           <a class="button primary" href="https://t.me/nekonymous_bot">باز کردن ربات تلگرام</a>
           <a class="button primary" href="https://github.com/mohetios/Nekonymous">مشاهده سورس در GitHub</a>
-          <a class="button" href="../docs/architecture/cloudflare-native-infra-pattern.md">مطالعه مستندات فنی</a>
+          <a class="button" href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/cloudflare-native-infra-pattern.md">مطالعه مستندات فنی</a>
         </div>
       </section>
 
@@ -401,7 +525,7 @@
       <section class="wrap">
         <h2>مدل sealed ticket</h2>
         <p class="section-copy">
-          در نکونیموس، پیام ناشناس به شکل ردیف معمولی <code>sender_id → recipient_id</code>
+          در نِکونیموس، پیام ناشناس به شکل ردیف معمولی <code>sender_id → recipient_id</code>
           ذخیره نمی‌شود. مسیر در <code>route_enc</code> رمزنگاری می‌شود و
           <code>payload_enc</code> بعد از نمایش موفق در صندوق پاک می‌شود.
         </p>
@@ -417,7 +541,7 @@
       <section class="wrap" id="stats">
         <h2>آمار کلی، بدون نمایش داده قابل اتصال به کاربران</h2>
         <p class="section-copy">
-          آمار نکونیموس فقط به‌صورت تجمیعی نمایش داده می‌شود. هیچ متن پیام، مسیر پیام،
+          آمار نِکونیموس فقط به‌صورت تجمیعی نمایش داده می‌شود. هیچ متن پیام، مسیر پیام،
           فرستنده، گیرنده، ticketRef یا اطلاعات قابل اتصال به کاربران در صفحه آمار
           نمایش داده نمی‌شود.
         </p>
@@ -435,55 +559,65 @@
       <section class="wrap" id="docs">
         <h2>مستندات</h2>
         <div class="doc-list">
-          <a href="../README.md"><strong>README</strong><span>نمای کلی پروژه، وضعیت V1 و مدل ذخیره‌سازی.</span></a>
-          <a href="../SECURITY.md"><strong>SECURITY.md</strong><span>گزارش مسئولانه آسیب‌پذیری و مرزهای امنیتی.</span></a>
-          <a href="../CONTRIBUTING.md"><strong>CONTRIBUTING.md</strong><span>قواعد مشارکت و اجرای محلی.</span></a>
-          <a href="../docs/security/threat-model.md"><strong>Threat Model</strong><span>آنچه محافظت می‌شود و آنچه محافظت نمی‌شود.</span></a>
-          <a href="../docs/architecture/matching-v1.md"><strong>Matching Architecture</strong><span>ارزیابی، پیشنهاد گفت‌وگو، Vectorize و رتبه‌بندی قطعی.</span></a>
-          <a href="../docs/architecture/cloudflare-native-infra-pattern.md"><strong>Cloudflare-native Infra Pattern</strong><span>Worker سبک، DO، D1، Queue و آمار تجمیعی.</span></a>
-          <a href="../docs/architecture/messaging.md"><strong>Sealed Ticket Routing</strong><span>مسیر sealed ticket، رمزنگاری route و پاک‌سازی payload.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous#readme"><strong>README</strong><span>نمای کلی پروژه، وضعیت V1 و مدل ذخیره‌سازی.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/SECURITY.md"><strong>SECURITY.md</strong><span>گزارش مسئولانه آسیب‌پذیری و مرزهای امنیتی.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/CONTRIBUTING.md"><strong>CONTRIBUTING.md</strong><span>قواعد مشارکت و اجرای محلی.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/security/threat-model.md"><strong>Threat Model</strong><span>آنچه محافظت می‌شود و آنچه محافظت نمی‌شود.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/matching-v1.md"><strong>Matching Architecture</strong><span>ارزیابی، پیشنهاد گفت‌وگو، Vectorize و رتبه‌بندی قطعی.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/cloudflare-native-infra-pattern.md"><strong>Cloudflare-native Infra Pattern</strong><span>Worker سبک، DO، D1، Queue و آمار تجمیعی.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/messaging.md"><strong>Sealed Ticket Routing</strong><span>مسیر sealed ticket، رمزنگاری route و پاک‌سازی payload.</span></a>
         </div>
       </section>
     </main>
 
     <footer class="footer">
       <div class="wrap">
-        <p><strong>Mohetios.dev — Where ideas unfold into systems.</strong></p>
-        <p>Built slowly. Written honestly. Kept open.</p>
         <p>
-          ساخته‌شده به‌عنوان بخشی از مسیر Mohetios / Nomading؛ جایی برای تبدیل
-          ایده‌ها به سیستم‌های قابل اجرا، قابل توضیح و قابل انتشار.
+          همه چیز به شکل شگفت‌انگیزی، خوب باید باشد.
+          <a href="https://mohetios.dev">© ۱۴۰۵ مُهتیوس</a>
         </p>
       </div>
     </footer>
 
     <script>
       (() => {
-        const buttons = document.querySelectorAll("[data-theme]");
+        const button = document.querySelector("[data-theme-toggle]");
         const query = window.matchMedia("(prefers-color-scheme: dark)");
 
-        const apply = (mode) => {
-          const dark = mode === "dark" || (mode === "system" && query.matches);
-          document.documentElement.dataset.theme = dark ? "dark" : "light";
-          buttons.forEach((button) => {
-            button.setAttribute("aria-pressed", button.dataset.theme === mode ? "true" : "false");
-          });
+        if (!button) {
+          return;
+        }
+
+        const storedMode = () => localStorage.getItem("theme");
+
+        const resolvedMode = () => {
+          const stored = storedMode();
+          if (stored === "dark" || stored === "light") {
+            return stored;
+          }
+          return query.matches ? "dark" : "light";
         };
 
-        let mode = localStorage.getItem("theme") || "system";
-        apply(mode);
+        const apply = (mode) => {
+          document.documentElement.dataset.theme = mode;
+          button.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
+          button.setAttribute(
+            "aria-label",
+            mode === "dark" ? "تغییر به حالت روشن" : "تغییر به حالت تاریک"
+          );
+        };
 
-        buttons.forEach((button) => {
-          button.addEventListener("click", () => {
-            mode = button.dataset.theme;
-            localStorage.setItem("theme", mode);
-            apply(mode);
-          });
+        apply(resolvedMode());
+
+        button.addEventListener("click", () => {
+          const nextMode = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+          localStorage.setItem("theme", nextMode);
+          apply(nextMode);
         });
 
         query.addEventListener("change", () => {
-          if (mode === "system") {
-            apply(mode);
+          if (!storedMode()) {
+            apply(resolvedMode());
           }
         });
       })();
