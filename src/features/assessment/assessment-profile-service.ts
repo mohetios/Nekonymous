@@ -12,6 +12,7 @@ import {
 } from "./scoring";
 import { scoresFromJson, scoresToJson } from "./assessment-scores";
 import { incrementPlatformStat } from "../platform/platform-stats-service";
+import { STAT_EVENTS } from "../../stats/events";
 import {
   ASSESSMENT_DEFAULT_SHORT_DESCRIPTION,
   ASSESSMENT_DEFAULT_TITLE,
@@ -183,7 +184,7 @@ export const saveAssessmentProfile = async (
     )
     .run();
 
-  await incrementPlatformStat(env, "assessment_completions");
+  await incrementPlatformStat(env, STAT_EVENTS.ASSESSMENT_COMPLETED);
 };
 
 export const updateProfileVectorStatus = async (

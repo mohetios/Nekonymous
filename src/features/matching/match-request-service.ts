@@ -16,6 +16,7 @@ import { enqueueTelegramOutbox, sendViaOutboxDo } from "../../storage/telegram-o
 import type { MessagePayload } from "../../types";
 import { clearDraft } from "../../storage/user-state-client";
 import { incrementPlatformStat } from "../platform/platform-stats-service";
+import { STAT_EVENTS } from "../../stats/events";
 import {
   MATCH_REQUEST_TTL_MS,
   MATCH_PENDING_LIST_LIMIT,
@@ -37,6 +38,10 @@ import {
   buildIncomingMatchRequestKeyboard,
   formatIncomingMatchRequestMessage,
 } from "./keyboards";
+import {
+  MATCH_ACCEPTED_REQUESTER,
+  MATCH_DECLINED_REQUESTER,
+} from "../../i18n/matching";
 
 export type PendingMatchRequests = {
   incoming: MatchRequestRow[];
@@ -385,7 +390,7 @@ export const createMatchRequest = async (
   }
 
   await markSuggestionAction(suggestionId, "requested", env);
-  await incrementPlatformStat(env, "match_requests");
+  await incrementPlatformStat(env, STAT_EVENTS.REQUEST_SENT);
   await recordMatchEvent(env, {
     type: "request_created",
     userId: requesterUserId,
@@ -560,7 +565,7 @@ export const acceptMatchRequest = async (
     matchRequestId: requestId,
   });
 
-  if (sendResult.notify && sendResult.pendingCount) {
+  if (sendResult.notify && sendResult.pendingCount && sendResult.pendingCount > 0) {
     try {
       await notifyRecipientInbox(
         env,
@@ -573,7 +578,6 @@ export const acceptMatchRequest = async (
     }
   }
 
-  const { MATCH_ACCEPTED_REQUESTER } = await import("./match-copy");
   await enqueueTelegramOutbox(env, {
     idempotencyKey: `match_accepted:${requestId}`,
     chatCiphertext: requester.telegram_chat_ciphertext,
@@ -636,7 +640,6 @@ export const declineMatchRequest = async (
 
   const requester = await getUserById(request.requester_user_id, env);
   if (requester) {
-    const { MATCH_DECLINED_REQUESTER } = await import("./match-copy");
     await enqueueTelegramOutbox(env, {
       idempotencyKey: `match_declined:${requestId}`,
       chatCiphertext: requester.telegram_chat_ciphertext,

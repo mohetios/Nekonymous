@@ -11,6 +11,10 @@ import {
 } from "../../ticketing/ticketing-service";
 import { getUserState, initUserState, purgeUserState } from "../../storage/user-state-client";
 import {
+  recordLinkCreated,
+  recordUserCreated,
+} from "../../stats/product-events";
+import {
   DISPLAY_NAME_EMPTY,
   DISPLAY_NAME_FALLBACK,
 } from "../../i18n/defaults";
@@ -281,6 +285,7 @@ export const createPublicLinkForUser = async (
     .run();
 
   await env.NEKO_KV.put(linkCacheKey(slug), userId);
+  await recordLinkCreated(env);
   return slug;
 };
 
@@ -354,6 +359,7 @@ export const createUserFromTelegram = async (
   const slug = await createPublicLinkForUser(userId, env);
   await cacheUserRouting(env, userId, telegramHash, slug);
   await initUserState(env, userId, displayCiphertext);
+  await recordUserCreated(env);
 
   const user = await getUserById(userId, env);
   if (!user) {

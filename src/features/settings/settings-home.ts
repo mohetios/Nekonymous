@@ -5,7 +5,7 @@ import {
   SETTINGS_PAUSE_DISABLE_DESC,
   SETTINGS_PAUSE_ENABLE_DESC,
   SETTINGS_PAUSE_INACTIVE,
-} from "./settings-copy";
+} from "../../i18n/settings";
 import { DISPLAY_NAME_UNSET } from "../../i18n/defaults";
 import { escapeHtml } from "../../utils/tools";
 import { publicDisplayName } from "../../utils/user";

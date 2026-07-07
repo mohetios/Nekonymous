@@ -63,6 +63,7 @@ import {
 import { escapeHtml, replyHtml, withHtml } from "../../utils/tools";
 import { buildUserDeepLink, isUserLinkId, publicDisplayName } from "../../utils/user";
 import { renderInbox } from "./render-inbox";
+import { recordReplySent } from "../../stats/product-events";
 
 export const handleStartCommand = async (
   ctx: Context,
@@ -320,18 +321,22 @@ export const handleMessage = async (
       reply_to_message_id: draft?.parent_message_id,
     });
 
-    if (result.notify) {
+    if (result.notify && result.pendingCount) {
       try {
         const sourceEventId = result.ticketHash ?? `fallback:${Date.now()}`;
         await notifyRecipientInbox(
           env,
           recipientD1,
-          result.pendingCount ?? 1,
+          result.pendingCount,
           sourceEventId
         );
       } catch (error) {
         logBotError("handleMessage:notify", error);
       }
+    }
+
+    if (draft?.mode === "reply") {
+      await recordReplySent(env);
     }
 
     if (draft?.mode === "reply" && draft.replyRef) {

@@ -34,14 +34,16 @@ export const buildAssessmentDashboardKeyboard = (options: {
   }
 
   if (options.hasSession) {
-    keyboard.text(ASSESSMENT_BUTTON.continue, ASSESSMENT_CALLBACK.continue).row();
-    keyboard.text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset);
+    keyboard
+      .text(ASSESSMENT_BUTTON.continue, ASSESSMENT_CALLBACK.continue)
+      .text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset);
     return keyboard;
   }
 
   if (options.hasProfile) {
-    keyboard.text(ASSESSMENT_BUTTON.viewResult, ASSESSMENT_CALLBACK.result).row();
-    keyboard.text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset);
+    keyboard
+      .text(ASSESSMENT_BUTTON.viewResult, ASSESSMENT_CALLBACK.result)
+      .text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset);
   }
 
   return keyboard;
@@ -75,7 +77,6 @@ export const buildQuestionKeyboard = (index: number): InlineKeyboard => {
 export const buildResultKeyboard = (): InlineKeyboard =>
   new InlineKeyboard()
     .text(ASSESSMENT_BUTTON.viewResultAgain, ASSESSMENT_CALLBACK.result)
-    .row()
     .text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset)
     .row()
     .text(ASSESSMENT_BUTTON.backToMenu, ASSESSMENT_CALLBACK.menu);

@@ -19,7 +19,6 @@ import {
   markTicketViewed,
 } from "../../storage/ticket-vault/ticket-vault.client";
 import { markInboxPointerViewed } from "../../storage/user-state-client";
-import { convertToPersianNumbers } from "../../utils/tools";
 import { INBOX_MENU_CALLBACK } from "../../utils/telegram-callbacks";
 import { messageCreatedOutboxEventKey } from "./outbox-event-key";
 
@@ -59,11 +58,17 @@ export const sendAnonymousMessage = async (
     return { ok: false, status: result.status };
   }
 
+  const unreadCount = result.pendingCount;
+  const shouldNotify =
+    !result.duplicate &&
+    typeof unreadCount === "number" &&
+    unreadCount > 0;
+
   return {
     ok: true,
     status: 200,
-    pendingCount: result.pendingCount,
-    notify: !result.duplicate,
+    pendingCount: unreadCount,
+    notify: shouldNotify,
     ticketHash: result.ticketHash,
   };
 };
@@ -74,7 +79,10 @@ export const notifyRecipientInbox = async (
   pendingCount: number,
   sourceEventId: string
 ): Promise<void> => {
-  const text = UNREAD_INBOX_MESSAGE(convertToPersianNumbers(pendingCount));
+  if (!Number.isFinite(pendingCount) || pendingCount < 1) {
+    return;
+  }
+  const text = UNREAD_INBOX_MESSAGE(pendingCount);
   await enqueueTelegramOutbox(env, {
     idempotencyKey: messageCreatedOutboxEventKey(sourceEventId),
     chatCiphertext: recipient.telegram_chat_ciphertext,

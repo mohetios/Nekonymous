@@ -3,7 +3,6 @@
 export const MENU = {
   about: "ℹ️ درباره و حریم خصوصی",
   link: "🔗 لینک من",
-  inbox: "🗂 صندوق پیام‌ها",
   matchSystem: "🧭 پیشنهاد گفت‌وگو",
   matchProfile: "👤 پروفایل گفت‌وگو",
   matchFind: "🔎 پیدا کردن گزینه‌ها",
@@ -20,18 +19,16 @@ export const MENU = {
   clearBlockList: "🚫 رفع مسدودی‌ها",
   resetMatchHistory: "♻️ بازنشانی پیشنهادها",
   clearData: "🗑️ پاک کردن حساب",
-  technical: "🧾 نکات فنی",
   stats: "📊 آمار",
   hubBack: "↩️ بازگشت",
-  settingsBack: "↩️ بازگشت",
   home: "🏠 منوی اصلی",
 } as const;
 
 /** Inline-only confirmation labels (never on reply keyboard). */
 export const CONFIRM_BUTTON = {
-  yesDelete: "🗑️ بله، پاک کن",
+  yesDelete: "بله، حسابم را پاک کن",
   yes: "✅ تأیید",
-  noCancel: "↩️ نه، انصراف",
+  noCancel: "❌ لغو",
 } as const;
 
 export const INBOX_BUTTON = {

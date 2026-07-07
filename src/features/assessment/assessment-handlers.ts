@@ -4,7 +4,6 @@ import { logBotError } from "../../utils/logs";
 import { HuhMessage } from "../../i18n/messages";
 import { mainMenu } from "../../bot/keyboards";
 import {
-  convertToPersianNumbers,
   escapeHtml,
   withHtml,
 } from "../../utils/tools";
@@ -57,6 +56,7 @@ import {
   type AssessmentResultSummary,
   type AssessmentScores,
 } from "./scoring";
+import { formatAssessmentScorePercent } from "./assessment-scores";
 import {
   ASSESSMENT_DIMENSION_LABELS,
   ASSESSMENT_QUESTIONS,
@@ -66,9 +66,6 @@ import {
 } from "./question-bank";
 import { ASSESSMENT_BUTTON } from "../../i18n/labels";
 import type { NekoContext } from "../../utils/worker";
-
-const formatPercent = (value: number): string =>
-  convertToPersianNumbers(`${Math.round(value)}٪`);
 
 const formatResultMessage = (
   summary: AssessmentResultSummary,
@@ -93,7 +90,7 @@ const formatResultMessage = (
   if (includeScores) {
     const scoreLines = CORE_DIMENSION_KEYS.map(
       (key) =>
-        `${ASSESSMENT_DIMENSION_LABELS[key]}: ${formatPercent(scores[key])}`
+        `${ASSESSMENT_DIMENSION_LABELS[key]}: ${formatAssessmentScorePercent(scores[key])}`
     ).join("\n");
 
     text += `\n\n${ASSESSMENT_RESULT_SCORES_HEADER}\n${escapeHtml(scoreLines)}`;

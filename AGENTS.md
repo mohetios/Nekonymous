@@ -21,12 +21,37 @@ Do not generate heavy abstractions, repository layers, generic service framework
 Capability-based anonymous routing is the current model. Do not reintroduce older conversation/ref patterns.
 
 - Telegram private chat buttons hold short routing capabilities; raw capabilities are request-only and must not be stored.
-- `UserStateDO` stores encrypted ticket payloads and encrypted route envelopes, keyed by lookup hashes.
+- `TicketVaultDO` stores sealed route and payload capsules (encrypted at rest); `UserStateDO` holds inbox **pointers** only — not message bodies.
 - Anonymous messaging must not write a plain sender-recipient graph or message transcript to D1.
 - Keep the existing compact repository layout; do not create a parallel `core/` tree.
 - No KV inbox/conversation storage and no dual-read or migration fallbacks for removed storage paths.
 - Reports, labels, blocks, and pending actions use hashes/tags/encrypted context — not plaintext anonymous peer edges.
 - Do not claim E2EE, zero-knowledge delivery, perfect anonymity, or clinical/dating compatibility in code or copy.
+
+## V1 release mode
+
+- V1 is **code-frozen** for public release — no feature expansion or product-scope growth before release.
+- Read `README.md` and `docs/security/threat-model.md` before editing any user-facing or public copy.
+- Read `docs/architecture/matching-v1.md` before touching conversation suggestions (`/match`, `/match_system`).
+- Read `docs/architecture/sealed-ticket-routing-and-inbox.md` before touching inbox, ticketing, or sealed-ticket storage.
+
+### Docs source of truth
+
+| Topic | Path |
+|-------|------|
+| Product overview | `README.md` |
+| Security limits | `SECURITY.md`, `docs/security/threat-model.md` |
+| Inbox / sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
+| Conversation suggestions | `docs/architecture/matching-v1.md` |
+| Mohetios Lab article (FA) | `docs/mohetios/lab/nekonymous-fa.md` |
+| Release audits | `docs/release/` |
+| Pre-canonicalization history | `docs/archive/v1-pre-release/` (not current) |
+
+### Persian product terminology (user-facing)
+
+Prefer: پیام ناشناس، پاسخ ناشناس، صندوق پیام‌ها، نام خصوصی، ارزیابی سبک گفت‌وگو، پیشنهاد گفت‌وگو، گزینه‌ی گفت‌وگو، درخواست گفت‌وگو، پیام شروع گفت‌وگو، نمایش در پیشنهادها، توقف دریافت پیام، فعال‌سازی دریافت پیام، پاک کردن حساب، مرزهای حریم خصوصی، رمزنگاری در حالت سکون.
+
+Do not use in positive copy: مچ، مچ‌یابی، درصد سازگاری، تست شخصیت، دوستیابی، پیام‌رسان امن، ناشناس کامل، رمزنگاری سرتاسری (except explicit negative disclaimers).
 
 ## Agent Operating Mode
 
@@ -59,7 +84,7 @@ Keep reports short and practical.
 
 ## Current Project Identity
 
-Nekonymous is a Persian-first anonymous Telegram bot: personal deep-link messaging, conversation-style **assessment** (ارزیابی), and opt-in **matching**. Hosted relay with encryption at rest — **not** E2EE.
+Nekonymous is a Persian-first anonymous Telegram bot: personal deep-link messaging, conversation-style **assessment** (ارزیابی), and opt-in **conversation suggestions** (پیشنهاد گفت‌وگو). Hosted relay with encryption at rest — **not** E2EE.
 
 Users share a personal link slug; others message them without revealing identity. Replies stay anonymous in both directions.
 
@@ -86,16 +111,16 @@ Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nek
 
 - **Cloudflare Workers** — single Worker entry (`src/index.ts`) + queue consumer
 - **Grammy** — Telegram bot framework (`grammy`)
-- **Cloudflare D1** — users, links, reports, assessment, matching, anonymous `platform_stats`
+- **Cloudflare D1** — users, links, reports, assessment, match records, aggregate stats tables
 - **Cloudflare KV** — routing/cache only (`tg:{hash}`, `link:{slug}`)
-- **Cloudflare Durable Objects (SQLite)** — `UserStateDurableObject`, `TelegramOutboxDurableObject`
-- **Cloudflare Queues** — `telegram-outbox` for non-critical outbound Telegram sends
+- **Cloudflare Durable Objects (SQLite)** — `UserStateDurableObject`, `TicketVaultDurableObject`, `ReportLedgerDurableObject`, `TelegramOutboxDurableObject`
+- **Cloudflare Queues** — `neko-outbox` (Telegram sends), `neko-stats` (aggregate counters)
 - **Web Crypto API** — HMAC, HKDF-SHA-256, AES-256-GCM (`src/ticketing/ticketing-service.ts`)
 - **Workers AI + Vectorize** — profile embeddings for assessment/matching (`env.AI`, `env.PROFILE_VECTORS`)
 - **Wrangler 4** — dev and deploy (`wrangler.jsonc`)
 - **pnpm** — package manager
 
-There is no Nuxt, GraphQL, separate `workers/` package, public website, or frontend SPA.
+There is no Nuxt, GraphQL, separate `workers/` package, public website SPA, or payment/top-up flow in V1. `site/index.html` is a static landing/docs pointer only.
 
 ## Main Folder Model
 
@@ -122,7 +147,7 @@ src/
 │   │   └── report-service.ts
 │   ├── settings/
 │   │   ├── settings-handlers.ts
-│   │   └── settings-copy.ts
+│   │   └── settings-home.ts
 │   ├── assessment/                  # 56-question / 14-dimension flow (v1)
 │   │   ├── assessment-handlers.ts
 │   │   ├── assessment-flow-service.ts
@@ -142,19 +167,22 @@ src/
 ├── storage/
 │   ├── user-state-do.ts
 │   ├── user-state-client.ts         # only place for UserStateDO fetch calls
+│   ├── ticket-vault/                # sealed ticket vault DO + client
+│   ├── report-ledger/               # blind report ledger DO + client
 │   ├── telegram-outbox-do.ts
 │   └── telegram-outbox-client.ts
+├── stats/                           # event emission, queue consumer, /stats reader
 ├── queues/
 │   ├── telegram-outbox.types.ts
-│   └── telegram-outbox.consumer.ts
+│   └── outbox-consumer.ts
 ├── i18n/
-│   └── messages.ts
+│   ├── messages.ts, labels.ts, settings.ts, matching.ts, assessment-ui.ts
 └── utils/
     ├── router.ts, sender.ts, tools.ts, user.ts, contact.ts, …
     └── logs.ts                        # logBotError only
 
 migrations/
-└── 0001_init.sql                      # squashed V1 schema + platform_stats
+└── 0001_init.sql                      # squashed V1 schema
 
 tools/
 ├── verify-ticketing.ts                # pnpm test:ticketing
@@ -167,8 +195,12 @@ tools/
 └── reset-assessment-data.sql
 
 docs/
-├── architecture/matching-v1.md
-└── security/threat-model.md
+├── architecture/
+│   ├── matching-v1.md
+│   └── sealed-ticket-routing-and-inbox.md
+├── security/threat-model.md
+├── mohetios/lab/nekonymous-fa.md
+└── release/
 
 LICENSE
 SECURITY.md
@@ -188,11 +220,12 @@ GitHub Actions (`.github/workflows/`) are **manual only** (`workflow_dispatch`).
 | Method | Path  | Purpose                                       |
 |--------|-------|-----------------------------------------------|
 | POST   | `/bot` | Telegram webhook (`webhookCallback` + secret) |
-| queue  | `telegram-outbox` | Outbound Telegram job consumer        |
+| queue  | `neko-outbox` | Outbound Telegram job consumer        |
+| queue  | `neko-stats` | Aggregate stats events into D1        |
+
+Export `UserStateDurableObjectV2`, `TicketVaultDurableObjectV2`, `ReportLedgerDurableObjectV2`, and `TelegramOutboxDurableObjectV2` from `src/index.ts` for Wrangler DO bindings.
 
 Route registration lives in `src/bot/router.ts`. Use `src/utils/router.ts` (`Router` class) for new HTTP routes. Do not add a second router or framework.
-
-Export `UserStateDurableObject` and `TelegramOutboxDurableObject` from `src/index.ts` for Wrangler DO bindings.
 
 ## Bot Architecture Rules
 
@@ -202,7 +235,7 @@ Export `UserStateDurableObject` and `TelegramOutboxDurableObject` from `src/inde
 - `registerHandlers(bot, env)` in `src/bot/register-handlers.ts` wires commands and callbacks.
 - Pass `env: Environment` into handlers — do not read untyped globals.
 - Add new commands/callbacks in `register-handlers.ts`; implement logic in the matching `features/*` handler file.
-- Keep raw `UserStateDO` / `TelegramOutboxDO` fetch calls inside `src/storage/*-client.ts` — not scattered in handlers.
+- Keep raw `UserStateDO` / `TicketVaultDO` / `ReportLedgerDO` / `TelegramOutboxDO` fetch calls inside `src/storage/*-client.ts` — not scattered in handlers.
 
 ### Commands and flows
 
@@ -222,16 +255,15 @@ Callback prefixes (keep short; capability suffix is base64url, under Telegram 64
 
 - `o:`, `r:`, `b:`, `u:`, `n:`, `rp:` — inbox actions (capability token)
 - `t:` — assessment flow
-- `m:` — matching
-- `ms:` — match-system hub
+- `m:` — matching inline actions
 
 Core user flow:
 
 1. `/start` without payload → resolve/create D1 user + public link, show personal `t.me/...?start={slug}` link.
 2. `/start {slug}` → open compose draft to link owner (rate-limited, block-checked, pause-checked, no self-message).
-3. Sender sends message/media → encrypt payload + connection metadata, insert inbox ticket in recipient `UserStateDO`, increment `platform_stats.messages_relayed`, notify recipient via outbox queue.
-4. `/inbox` → load pending tickets from recipient `UserStateDO`, decrypt, deliver to Telegram, clear `payload_ciphertext`, keep `connection_ciphertext` for callbacks.
-5. Inline **پاسخ** / **مسدود** / **رفع مسدودیت** / **نام خصوصی** → reply draft, block list, or nickname flow. Callback data holds capabilities; never trust callback data alone — load ticket from DO and verify ownership.
+3. Sender sends message/media → seal ticket in `TicketVaultDO`, add inbox pointer in recipient `UserStateDO`, emit stats event, notify recipient via `neko-outbox` queue.
+4. `/inbox` → load active pointers from recipient `UserStateDO`, fetch/decrypt payload from `TicketVaultDO`, deliver to Telegram, clear `payload_enc`, keep `route_enc` for actions.
+5. Inline **پاسخ دادن** / **مسدود کردن** / **رفع مسدودی** / **نام خصوصی** / **گزارش کردن** → reply draft, block list, nickname, or report flow. Callback data holds short refs (`o:`, `r:`, …); never trust callback data alone — load ticket from vault + pointer and verify ownership.
 
 ### Account reset (پاک کردن حساب)
 
@@ -243,13 +275,14 @@ Core user flow:
 
 No soft-delete. `telegram_user_hash` UNIQUE is freed by hard delete.
 
-Anonymous lifetime counters in `platform_stats` are **not** decremented on delete.
+Anonymous aggregate counters are **not** decremented on delete.
 
 ### Telegram copy
 
-- Shared bot strings: `src/i18n/messages.ts`.
-- Settings-specific copy: `src/features/settings/settings-copy.ts`.
-- Feature-specific copy: `features/matching/match-copy.ts`, assessment keyboards, etc.
+- Shared bot strings: `src/i18n/messages.ts`, `src/i18n/labels.ts`.
+- Settings copy: `src/i18n/settings.ts`.
+- Matching copy: `src/i18n/matching.ts`.
+- Assessment UI copy: `src/i18n/assessment-ui.ts`.
 - Keep Persian tone consistent with existing messages.
 - Use `escapeMarkdownV2` when `parse_mode: "MarkdownV2"` is set.
 - Use `convertToPersianNumbers` for counts shown to users.
@@ -258,24 +291,25 @@ Do not hardcode new English bot strings unless the task explicitly asks for loca
 
 ## Message and Crypto Rules
 
-Read `src/ticketing/ticketing-service.ts` before changing storage or inbox behavior.
+Read `docs/architecture/sealed-ticket-routing-and-inbox.md` and `src/features/messaging/create-sealed-ticket.ts` before changing storage or inbox behavior.
 
 | Concept                 | Role                                                                 |
 |-------------------------|----------------------------------------------------------------------|
-| `ticketId`              | 256-bit random opaque handle (base64url) per message                 |
-| `capability`            | 24-byte base64url token held only in Telegram callback buttons       |
-| `ref`                   | stored lookup hash for a capability, not a raw callback token        |
-| `conversationId`        | ticket-local compatibility field; do not use for anonymous D1 routing |
-| `APP_MASTER_KEY`        | Encryption IKM for payloads, chat ids, nicknames                     |
+| `sealedTicketRef`       | Opaque ticket handle for vault lookup and callback refs              |
+| `ticketHash`            | Stable hash for inbox pointer indexing                             |
+| `capability` / callback ref | Short base64url token in Telegram buttons only (`o:`, `r:`, …)   |
+| `route_enc`             | Encrypted route capsule in TicketVault (reply/block/report/nickname) |
+| `payload_enc`           | Encrypted message payload in TicketVault; cleared after delivery   |
+| `APP_MASTER_KEY`        | Encryption IKM for sealed tickets and sensitive fields               |
 | `APP_HMAC_PEPPER`       | HMAC key for `telegram_user_hash` — never store raw Telegram ids in D1 |
 
 Flow:
 
-1. `generateTicketId()` + `randomCapability()` on send.
-2. Encrypt `MessagePayload` and `ConnectionMetadata` with ticket-derived AES keys.
-3. Store ticket in recipient `UserStateDO.inbox_tickets` under capability lookup hash — not in KV or D1 plaintext.
-4. On open or `/inbox`, decrypt payload from DO, send via `sendDecryptedMessage`, enqueue seen notification, rotate to an action capability lookup hash, mark delivered, set `payload_ciphertext = NULL`.
-5. Callbacks load ticket by capability-derived lookup hash from recipient DO, decrypt `connection_ciphertext`, verify user role.
+1. `createSealedTicket` encrypts route + payload capsules for `TicketVaultDO`.
+2. Recipient `UserStateDO` stores an `inbox_pointers` row — not the message body.
+3. On `/inbox` or open, decrypt payload from vault, deliver via `sendDecryptedMessage`, enqueue seen notification, clear `payload_enc`, keep `route_enc` until expiry.
+4. Callbacks resolve ticket via pointer + vault record; verify recipient ownership and block state before actions.
+5. Reports go to `ReportLedgerDO` with blind tags — no plaintext peer graph in D1.
 
 Ciphertext envelope: JSON `{ v: 1, kid, iv, ct }` with 12-byte GCM IV.
 
@@ -296,7 +330,7 @@ D1 (`env.DB`, database `nekonymous_core`) is source of truth for:
 - `assessment_profiles`, `assessment_attempts`, `assessment_answers`
 - `profile_vector_index_events`
 - `match_suggestions`, `match_requests`, `match_blocks`, `match_events`
-- `platform_stats` (single row, no user ids — lifetime anonymous counters)
+- `platform_daily_stats`, `platform_daily_stats_by_key`, `platform_daily_unique_stats` (event-driven via `neko-stats`)
 
 Apply migrations:
 
@@ -311,7 +345,7 @@ Prefer:
 - `features/identity/identity-service.ts` for users/links/delete
 - `features/assessment/assessment-profile-service.ts` for assessment D1
 - `features/platform/platform-stats-service.ts` for public aggregate stats
-- increment anonymous `platform_stats` on accepted sends — no message body or sender-recipient edge in D1
+- increment anonymous stats via `emitStat` / `incrementPlatformStat` on accepted sends — no message body or sender-recipient edge in D1
 
 Avoid:
 
@@ -322,23 +356,24 @@ Avoid:
 
 ## KV Rules
 
-`env.NEKO_KV` is **routing/cache only**. Access via `features/identity/identity-service.ts`.
+`env.NEKO_KV` is **routing/cache only**. Routing access lives in `features/identity/identity-service.ts`; public aggregate stats may use short-lived `cache:*` keys in `src/stats/` and `src/features/platform/`.
 
 | Key pattern         | Value   | Purpose                  |
 |---------------------|---------|--------------------------|
 | `tg:{telegramHash}` | user id | Telegram hash → user id |
 | `link:{slug}`       | user id | Public slug → user id   |
+| `cache:public-bot-stats:v1:{day}` | aggregate JSON | 60s public stats cache |
 
 Prefer:
 
 - D1 as source of truth; KV as optional acceleration
 - delete stale cache keys when D1 lookup misses or on hard delete
-- direct `env.NEKO_KV.put/get/delete` in identity service — no `KVModel` wrapper
+- direct `env.NEKO_KV.put/get/delete` in identity/stats services — no `KVModel` wrapper
 
 Avoid:
 
 - forbidden key shapes: `user:`, `conversation:`, `userUUIDtoId:`, `stats:`
-- storing ciphertext, profiles, blocks, or inbox data in KV
+- storing ciphertext, profiles, blocks, inbox data, per-user stats, or plaintext identifiers in KV
 - unbounded `list()` in request paths
 
 KV is eventually consistent. Do not use it for inbox ordering — `UserStateDO` is the inbox authority.
@@ -349,22 +384,21 @@ KV is eventually consistent. Do not use it for inbox ordering — `UserStateDO` 
 
 One DO per internal user id (`idFromName(userId)`). Authority for:
 
-- pause, display name ciphertext, drafts, inbox tickets
+- pause, display name ciphertext, drafts, inbox **pointers**
 - blocks, contact labels, rate limits
 - assessment session state (`assessment_sessions` table in DO)
-- processed events (schema reserved)
 
-All DO calls go through `src/storage/user-state-client.ts` using `https://user-state/...` URLs.
+All DO calls go through `src/storage/user-state-client.ts`.
 
-Key endpoints: `/init`, `/state`, `/set-draft`, `/add-ticket`, `/pending-inbox`, `/mark-delivered`, `/ticket/:ref`, `/add-block`, `/remove-block`, `/set-label`, `/check-can-receive`, `/consume-rate-limit`, `/purge`, `/assessment/*`.
+Key endpoints include: `/init`, `/state`, `/set-draft`, `/add-pointer`, `/pending-inbox`, `/mark-delivered`, `/pointer/:hash`, `/add-block`, `/remove-block`, `/set-label`, `/check-can-receive`, `/consume-rate-limit`, `/purge`, `/assessment/*`.
 
-Inbox cap: 50 tickets per user DO. Pending tickets indexed by `status = 'pending'`.
+Inbox cap: bounded active pointers per user DO (see `user-state-do.ts`).
 
 ### TelegramOutboxDurableObject
 
 One DO per `chatHash` (`idFromName(chatHash)`). Idempotent outbound Telegram sends.
 
-Queue consumer (`src/queues/telegram-outbox.consumer.ts`) dispatches jobs via `src/storage/telegram-outbox-client.ts`.
+Queue consumer (`src/queues/outbox-consumer.ts` and `src/stats/stats-consumer.ts`) dispatches jobs via storage clients.
 
 Prefer:
 
@@ -387,14 +421,14 @@ Avoid:
 - Vector id: `profile:{userId}:v1`
 - Discoverability off by default; user opts in for matching
 
-### Matching
+### Conversation suggestions (matching)
 
 1. Vectorize `topK` with metadata filters (`discoverable`, `matchEligible`, `locale`, `profileVersion`)
 2. Merge with bounded recent discoverable D1 profiles when index is sparse (`fetchD1FallbackProfiles`)
 3. Deterministic scoring in `match-scoring.ts` (Vectorize narrows; code decides)
-4. Match request → candidate accept → normal inbox ticket
+4. Conversation request → candidate accept → normal sealed inbox ticket
 
-Do not add version-specific ranking hacks beyond `ASSESSMENT_VERSION === "v1"`.
+Do not add version-specific ranking hacks beyond `ASSESSMENT_VERSION === "v1"`. User-facing copy says **پیشنهاد گفت‌وگو**, not مچ‌یابی.
 
 ## Cloudflare Worker Performance Rules
 
@@ -472,9 +506,12 @@ NEKO_KV
 DB
 
 USER_STATE_DO
+TICKET_VAULT
+REPORT_LEDGER
 TELEGRAM_OUTBOX_DO
 
-TELEGRAM_OUTBOX_QUEUE
+NEKO_OUTBOX_QUEUE
+NEKO_STATS_QUEUE
 
 AI
 PROFILE_VECTORS
@@ -542,7 +579,7 @@ Validate at the boundary:
 
 Prefer small explicit checks in the handler. Do not add a validation framework.
 
-Public stats use `getPlatformStats` (anonymous counters + live active-user count). Do not replace with unbounded full-table scans as data grows.
+Public stats use `getPublicBotStats` (anonymous aggregate counters from `platform_daily_stats`). Do not replace with unbounded full-table scans as data grows.
 
 Return practical user-safe Persian errors. Keep internal details out of Telegram replies.
 
@@ -581,7 +618,7 @@ pnpm check
 pnpm audit:d1
 ```
 
-`pnpm check` runs typecheck, lint, knip, `test:ticketing`, `test:assessment`, and `test:matching`.
+`pnpm check` runs typecheck, lint, knip, all `test:*` verify scripts, and `audit:ticket-storage`.
 
 Only run when explicitly requested or clearly required:
 

@@ -1,8 +1,9 @@
 import type { AssessmentProfileRow } from "../assessment/assessment-profile-service";
 import { parseResultSummary, profileScoresFromRow } from "../assessment/assessment-profile-service";
+import { formatAssessmentScorePercent } from "../assessment/assessment-scores";
 import { ASSESSMENT_DIMENSION_LABELS } from "../assessment/question-bank";
 import type { AssessmentDimension, AssessmentScores } from "../assessment/scoring";
-import { convertToPersianNumbers, escapeHtml } from "../../utils/tools";
+import { escapeHtml, convertToPersianNumbers } from "../../utils/tools";
 import {
   MATCH_PROFILE_DISCOVERABLE_ACTIVE,
   MATCH_PROFILE_DISCOVERABLE_INACTIVE,
@@ -35,15 +36,15 @@ const PREFERENCE_DIMENSIONS: AssessmentDimension[] = [
   "anonymityComfort",
 ];
 
-const pct = (value: number): string =>
-  convertToPersianNumbers(`${Math.round(value)}٪`);
-
 const formatScoreBlock = (
   scores: AssessmentScores,
   keys: AssessmentDimension[]
 ): string =>
   keys
-    .map((key) => `${ASSESSMENT_DIMENSION_LABELS[key]}: ${pct(scores[key])}`)
+    .map(
+      (key) =>
+        `${ASSESSMENT_DIMENSION_LABELS[key]}: ${formatAssessmentScorePercent(scores[key])}`
+    )
     .join("\n");
 
 const discoverableLabel = (profile: AssessmentProfileRow): string => {

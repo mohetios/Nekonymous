@@ -124,9 +124,17 @@ try {
 }
 assert(invalidThrew, "invalid Likert answer throws");
 
+const scoreToDisplayPercent = (value: number): number =>
+  Math.round(clamp01(value) * 100);
+
 assert(scoreDimension([1, 1, 1]) === 0, "dimension min -> 0");
 assert(scoreDimension([5, 5, 5]) === 1, "dimension max -> 1");
 assert(scoreDimension([3]) === 0.5, "dimension midpoint -> 0.5");
+assert(scoreToDisplayPercent(0) === 0, "display percent min -> 0");
+assert(scoreToDisplayPercent(1) === 100, "display percent max -> 100");
+assert(scoreToDisplayPercent(0.5) === 50, "display percent midpoint -> 50");
+assert(scoreToDisplayPercent(0.67) === 67, "display percent high band -> 67");
+assert(scoreToDisplayPercent(0.014) === 1, "display percent rounds small values");
 
 const minAnswers = Object.fromEntries(
   ASSESSMENT_QUESTIONS.map((q) => [q.id, q.reverse ? 5 : 1])

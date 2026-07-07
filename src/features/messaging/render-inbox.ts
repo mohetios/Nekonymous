@@ -21,6 +21,7 @@ import {
 } from "./resolve-ticket-action";
 import { expireTicketRecord } from "../../storage/ticket-vault/ticket-vault.client";
 import { listInboxPage, markInboxPointerViewed } from "../../storage/user-state-client";
+import { recordInboxOpened, recordMessageDelivered } from "../../stats/product-events";
 
 const MAX_INBOX_DECRYPT_PER_REQUEST = 10;
 
@@ -49,6 +50,7 @@ export const renderInbox = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
+    await recordInboxOpened(env);
     const page = await listInboxPage(env, user.id, 0);
     await expireTicketsBestEffort(env, page.expiredTicketHashes);
 
@@ -139,6 +141,7 @@ export const renderInbox = async (
             delivery.senderLabel
           );
           await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
+          await recordMessageDelivered(env);
 
           if (senderD1) {
             await notifyMessageSeen(

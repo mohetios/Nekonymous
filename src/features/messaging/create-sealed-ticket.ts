@@ -12,6 +12,7 @@ import {
 import { createMessageDedupeKey, getSenderAlias } from "../../ticketing/ticketing-service";
 import { ensureUserStateInitialized } from "../identity/identity-service";
 import { incrementPlatformStat } from "../platform/platform-stats-service";
+import { STAT_EVENTS } from "../../stats/events";
 import {
   addInboxPointer,
   type AddInboxPointerResult,
@@ -222,7 +223,15 @@ export const createSealedTicket = async (
     };
   }
 
-  await incrementPlatformStat(env, "messages_relayed");
+  if (
+    typeof inboxResult.pendingCount !== "number" ||
+    inboxResult.pendingCount < 1
+  ) {
+    await cleanupStoredTicket(env, ticketHash);
+    return { ok: false, status: 500 };
+  }
+
+  await incrementPlatformStat(env, STAT_EVENTS.MESSAGE_CREATED);
 
   return {
     ok: true,

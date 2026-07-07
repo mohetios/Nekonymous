@@ -238,13 +238,3 @@ ON match_events(match_request_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_match_events_type_created
 ON match_events(type, created_at);
-
-CREATE TABLE IF NOT EXISTS platform_stats (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
-  messages_relayed INTEGER NOT NULL DEFAULT 0,
-  assessment_completions INTEGER NOT NULL DEFAULT 0,
-  match_requests INTEGER NOT NULL DEFAULT 0,
-  updated_at INTEGER NOT NULL
-);
-
-INSERT OR IGNORE INTO platform_stats (id, updated_at) VALUES (1, 0);

@@ -55,6 +55,7 @@ export type MatchHubMenuOptions = {
   assessmentLabel: string;
   showFind: boolean;
   showProfile: boolean;
+  discoverabilityVariant: MatchHubMenuVariant;
 };
 
 export type MatchSuggestionRow = {

@@ -3,8 +3,10 @@
 
 PRAGMA foreign_keys = OFF;
 
+DROP TABLE IF EXISTS platform_daily_unique_stats;
+DROP TABLE IF EXISTS platform_daily_stats_by_key;
+DROP TABLE IF EXISTS platform_daily_stats;
 DROP TABLE IF EXISTS match_events;
-DROP TABLE IF EXISTS platform_stats;
 DROP TABLE IF EXISTS match_suggestions;
 DROP TABLE IF EXISTS match_blocks;
 DROP TABLE IF EXISTS match_requests;

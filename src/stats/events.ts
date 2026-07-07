@@ -22,12 +22,6 @@ export const STAT_EVENTS = {
   PAUSE_ENABLED: "pause_enabled",
   PAUSE_DISABLED: "pause_disabled",
   HARD_RESET: "hard_reset",
-  /** @deprecated use MESSAGE_CREATED */
-  MESSAGES_RELAYED: "messages_relayed",
-  /** @deprecated use ASSESSMENT_COMPLETED */
-  ASSESSMENT_COMPLETIONS: "assessment_completions",
-  /** @deprecated use REQUEST_SENT */
-  MATCH_REQUESTS: "match_requests",
 } as const;
 
 export const STATS_EVENT_NAMES = Object.values(STAT_EVENTS) as [

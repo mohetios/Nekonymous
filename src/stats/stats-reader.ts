@@ -1,6 +1,8 @@
 import type { Environment } from "../types";
 import { STAT_EVENTS } from "./events";
 
+const PUBLIC_STATS_CACHE_TTL_SECONDS = 60;
+
 export type PeriodCounts = {
   today: number;
   days7: number;
@@ -68,15 +70,78 @@ const buildPeriodCounts = (
   };
 };
 
-const MESSAGE_EVENT_NAMES = [
-  STAT_EVENTS.MESSAGE_CREATED,
-  STAT_EVENTS.MESSAGES_RELAYED,
-];
+const MESSAGE_EVENT_NAMES = [STAT_EVENTS.MESSAGE_CREATED];
 
-const ASSESSMENT_EVENT_NAMES = [
-  STAT_EVENTS.ASSESSMENT_COMPLETED,
-  STAT_EVENTS.ASSESSMENT_COMPLETIONS,
-];
+const ASSESSMENT_EVENT_NAMES = [STAT_EVENTS.ASSESSMENT_COMPLETED];
+
+const publicStatsCacheKey = (today: string): string =>
+  `cache:public-bot-stats:v1:${today}`;
+
+const isPeriodCounts = (value: unknown): value is PeriodCounts => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.today === "number" &&
+    typeof record.days7 === "number" &&
+    typeof record.days30 === "number"
+  );
+};
+
+const isPublicBotStats = (value: unknown): value is PublicBotStats => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    (typeof record.totalUsers === "number" || record.totalUsers === null) &&
+    typeof record.hasDailyData === "boolean" &&
+    typeof record.hasActiveUsers === "boolean" &&
+    isPeriodCounts(record.newUsers) &&
+    isPeriodCounts(record.activeUsers) &&
+    isPeriodCounts(record.messages) &&
+    isPeriodCounts(record.replies) &&
+    isPeriodCounts(record.reports) &&
+    isPeriodCounts(record.linksCreated) &&
+    isPeriodCounts(record.inboxOpens) &&
+    isPeriodCounts(record.assessmentsCompleted) &&
+    isPeriodCounts(record.suggestionSearches) &&
+    typeof record.messagesDelivered7d === "number" &&
+    typeof record.messagesCreated7d === "number" &&
+    typeof record.generatedAt === "number"
+  );
+};
+
+const getCachedPublicBotStats = async (
+  env: Environment,
+  key: string
+): Promise<PublicBotStats | null> => {
+  try {
+    const cached = await env.NEKO_KV.get(key);
+    if (!cached) {
+      return null;
+    }
+    const parsed = JSON.parse(cached) as unknown;
+    return isPublicBotStats(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const cachePublicBotStats = async (
+  env: Environment,
+  key: string,
+  stats: PublicBotStats
+): Promise<void> => {
+  try {
+    await env.NEKO_KV.put(key, JSON.stringify(stats), {
+      expirationTtl: PUBLIC_STATS_CACHE_TTL_SECONDS,
+    });
+  } catch {
+    // Public stats are best-effort; cache failures should not break rendering.
+  }
+};
 
 export const getPublicBotStats = async (
   env: Environment
@@ -85,18 +150,21 @@ export const getPublicBotStats = async (
   const today = utcDay(generatedAt);
   const day7 = shiftUtcDay(today, -6);
   const day30 = shiftUtcDay(today, -29);
+  const cacheKey = publicStatsCacheKey(today);
+  const cached = await getCachedPublicBotStats(env, cacheKey);
+  if (cached) {
+    return cached;
+  }
 
   const trackedEvents = [
     STAT_EVENTS.USER_CREATED,
     STAT_EVENTS.MESSAGE_CREATED,
-    STAT_EVENTS.MESSAGES_RELAYED,
     STAT_EVENTS.MESSAGE_DELIVERED,
     STAT_EVENTS.REPLY_SENT,
     STAT_EVENTS.REPORT_CREATED,
     STAT_EVENTS.LINK_CREATED,
     STAT_EVENTS.INBOX_OPENED,
     STAT_EVENTS.ASSESSMENT_COMPLETED,
-    STAT_EVENTS.ASSESSMENT_COMPLETIONS,
     STAT_EVENTS.SUGGESTION_SEARCH,
   ];
 
@@ -163,7 +231,7 @@ export const getPublicBotStats = async (
     day30
   ).days7;
 
-  return {
+  const stats: PublicBotStats = {
     totalUsers: usersCountRow?.count ?? null,
     hasDailyData,
     hasActiveUsers,
@@ -234,4 +302,6 @@ export const getPublicBotStats = async (
     messagesCreated7d,
     generatedAt,
   };
+  await cachePublicBotStats(env, cacheKey, stats);
+  return stats;
 };

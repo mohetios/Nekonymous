@@ -31,10 +31,8 @@ import {
   SETTINGS_RESET_MATCH_WARNING_MESSAGE,
   SETTINGS_RESET_MATCH_REQUESTS_CLEARED,
   SETTINGS_RESET_MATCH_BLOCKS_CLEARED,
-  TECHNICAL_ABOUT_MESSAGE,
-} from "./settings-copy";
+} from "../../i18n/settings";
 import { HuhMessage, ABOUT_PRIVACY_COMMAND_MESSAGE } from "../../i18n/messages";
-import { getPlatformStats } from "../platform/platform-stats-service";
 import {
   convertToPersianNumbers,
   escapeHtml,
@@ -66,42 +64,12 @@ import { renderSettingsHome, renderStatsPage } from "./render-stats-page";
 import { emitStat } from "../../stats/emit-stat";
 import { STAT_EVENTS } from "../../stats/events";
 
-const formatAboutPrivacyMessage = async (env: Environment): Promise<string> => {
-  const stats = await getPlatformStats(env);
-  return ABOUT_PRIVACY_COMMAND_MESSAGE.replace(
-    "USERS_COUNT",
-    convertToPersianNumbers(stats.usersCount)
-  )
-    .replace("MESSAGES_COUNT", convertToPersianNumbers(stats.conversationsCount))
-    .replace(
-      "ASSESSMENT_PROFILES_COUNT",
-      convertToPersianNumbers(stats.assessmentProfilesCount)
-    )
-    .replace(
-      "DISCOVERABLE_COUNT",
-      convertToPersianNumbers(stats.discoverableProfilesCount)
-    )
-    .replace(
-      "MATCH_REQUESTS_COUNT",
-      convertToPersianNumbers(stats.matchRequestsCount)
-    );
-};
-
 const showAboutPrivacy = async (
-  ctx: Context,
-  user: BotUser,
-  env: Environment
-): Promise<void> => {
-  const message = await formatAboutPrivacyMessage(env);
-  await ctx.reply(message, withHtml({ reply_markup: buildSettingsMenu(user.paused) }));
-};
-
-const showTechnicalAbout = async (
   ctx: Context,
   user: BotUser
 ): Promise<void> => {
   await ctx.reply(
-    TECHNICAL_ABOUT_MESSAGE,
+    ABOUT_PRIVACY_COMMAND_MESSAGE,
     withHtml({ reply_markup: buildSettingsMenu(user.paused) })
   );
 };
@@ -199,23 +167,18 @@ export const handleSettingsMenu = async (
       await showSettingsHome(ctx, user);
       return true;
 
-    case MENU.settingsBack:
     case MENU.home:
       await clearDraft(env, user.id);
       await ctx.reply(SETTINGS_BACK_MESSAGE, withHtml({ reply_markup: mainMenu }));
       return true;
 
     case MENU.about:
-      await showAboutPrivacy(ctx, user, env);
+      await showAboutPrivacy(ctx, user);
       return true;
 
     case MENU.stats:
       await clearDraft(env, user.id);
       await renderStatsPage(ctx, user, env);
-      return true;
-
-    case MENU.technical:
-      await showTechnicalAbout(ctx, user);
       return true;
 
     case MENU.editName:
@@ -372,16 +335,6 @@ export const handleSettingsCallback = async (
     const user = await toBotUser(d1User, env);
 
     await ctx.answerCallbackQuery();
-
-    if (data === SETTINGS_CALLBACK.stats) {
-      await renderStatsPage(ctx, user, env);
-      return;
-    }
-
-    if (data === SETTINGS_CALLBACK.back) {
-      await showSettingsHome(ctx, user);
-      return;
-    }
 
     if (ctx.callbackQuery.message) {
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });

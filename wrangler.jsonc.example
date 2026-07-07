@@ -93,12 +93,6 @@
       ]
     }
   ],
-  "routes": [
-    {
-      "pattern": "nekonymous.mohetios.dev",
-      "custom_domain": true
-    }
-  ],
   "ai": {
     "binding": "AI"
   },

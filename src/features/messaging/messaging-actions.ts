@@ -45,6 +45,7 @@ import { sendDecryptedMessage } from "../../utils/sender";
 import { logBotError } from "../../utils/logs";
 import { emitStat } from "../../stats/emit-stat";
 import { STAT_EVENTS } from "../../stats/events";
+import { recordMessageDelivered } from "../../stats/product-events";
 import {
   resolveTicketAction,
   isExpiredTicketAction,
@@ -165,6 +166,7 @@ export const handleOpenTicketAction = async (
       delivery.senderLabel
     );
     await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
+    await recordMessageDelivered(env);
 
     if (senderD1) {
       await notifyMessageSeen(

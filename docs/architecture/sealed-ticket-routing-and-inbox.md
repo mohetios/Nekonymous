@@ -1,6 +1,21 @@
-# Anonymous messaging (V1)
+# Sealed Ticket Routing and Inbox (V1)
 
-How sealed tickets, the ticket vault, and inbox pointers work together. For privacy constraints see [threat-model.md](../security/threat-model.md).
+**Status:** current architecture reference — implemented in V1 release candidate.
+
+How sealed tickets, the ticket vault, and inbox pointers work together. For privacy limits see [threat-model.md](../security/threat-model.md).
+
+## Implementation status
+
+| Behavior | V1 status |
+|----------|-----------|
+| Raw `ticketRef` stored in D1/KV | **Not stored** — lookup via HMAC hash; inbox pointer holds sealed ref |
+| Anonymous message bodies in D1 | **Not stored** |
+| Sender–recipient graph in D1 for relay | **Not stored** |
+| Route capsule encrypted at rest | **Implemented** (`TicketVaultDO`) |
+| Payload ciphertext temporary | **Implemented** — cleared after successful inbox delivery |
+| Inbox retention 30 days | **Implemented** (`INBOX_RETENTION_DAYS` in `inbox-pointer.ts`) |
+| Callback actions after view | **Implemented** — route material kept until expiry for reply/block/report/nickname |
+| Aggregate relay counter in D1 | **Implemented** (`platform_daily_stats.message_created` via `neko-stats`) |
 
 ## Components
 
@@ -10,11 +25,9 @@ How sealed tickets, the ticket vault, and inbox pointers work together. For priv
 | Inbox pointer helpers | `features/messaging/inbox-pointer.ts` | Retention, display numbers, seal/open callback ref |
 | Ticket vault DO | `storage/ticket-vault/` | Encrypted route + payload ciphertext per ticket hash |
 | User state DO | `storage/user-state-do.ts` | Per-recipient inbox pointer list (no plaintext bodies) |
-| Callback routing | `utils/telegram-callbacks.ts` | Build/validate `o:`, `r:`, `b:`, … callback_data |
+| Callback routing | `utils/telegram-callbacks.ts` | Build/validate `o:`, `r:`, `b:`, … `callback_data` |
 | Action resolution | `features/messaging/resolve-ticket-action.ts` | Load vault record, verify owner proof, decrypt route |
 | Webhook idempotency | `storage/user-state-do.ts` + `bot/router.ts` | Two-phase update claim (`processing` lease → `done`) |
-
-D1 stores **no message bodies** and **no sender–recipient edges** for anonymous relay. `platform_stats.messages_relayed` is the only anonymous counter increment on accept.
 
 ## Send flow
 
@@ -43,7 +56,7 @@ Steps in code:
 5. **`PayloadCapsule`** — encrypted message/media ids.
 6. **`sealInboxTicketRef`** — encrypts callback ref into the inbox pointer row.
 7. **`storeTicket`** then **`addInboxPointer`** — if pointer insert fails, vault row is cleaned up.
-8. **Outbox event key** — recipient notification dedupe key is per message event (`outbox:message-created:{ticketHash}`), not per recipient/count.
+8. **Outbox event key** — recipient notification dedupe key is per message event (`outbox:message-created:{ticketHash}`).
 
 ## Inbox delivery
 
@@ -64,9 +77,11 @@ sequenceDiagram
   H->>U: mark pointer viewed
 ```
 
-After delivery, **payload ciphertext is cleared** from the vault. `connection`/route material stays for reply, block, and report actions.
+After delivery, **payload ciphertext is cleared** from the vault. Route material stays for reply, block, and report actions until expiry.
 
-## Inline actions (reply / block / report)
+`/inbox` decrypts at most **10** payloads per request (`render-inbox.ts`).
+
+## Inline actions (reply / block / report / nickname)
 
 Callback buttons use prefixes from `INBOX_CALLBACK` in `utils/telegram-callbacks.ts` (e.g. `o:{ref}`, `r:{ref}`).
 
@@ -74,6 +89,20 @@ Callback buttons use prefixes from `INBOX_CALLBACK` in `utils/telegram-callbacks
 2. Handler calls **`resolveTicketAction`** with the action name.
 3. Resolver loads vault row by hash, verifies **owner proof**, decrypts **route**.
 4. Handler performs block/report/reply draft using route tags — not callback data alone.
+
+Callbacks expire when the underlying ticket/route expires.
+
+## Crypto primitives
+
+All ticketing crypto lives under **`src/ticketing/`** (Web Crypto only). Secrets: `APP_MASTER_KEY`, `APP_HMAC_PEPPER`.
+
+| Module | Role |
+|--------|------|
+| `keys.ts` | Ticket ref/hash, pair tags, owner proof, HKDF-derived ticket keys |
+| `envelope.ts` | Wire `{ v, kid, iv, ct }` with optional AAD |
+| `ticketing-service.ts` | Chat-id sealing, block HMACs, match intro encryption |
+
+Do not log ticket refs, secrets, decrypted payloads, or raw Telegram tokens.
 
 ## Status fields
 
@@ -87,21 +116,23 @@ Pointers and vault rows move through `active` → `viewed` / `replied` / `blocke
 ## Limits
 
 - Inbox cap: **50** active pointers per UserState DO
-- Retention: **30 days** (`INBOX_RETENTION_DAYS` in `inbox-pointer.ts`)
+- Retention: **30 days** (`INBOX_RETENTION_DAYS`)
 - Telegram `callback_data`: **64 bytes** (enforced in `encodeInboxCallbackData`)
+- Global user-action throttle: **1 second** (`user-rate-limit.ts`)
 
 ## Webhook idempotency
 
 - Webhook events are keyed by Telegram `update_id`.
-- Claim is two-phase:
-  - `processing` with lease (`lease_until`)
-  - `done` after successful critical processing
-- Duplicate `done` updates are skipped safely.
-- Active `processing` lease prevents side-effect replay.
-- Expired `processing` lease is recoverable by a new claim.
+- Claim is two-phase: `processing` with lease → `done` after success.
+- Duplicate `done` updates are skipped; expired `processing` leases are recoverable.
+
+## Future improvements (not V1)
+
+- Stricter retention policies for viewed ticket shells
+- Additional outbox shaping beyond schema reservation
 
 ## Related docs
 
-- [ticketing crypto](./crypto.md) — `src/ticketing/` module map
-- [onboarding.md](../onboarding.md) — where to wire new commands/callbacks
-- [AGENTS.md](../../AGENTS.md) — full bot architecture rules
+- [threat-model.md](../security/threat-model.md) — privacy boundaries and D1 leak scenarios
+- [matching-v1.md](./matching-v1.md) — conversation suggestions integration
+- [AGENTS.md](../../AGENTS.md) — maintainer bot architecture rules

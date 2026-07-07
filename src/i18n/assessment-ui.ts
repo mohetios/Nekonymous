@@ -1,4 +1,6 @@
 /** Must stay in sync with ASSESSMENT_QUESTION_COUNT in question-bank.ts */
+import { convertToPersianNumbers } from "../utils/tools";
+
 const ASSESSMENT_QUESTION_COUNT = 56;
 
 export const ASSESSMENT_ANSWER_SCALE =
@@ -13,7 +15,8 @@ export const ASSESSMENT_QUESTION_NOT_FOUND = "این سؤال در دسترس ن
 export const formatAssessmentQuestionHeader = (
   current: number,
   total = ASSESSMENT_QUESTION_COUNT
-): string => `سؤال ${current} از ${total}`;
+): string =>
+  `سؤال ${convertToPersianNumbers(current)} از ${convertToPersianNumbers(total)}`;
 
 export const formatAssessmentSessionStatus = (options: {
   hasProfile: boolean;
@@ -21,7 +24,7 @@ export const formatAssessmentSessionStatus = (options: {
   answeredCount: number;
 }): string => {
   if (options.hasSession) {
-    return `در حال انجام — ${options.answeredCount} از ${ASSESSMENT_QUESTION_COUNT} سؤال پاسخ داده شده`;
+    return `در حال انجام — ${convertToPersianNumbers(options.answeredCount)} از ${convertToPersianNumbers(ASSESSMENT_QUESTION_COUNT)} سؤال پاسخ داده شده`;
   }
   if (options.hasProfile) {
     return "تکمیل‌شده — پروفایل گفت‌وگو ذخیره شده است";
@@ -31,8 +34,8 @@ export const formatAssessmentSessionStatus = (options: {
 
 export const ASSESSMENT_DASHBOARD_INTRO =
   "📝 <b>ارزیابی سبک گفت‌وگو</b>\n\n" +
-  "این ارزیابی به نِکونیموس کمک می‌کند سبک گفت‌وگوی تو را بهتر بفهمد و پیشنهادهای گفت‌وگوی نزدیک‌تری نشان دهد.\n\n" +
-  "این ارزیابی تشخیص روان‌شناختی نیست و نتیجه‌ی آن را نباید حقیقت قطعی درباره‌ی شخصیتت در نظر گرفت.";
+  "این ارزیابی برای شناخت سبک گفت‌وگوی توست، نه تشخیص شخصیت.\n\n" +
+  "پاسخ‌ها کمک می‌کنند پیشنهادهای گفت‌وگو بهتر و قابل‌فهم‌تر شوند.";
 
 export const ASSESSMENT_STATUS_HEADER = "وضعیت:";
 

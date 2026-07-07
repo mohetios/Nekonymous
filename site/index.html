@@ -761,12 +761,15 @@
             <p class="note">
               نِکونیموس پیام‌رسان رمزنگاری سرتاسری نیست. تلگرام و Worker هنگام پردازش
               می‌توانند متن پیام را ببینند. تمرکز پروژه روی کمینه‌سازی داده ذخیره‌شده،
-              رمزنگاری در حالت ذخیره، و شفافیت محدودیت‌هاست.
+              رمزنگاری در حالت سکون، و شفافیت محدودیت‌هاست.
             </p>
             <div class="actions">
               <a class="button primary" href="https://t.me/nekonymous_bot">باز کردن ربات تلگرام</a>
+              <a
+                class="button"
+                href="https://mohetios.dev/fa/lab/nekonymous-anonymous-messaging-technical-lab"
+              >دفترچه فنی Lab</a>
               <a class="button" href="https://github.com/mohetios/Nekonymous">مشاهده سورس</a>
-              <a class="button" href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/cloudflare-native-infra-pattern.md">الگوی زیرساخت</a>
             </div>
           </div>
 
@@ -799,7 +802,7 @@
           <article class="card"><p class="num">۰۳</p><h3>پاسخ ناشناس</h3><p>پاسخ از همان مدل relay برمی‌گردد؛ بدون اینکه transcript پیام ناشناس در D1 ذخیره شود.</p></article>
           <article class="card"><p class="num">۰۴</p><h3>مسدودسازی و گزارش</h3><p>کنترل‌های safety با tagهای blind و بدون ساخت graph قابل اتصال بین فرستنده و گیرنده طراحی شده‌اند.</p></article>
           <article class="card"><p class="num">۰۵</p><h3>ارزیابی سبک گفت‌وگو</h3><p>۵۶ پرسش در ۱۴ بُعد برای ساخت پروفایل گفت‌وگویی نسخه <code>v1</code>، نه تشخیص شخصیت.</p></article>
-          <article class="card"><p class="num">۰۶</p><h3>پیشنهاد گفت‌وگوی اختیاری</h3><p>فقط برای کاربرانی که ارزیابی را کامل کرده‌اند و discoverability را فعال کرده‌اند.</p></article>
+          <article class="card"><p class="num">۰۶</p><h3>پیشنهاد گفت‌وگوی اختیاری</h3><p>فقط برای کاربرانی که ارزیابی را کامل کرده‌اند و نمایش در پیشنهادها را فعال کرده‌اند.</p></article>
         </div>
       </section>
 
@@ -808,10 +811,10 @@
           <div class="panel good">
             <h2>چی هست</h2>
             <ul>
-              <li>یک hosted anonymous Telegram relay</li>
-              <li>یک پروژه متن‌باز با مستندات فنی و threat model</li>
+              <li>یک hosted anonymous relay روی تلگرام</li>
+              <li>یک پروژه متن‌باز با README، threat model و مستندات معماری</li>
               <li>یک تجربه فارسی‌محور برای پیام ناشناس و پیشنهاد گفت‌وگو</li>
-              <li>یک سیستم Cloudflare-native با state محدود و آمار تجمیعی</li>
+              <li>یک سیستم Cloudflare-native روی Edge با state محدود و آمار تجمیعی</li>
             </ul>
           </div>
 
@@ -832,8 +835,8 @@
           <p class="eyebrow">زیرساخت</p>
           <h2>الگوی Cloudflare-native</h2>
           <p class="section-copy">
-            هدف infra جدید این است که webhook سبک بماند، state حساس داخل Durable Objectها کنترل شود،
-            کارهای retryable وارد Queue شوند، و آمار فقط از جدول‌های aggregate خوانده شود.
+            webhook سبک می‌ماند، state حساس داخل Durable Objectها کنترل می‌شود،
+            کارهای retryable وارد Queue می‌شوند، و آمار فقط از جدول‌های aggregate خوانده می‌شود.
           </p>
         </div>
 
@@ -857,7 +860,7 @@
             </tr>
             <tr>
               <th>Durable Objects</th>
-              <td><code>UserStateDO</code>، <code>TicketVaultShardDO</code>، <code>ReportLedgerDO</code> و <code>TelegramOutboxDO</code> برای hot state و coordination.</td>
+              <td><code>UserStateDO</code>، <code>TicketVaultDO</code>، <code>ReportLedgerDO</code> و <code>TelegramOutboxDO</code> برای hot state و coordination.</td>
             </tr>
             <tr>
               <th>D1</th>
@@ -935,19 +938,18 @@
           <p class="eyebrow">مستندات</p>
           <h2>برای بررسی فنی پروژه از اینجا شروع کن</h2>
           <p class="section-copy">
-            GitHub منبع کد و مستندات فنی است. Mohetios برای روایت محصول، مقاله‌ها و context عمومی استفاده می‌شود.
+            GitHub منبع کد و مستندات فنی است. دفترچه فنی کامل lab روی مُهتیوس منتشر می‌شود.
           </p>
         </div>
 
         <div class="doc-list">
+          <a href="https://mohetios.dev/fa/lab/nekonymous-anonymous-messaging-technical-lab"><strong>دفترچه فنی Lab (مُهتیوس)</strong><span>مقاله کامل فارسی؛ معماری، sealed ticket، ارزیابی، پیشنهاد گفت‌وگو و مرزهای حریم خصوصی.</span></a>
           <a href="https://github.com/mohetios/Nekonymous#readme"><strong>README</strong><span>نمای کلی پروژه، وضعیت V1، اجرای محلی و مرزهای محصول.</span></a>
           <a href="https://github.com/mohetios/Nekonymous/blob/master/SECURITY.md"><strong>SECURITY.md</strong><span>گزارش مسئولانه آسیب‌پذیری و توضیح محدودیت‌های امنیتی.</span></a>
           <a href="https://github.com/mohetios/Nekonymous/blob/master/CONTRIBUTING.md"><strong>CONTRIBUTING.md</strong><span>قواعد مشارکت، نصب و اجرای پروژه.</span></a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/security/threat-model.md"><strong>Threat Model</strong><span>چه چیزی محافظت می‌شود، چه چیزی محافظت نمی‌شود، و چرا.</span></a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/matching-v1.md"><strong>Matching Architecture</strong><span>ارزیابی سبک گفت‌وگو، Vectorize، Workers AI و ranking قطعی.</span></a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/cloudflare-native-infra-pattern.md"><strong>Cloudflare-native Infra Pattern</strong><span>Webhook سبک، DO، D1، Queue، outbox و آمار event-driven.</span></a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/messaging.md"><strong>Sealed Ticket Routing</strong><span>ticketRef، route_enc، payload_enc و پاک‌سازی payload بعد از نمایش.</span></a>
-          <a href="https://mohetios.github.io/Nekonymous/"><strong>Project Home</strong><span>صفحه عمومی پروژه در Mohetios.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/security/threat-model.md"><strong>Threat model</strong><span>چه چیزی محافظت می‌شود، چه چیزی محافظت نمی‌شود، و چرا.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/matching-v1.md"><strong>پیشنهاد گفت‌وگو V1</strong><span>ارزیابی سبک گفت‌وگو، Vectorize، ranking قطعی و درخواست accept-gated.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/sealed-ticket-routing-and-inbox.md"><strong>Sealed ticket routing</strong><span>ticketRef، route_enc، payload_enc و پاک‌سازی payload بعد از نمایش.</span></a>
         </div>
       </section>
     </main>

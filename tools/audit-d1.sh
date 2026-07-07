@@ -90,7 +90,9 @@ TABLES=(
   match_suggestions
   match_blocks
   match_events
-  platform_stats
+  platform_daily_stats
+  platform_daily_stats_by_key
+  platform_daily_unique_stats
 )
 
 echo ""
@@ -118,8 +120,8 @@ run_query "Assessment answers (Likert 1-5)" \
 run_query "Assessment profile summaries" \
   "SELECT user_id, discoverable, vector_status, LENGTH(profile_summary_text) AS summary_len, substr(profile_summary_text, 1, 80) AS summary_preview FROM assessment_profiles ORDER BY updated_at DESC LIMIT 10;"
 
-run_query "Platform stats" \
-  "SELECT * FROM platform_stats WHERE id = 1;"
+run_query "Daily aggregate stats" \
+  "SELECT event_name, SUM(count) AS total FROM platform_daily_stats GROUP BY event_name ORDER BY event_name;"
 
 run_query "Match events metadata preview" \
   "SELECT type, user_id, target_user_id, substr(metadata_json, 1, 160) AS metadata_preview FROM match_events ORDER BY created_at DESC LIMIT 20;"

@@ -665,14 +665,14 @@ export class UserStateDurableObject extends DurableObject<Environment> {
         )
         .toArray();
       if (existing.length > 0) {
-        const pending = this.activeCount();
+        const pending = this.unreadInboxCount();
         return Response.json({ ok: true, duplicate: true, pendingCount: pending });
       }
     }
 
     this.cleanupExpiredPointers();
 
-    const active = this.activeCount();
+    const active = this.unreadInboxCount();
     if (active >= INBOX_MAX_TICKETS) {
       return new Response("Inbox full", { status: 429 });
     }
@@ -710,17 +710,17 @@ export class UserStateDurableObject extends DurableObject<Environment> {
         body.dedupeKey
       );
     } catch {
-      const pendingAfter = this.activeCount();
+      const pendingAfter = this.unreadInboxCount();
       return Response.json({ ok: true, duplicate: true, pendingCount: pendingAfter });
     }
 
     return Response.json({
       ok: true,
-      pendingCount: this.activeCount(),
+      pendingCount: this.unreadInboxCount(),
     });
   }
 
-  private activeCount(): number {
+  private unreadInboxCount(): number {
     return this.ctx.storage.sql
       .exec<{ count: number }>(
         "SELECT COUNT(*) AS count FROM inbox_pointers WHERE status = 'active' AND expires_at > ?",

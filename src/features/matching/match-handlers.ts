@@ -13,7 +13,7 @@ import {
 } from "../assessment/assessment-profile-service";
 import { isCurrentAssessmentVersion } from "../assessment/question-bank";
 import { MATCH_CALLBACK, MATCH_INTRO_MAX_CHARS } from "./constants";
-import { MATCH_SYSTEM_INTRO } from "./match-system-callbacks";
+import { MATCH_SYSTEM_INTRO } from "../../i18n/matching";
 import {
   MATCH_INTRO_EMPTY,
   MATCH_INTRO_PROMPT,
@@ -43,7 +43,7 @@ import {
   MATCH_PENDING_LIST_HEADER,
   MATCH_REQUEST_CANCELLED,
   MATCH_REQUEST_CANCEL_FAILED,
-} from "./match-copy";
+} from "../../i18n/matching";
 import {
   buildIncomingMatchRequestKeyboard,
   buildMatchResultsKeyboard,

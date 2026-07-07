@@ -1,71 +1,90 @@
-# Nekonymous Matching V1
+# Conversation Suggestions V1
+
+**Status:** implemented in V1 release candidate.
 
 See also [README](../../README.md) and [docs/security/threat-model.md](../security/threat-model.md).
 
-Nekonymous matching is approximate and opt-in. It is a conversation-style product signal for starting anonymous Telegram conversations, not a diagnosis, dating mode, or exact compatibility system.
+The codebase still uses `match` internally for historical and implementation reasons (routes, tables, handlers). Visible product copy uses **conversation suggestions** / «پیشنهاد گفت‌وگو».
 
-## Data Flow
+## What V1 includes
 
-1. User completes the `v1` assessment.
-2. Scores are normalized to `0..1` for the frozen 14 dimensions.
-3. A lightweight confidence score is stored in `result_summary_json`.
-4. A sanitized deterministic summary is generated for embedding.
-5. Workers AI creates an embedding and Vectorize stores one vector: `profile:{userId}:v1`.
-6. Discoverability is off by default and can only be enabled for match-eligible profiles.
-7. Match search uses Vectorize for discovery and bounded D1 fallback when the index is sparse.
-8. Final ranking is deterministic TypeScript.
-9. A match request stores an encrypted intro.
-10. Candidate decline creates no ticket.
-11. Candidate accept creates a normal anonymous inbox ticket through the existing messaging system.
+- Optional conversation suggestions after assessment completion
+- Discoverability **off by default** — user must opt in
+- Vectorize + Workers AI for **candidate discovery only**
+- Deterministic TypeScript ranking (`match-scoring.ts`, `match-selection.ts`)
+- Hard filters (blocks, cooldowns, eligibility) override ranking
+- Requester writes an intro message
+- Candidate **accepts or declines** — no automatic conversation
+- Accept creates a normal anonymous inbox ticket (same sealed-ticket path as deep-link messages)
+- Decline creates no ticket
+- Reset suggestion history in settings (does not delete account)
 
-## Scoring
+## What V1 does not claim
 
-The assessment keeps the V1 dimension keys unchanged. Raw Likert answers are `1..5`; reverse items use `6 - raw`; dimension scores are normalized with `(avg - 1) / 4`.
+- Exact compatibility or compatibility percentages
+- Dating or relationship matching
+- Personality or clinical diagnosis
+- Safety guarantees from similarity scores
 
-Matching uses:
+User-facing labels use phrases like «سبک گفت‌وگوی نزدیک» and «پیشنهاد گفت‌وگو», not matchmaking or percent scores.
 
-- frozen trait weights that sum to `1.00`
-- `closeness`, `floorFit`, and `mixedFit`
-- semantic similarity from Vectorize as a discovery signal, not the final decision
-- confidence and freshness as small ranking signals
-- low-confidence, stale-profile, repeated-exposure, and recent-dismiss penalties
+## Data flow
 
-Raw final scores are not shown as compatibility percentages. User copy uses labels such as “سبک گفت‌وگوی نزدیک” and “پیشنهاد گفت‌وگو”.
+1. User completes assessment version `v1`.
+2. Scores normalize to `0..1` across 14 dimensions; confidence stored in `result_summary_json`.
+3. A controlled summary is generated for embedding (not raw answers).
+4. Workers AI embeds; Vectorize stores one vector: `profile:{userId}:v1`.
+5. User enables discoverability only when match-eligible.
+6. Search: Vectorize `topK=30` + bounded D1 fallback when index is sparse.
+7. Hard filters run before deterministic ranking; top suggestions shown.
+8. Requester sends encrypted intro → `match_requests` (pending).
+9. Candidate decline → no ticket.
+10. Candidate accept → `createSealedTicket` / normal inbox flow.
+
+## Scoring (deterministic)
+
+- Frozen trait weights (sum `1.00`)
+- `closeness`, `floorFit`, `mixedFit`
+- Vectorize similarity is a discovery signal, not the final decision
+- Confidence, freshness, dismiss, and stale-profile penalties
+- Raw scores are **not** shown as compatibility percentages
 
 ## Retrieval
 
 Requester requirements:
 
 - completed `v1` profile
-- discoverable enabled
+- discoverability enabled
 - match eligible
 
-Vectorize query:
+Vectorize query: `topK = 30`, metadata filters `profileVersion`, `discoverable`, `matchEligible`, `locale`.
 
-- `topK = 30`
-- `returnValues = false`
-- metadata filters: `profileVersion`, `discoverable`, `matchEligible`, `locale`
+D1 fallback: recent discoverable profiles, same V1 version, match eligible, updated within 180 days, bounded to 20 rows.
 
-D1 fallback:
+## Rate limits and cooldowns (V1)
 
-- recent discoverable profiles
-- same V1 profile version
-- match eligible through stored confidence
-- updated in the last 180 days
-- bounded to 20 rows
+| Limit | Value |
+|-------|-------|
+| Match searches | 50 / hour (`match_events`) |
+| Match requests created | 300 / day |
+| Pair cooldown after accept/decline | 30 days |
+| Match dismiss block | 30 days |
+| Pending request TTL | 7 days |
 
-All candidates pass the same hard filters before ranking.
+## Ticketing integration
 
-## Ticketing Integration
+Pending match requests do **not** create inbox tickets. Accepted requests use the same encryption, inbox delivery, reply, block, report, nickname, and callback flow as public-link messages. See [sealed-ticket-routing-and-inbox.md](./sealed-ticket-routing-and-inbox.md).
 
-Pending match requests do not create inbox tickets. Accepted requests create normal anonymous inbox tickets using the same encryption, inbox delivery, reply, block, report, nickname, and capability callback flow as public-link anonymous messages.
+## Out of scope for V1
 
-## V1 Deferred
+- Deep or adaptive assessment
+- LLM final ranking decision
+- Paid matching / Telegram Stars
+- Advanced feedback learning
+- Dating mode positioning
 
-- no deep assessment
-- no adaptive questions
-- no exact compatibility
-- no dating mode
-- no LLM final decision
-- no paid matching
-- no advanced feedback learning
+## Future backlog (not implemented)
+
+- Richer moderation for suggestion abuse
+- Tighter retention on old `match_suggestions` rows
+- Optional intro rewrite assistance

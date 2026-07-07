@@ -26,7 +26,6 @@ import {
   handleMatchCommand,
 } from "../features/matching/match-handlers";
 import {
-  handleMatchSystemCallback,
   handleMatchSystemCommand,
 } from "../features/matching/match-system-handlers";
 import { isBotCommand } from "./commands";
@@ -112,8 +111,6 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   bot.callbackQuery(/^t:/, (ctx) => handleAssessmentCallback(ctx, env));
 
   bot.callbackQuery(/^m:/, (ctx) => handleMatchCallback(ctx, env));
-
-  bot.callbackQuery(/^ms:/, (ctx) => handleMatchSystemCallback(ctx, env));
 
   bot.callbackQuery(/^s:/, (ctx) =>
     handleSettingsCallback(ctx, env, BOT_USERNAME)

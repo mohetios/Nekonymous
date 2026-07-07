@@ -132,25 +132,25 @@ export const getMatchDashboard = async (
   };
 };
 
-export const resolveMatchHubMenuVariant = async (
-  userId: string,
-  env: Environment
-): Promise<MatchHubMenuVariant> => {
-  const dashboard = await getMatchDashboard(userId, env);
-  if (dashboard.state === "ready" && dashboard.discoverable) {
+const canEnableDiscoverability = (profile: AssessmentProfileRow): boolean =>
+  profile.status === "completed" &&
+  profile.safety_tier === "normal" &&
+  isMatchEligibleProfile(profile);
+
+const resolveDiscoverabilityVariant = (
+  profile: AssessmentProfileRow | null
+): MatchHubMenuVariant => {
+  if (!profile || profile.status !== "completed") {
+    return "default";
+  }
+
+  // Discoverable on → always offer disable, even if eligibility drifted later.
+  if (profile.discoverable === 1) {
     return "can_disable";
   }
 
-  if (dashboard.state === "opt_in_required") {
-    const profile = await getMatchProfile(userId, env);
-    if (
-      profile &&
-      profile.status === "completed" &&
-      profile.safety_tier === "normal" &&
-      isMatchEligibleProfile(profile)
-    ) {
-      return "can_enable";
-    }
+  if (canEnableDiscoverability(profile)) {
+    return "can_enable";
   }
 
   return "default";
@@ -179,13 +179,9 @@ export const resolveMatchHubMenuOptions = async (
     assessmentLabel,
     showFind: dashboard.state === "ready",
     showProfile: hasCompletedProfile,
+    discoverabilityVariant: resolveDiscoverabilityVariant(profile),
   };
 };
-
-const canEnableDiscoverability = (profile: AssessmentProfileRow): boolean =>
-  profile.status === "completed" &&
-  profile.safety_tier === "normal" &&
-  isMatchEligibleProfile(profile);
 
 export const enableDiscoverability = async (
   userId: string,

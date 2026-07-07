@@ -14,7 +14,9 @@ SELECT 'match_requests' AS table_name, COUNT(*) AS row_count FROM match_requests
 SELECT 'match_suggestions' AS table_name, COUNT(*) AS row_count FROM match_suggestions;
 SELECT 'match_blocks' AS table_name, COUNT(*) AS row_count FROM match_blocks;
 SELECT 'match_events' AS table_name, COUNT(*) AS row_count FROM match_events;
-SELECT 'platform_stats' AS table_name, COUNT(*) AS row_count FROM platform_stats;
+SELECT 'platform_daily_stats' AS table_name, COUNT(*) AS row_count FROM platform_daily_stats;
+SELECT 'platform_daily_stats_by_key' AS table_name, COUNT(*) AS row_count FROM platform_daily_stats_by_key;
+SELECT 'platform_daily_unique_stats' AS table_name, COUNT(*) AS row_count FROM platform_daily_unique_stats;
 
 -- 2) Users: no raw Telegram ids; chat ids encrypted
 SELECT
@@ -72,8 +74,11 @@ FROM assessment_profiles
 ORDER BY updated_at DESC
 LIMIT 10;
 
--- 7) Anonymous platform stats (no user ids)
-SELECT * FROM platform_stats WHERE id = 1;
+-- 7) Anonymous daily aggregate stats (no user ids)
+SELECT event_name, SUM(count) AS total
+FROM platform_daily_stats
+GROUP BY event_name
+ORDER BY event_name;
 
 -- 8) Match events should not carry message bodies in metadata
 SELECT

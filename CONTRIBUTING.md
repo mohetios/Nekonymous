@@ -2,45 +2,43 @@
 
 Thanks for helping improve Nekonymous.
 
-Before opening a large pull request, please open an issue or discussion first.
+Before a large pull request, open an issue or discussion first.
 
 ## Principles
 
-- Keep security claims precise.
-- Do not claim E2EE, zero-knowledge, perfect anonymity, dating compatibility, or clinical/personality diagnosis.
-- Keep Persian-first UX.
-- Keep callback data language-independent.
+- Keep security claims precise — see [SECURITY.md](./SECURITY.md) and [docs/security/threat-model.md](./docs/security/threat-model.md).
+- Do not claim E2EE, zero-knowledge, perfect anonymity, dating compatibility, or clinical/personality diagnosis in user-facing copy.
+- Persian-first UX; callback data must stay language-independent and under 64 bytes.
 - Prefer small focused changes.
-- Do not store plaintext message bodies, raw Telegram ids, raw chat ids, or raw callback capabilities in D1 or KV.
+- Do not store plaintext message bodies, raw Telegram ids, or raw callback capabilities in D1 or KV.
 - Do not use KV as source of truth for inbox, profiles, assessment, or matching.
-- Add or update tests when touching ticketing, crypto, matching, assessment, account reset, storage, or i18n.
+- Add or update verify scripts when touching ticketing, crypto, matching, assessment, storage, or i18n.
+
+## Where to start (code)
+
+| Question | Start here |
+|----------|------------|
+| Worker entry | `src/index.ts` |
+| Bot wiring | `src/bot/register-handlers.ts` |
+| Slash commands | `src/bot/commands.ts` |
+| Inbox callbacks | `src/utils/telegram-callbacks.ts` |
+| Sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
+| Conversation suggestions | `docs/architecture/matching-v1.md` |
+| Maintainer rules | [AGENTS.md](./AGENTS.md) |
 
 ## Local checks
 
-Use the real scripts from `package.json`:
-
 ```bash
 pnpm install
-pnpm typecheck
-pnpm lint
-pnpm knip
-pnpm test
 pnpm check
 ```
 
-`pnpm check` runs typecheck, lint, knip, and all verify scripts (`test:ticketing`, `test:assessment`, `test:matching`).
+`pnpm check` runs: `typecheck`, `lint`, `knip`, `test:ticketing`, `test:idempotency`, `test:assessment`, `test:matching`, `test:stats`, and `audit:ticket-storage`.
 
-Additional useful scripts:
+Individual scripts: `pnpm typecheck`, `pnpm lint`, `pnpm knip`, `pnpm test`, `pnpm audit:d1`, `pnpm db:migrations:apply:local`.
 
-```bash
-pnpm audit:d1
-pnpm audit:d1:local
-pnpm db:migrations:apply:local
-```
-
-Read [AGENTS.md](./AGENTS.md) before editing Worker hot paths.
+Read [AGENTS.md](./AGENTS.md) before editing webhook hot paths.
 
 ## Security issues
 
-Do not open public issues for vulnerabilities.
-Use [SECURITY.md](./SECURITY.md).
+Do not open public issues for vulnerabilities. See [SECURITY.md](./SECURITY.md).

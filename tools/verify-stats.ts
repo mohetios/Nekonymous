@@ -33,15 +33,6 @@ for (const callback of Object.values(SETTINGS_CALLBACK)) {
   );
 }
 
-assert(
-  SETTINGS_CALLBACK.stats === "s:stats",
-  "stats callback must use s:stats"
-);
-assert(
-  SETTINGS_CALLBACK.back === "s:back",
-  "settings back callback must use s:back"
-);
-
 // 3) low report counts are bucketed
 assert(
   bucketSensitiveCount(0) === "کمتر از ۵",
@@ -68,6 +59,7 @@ const [
   keyboardSource,
   consumerSource,
   emitSource,
+  productEventsSource,
 ] = await Promise.all([
   readSource("../src/stats/stats-format.ts"),
   readSource("../src/stats/stats-reader.ts"),
@@ -75,6 +67,7 @@ const [
   readSource("../src/bot/keyboards.ts"),
   readSource("../src/stats/stats-consumer.ts"),
   readSource("../src/stats/emit-stat.ts"),
+  readSource("../src/stats/product-events.ts"),
 ]);
 
 // 4) empty stats state copy exists in formatter source
@@ -122,6 +115,15 @@ assert(
   "stats reader must query platform_daily_stats"
 );
 assert(
+  readerSource.includes("NEKO_KV") &&
+    readerSource.includes("expirationTtl"),
+  "public stats readers must use short-lived KV caching"
+);
+assert(
+  !readerSource.includes("`stats:"),
+  "stats cache keys must not use the forbidden stats: prefix"
+);
+assert(
   !readerSource.includes("UserStateDO") &&
     !readerSource.includes("TicketVault") &&
     !readerSource.includes("inbox_tickets"),
@@ -136,27 +138,53 @@ assert(
   "stats page render must not call DO storage clients"
 );
 
-// 10) settings keyboard includes stats button
+// 10) stats page uses settings reply keyboard (no inline back callback)
+assert(
+  renderSource.includes("buildSettingsMenu"),
+  "stats page must use settings reply keyboard"
+);
+assert(
+  !renderSource.includes("buildStatsPageKeyboard"),
+  "stats page must not use inline back keyboard"
+);
 assert(
   keyboardSource.includes("MENU.stats"),
   "settings keyboard builder must include stats button"
 );
 
-// 11) core stat events exist
+// 11) core stat events are wired through product flows
+const productEventChecks: Array<{ event: string; marker: string }> = [
+  { event: STAT_EVENTS.USER_CREATED, marker: "recordUserCreated" },
+  { event: STAT_EVENTS.LINK_CREATED, marker: "recordLinkCreated" },
+  { event: STAT_EVENTS.INBOX_OPENED, marker: "recordInboxOpened" },
+  { event: STAT_EVENTS.MESSAGE_DELIVERED, marker: "recordMessageDelivered" },
+  { event: STAT_EVENTS.REPLY_SENT, marker: "recordReplySent" },
+];
+
+for (const { event, marker } of productEventChecks) {
+  assert(
+    productEventsSource.includes(marker),
+    `product-events must expose ${marker} for ${event}`
+  );
+}
+
 for (const eventName of [
-  STAT_EVENTS.USER_CREATED,
   STAT_EVENTS.USER_ACTIVE,
   STAT_EVENTS.MESSAGE_CREATED,
-  STAT_EVENTS.MESSAGE_DELIVERED,
-  STAT_EVENTS.INBOX_OPENED,
-  STAT_EVENTS.REPLY_SENT,
   STAT_EVENTS.REPORT_CREATED,
   STAT_EVENTS.SUGGESTION_SEARCH,
+  STAT_EVENTS.ASSESSMENT_COMPLETED,
+  STAT_EVENTS.REQUEST_SENT,
 ]) {
   assert(
     consumerSource.includes("isStatsEventName") || emitSource.includes(eventName),
     `missing stat event ${eventName}`
   );
 }
+
+assert(
+  readerSource.includes("assessment_profiles") === false,
+  "stats reader must use event aggregates for assessment completions"
+);
 
 console.log("verify-stats: ok");

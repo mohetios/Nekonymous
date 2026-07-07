@@ -1,5 +1,13 @@
 import { ASSESSMENT_DIMENSIONS } from "./question-bank";
-import type { AssessmentScores } from "./scoring";
+import { clamp01, type AssessmentScores } from "./scoring";
+import { convertToPersianNumbers } from "../../utils/tools";
+
+export const scoreToDisplayPercent = (value: number): number =>
+  Math.round(clamp01(value) * 100);
+
+/** Format a normalized 0–1 dimension score for user-facing Persian copy. */
+export const formatAssessmentScorePercent = (value: number): string =>
+  convertToPersianNumbers(`${scoreToDisplayPercent(value)}٪`);
 
 export const scoresToJson = (scores: AssessmentScores): string =>
   JSON.stringify(scores);

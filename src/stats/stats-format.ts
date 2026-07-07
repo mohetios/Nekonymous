@@ -32,6 +32,9 @@ const formatPeriodLines = (counts: PeriodCounts): string =>
 • ۳۰ روز اخیر: ${formatCount(counts.days30)}`;
 
 const hasAnyActivity = (stats: PublicBotStats): boolean => {
+  if ((stats.totalUsers ?? 0) > 0) {
+    return true;
+  }
   const periods = [
     stats.newUsers,
     stats.messages,
@@ -78,8 +81,9 @@ export const formatPublicBotStatsMessage = (stats: PublicBotStats): string => {
   lines.push("↩️ <b>پاسخ‌ها</b>", formatPeriodLines(stats.replies), "");
 
   if (stats.messagesDelivered7d > 0) {
-    const replyRate = Math.round(
-      (stats.replies.days7 / stats.messagesDelivered7d) * 100
+    const replyRate = Math.min(
+      100,
+      Math.round((stats.replies.days7 / stats.messagesDelivered7d) * 100)
     );
     lines.push(`• نرخ پاسخ ۷ روز اخیر: ${formatCount(replyRate)}٪`, "");
   }
