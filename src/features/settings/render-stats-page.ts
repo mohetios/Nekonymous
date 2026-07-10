@@ -1,6 +1,6 @@
 import type { Context } from "grammy";
 import type { BotUser, Environment } from "../../types";
-import { buildSettingsMenu } from "../../bot/keyboards";
+import { renderScreen } from "../../bot/render-screen";
 import { logBotError } from "../../utils/logs";
 import { withHtml } from "../../utils/tools";
 import { getPublicBotStats } from "../../stats/stats-reader";
@@ -9,30 +9,34 @@ import {
   SETTINGS_STATS_ERROR_MESSAGE,
 } from "../../stats/stats-format";
 import { formatSettingsHome } from "./settings-home";
-
-export const renderStatsPage = async (
-  ctx: Context,
-  user: BotUser,
-  env: Environment
-): Promise<void> => {
-  try {
-    const stats = await getPublicBotStats(env);
-    const message = formatPublicBotStatsMessage(stats);
-    await ctx.reply(message, withHtml({ reply_markup: buildSettingsMenu(user.paused) }));
-  } catch (error) {
-    logBotError("renderStatsPage", error);
-    await ctx.reply(SETTINGS_STATS_ERROR_MESSAGE, withHtml({
-      reply_markup: buildSettingsMenu(user.paused),
-    }));
-  }
-};
+import { buildSettingsBackKeyboard, buildSettingsHomeKeyboard } from "./keyboards";
 
 export const renderSettingsHome = async (
   ctx: Context,
   user: BotUser
 ): Promise<void> => {
-  await ctx.reply(
-    formatSettingsHome(user),
-    withHtml({ reply_markup: buildSettingsMenu(user.paused) })
-  );
+  await renderScreen(ctx, {
+    text: formatSettingsHome(user),
+    replyMarkup: buildSettingsHomeKeyboard(user.paused),
+  });
+};
+
+export const renderStatsPage = async (
+  ctx: Context,
+  _user: BotUser,
+  env: Environment
+): Promise<void> => {
+  try {
+    const stats = await getPublicBotStats(env);
+    const message = formatPublicBotStatsMessage(stats);
+    await renderScreen(ctx, {
+      text: message,
+      replyMarkup: buildSettingsBackKeyboard(),
+    });
+  } catch (error) {
+    logBotError("renderStatsPage", error);
+    await ctx.reply(SETTINGS_STATS_ERROR_MESSAGE, withHtml({
+      reply_markup: buildSettingsBackKeyboard(),
+    }));
+  }
 };

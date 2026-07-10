@@ -1,4 +1,13 @@
 export const SETTINGS_CALLBACK = {
+  home: "s:home",
+  editName: "s:en",
+  pause: "s:pause",
+  resume: "s:resume",
+  clearBlocks: "s:cb",
+  resetMatch: "s:rm",
+  about: "s:about",
+  stats: "s:stats",
+  clearData: "s:cd",
   confirmClearData: "s:yd",
   confirmClearBlocks: "s:yb",
   confirmResetMatch: "s:yr",

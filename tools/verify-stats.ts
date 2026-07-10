@@ -67,7 +67,7 @@ const [
   readSource("../src/stats/stats-format.ts"),
   readSource("../src/stats/stats-reader.ts"),
   readSource("../src/features/settings/render-stats-page.ts"),
-  readSource("../src/bot/keyboards.ts"),
+  readSource("../src/features/settings/keyboards.ts"),
   readSource("../src/stats/stats-consumer.ts"),
   readSource("../src/stats/emit-stat.ts"),
   readSource("../src/stats/product-events.ts"),
@@ -145,18 +145,14 @@ assert(
   "stats page render must not call DO storage clients"
 );
 
-// 10) stats page uses settings reply keyboard (no inline back callback)
+// 10) stats page uses inline settings back navigation
 assert(
-  renderSource.includes("buildSettingsMenu"),
-  "stats page must use settings reply keyboard"
+  renderSource.includes("buildSettingsBackKeyboard"),
+  "stats page must use inline back to settings"
 );
 assert(
-  !renderSource.includes("buildStatsPageKeyboard"),
-  "stats page must not use inline back keyboard"
-);
-assert(
-  keyboardSource.includes("MENU.stats"),
-  "settings keyboard builder must include stats button"
+  keyboardSource.includes("SETTINGS_CALLBACK.stats"),
+  "settings keyboard builder must wire stats callback"
 );
 
 // 11) core stat events are wired through product flows

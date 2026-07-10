@@ -79,7 +79,7 @@ export const buildResultKeyboard = (): InlineKeyboard =>
     .text(ASSESSMENT_BUTTON.viewResultAgain, ASSESSMENT_CALLBACK.result)
     .text(ASSESSMENT_BUTTON.restart, ASSESSMENT_CALLBACK.reset)
     .row()
-    .text(ASSESSMENT_BUTTON.backToMenu, ASSESSMENT_CALLBACK.menu);
+    .text(ASSESSMENT_BUTTON.backToSuggestions, ASSESSMENT_CALLBACK.backToHub);
 
 export const formatQuestionMessage = (index: number): string => {
   const question = getQuestionAtIndex(index);

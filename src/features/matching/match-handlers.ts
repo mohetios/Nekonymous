@@ -4,16 +4,18 @@ import { emitStat } from "../../stats/emit-stat";
 import { STAT_EVENTS } from "../../stats/events";
 import { logBotError } from "../../utils/logs";
 import { HuhMessage } from "../../i18n/messages";
-import { buildDraftMenu, buildMatchSystemMenu, mainMenu } from "../../bot/keyboards";
+import { mainMenu } from "../../bot/keyboards";
+import {
+  buildDraftCancelKeyboard,
+  INPUT_PLACEHOLDERS,
+} from "../../bot/input-navigation";
+import { renderScreen } from "../../bot/render-screen";
 import { withHtml, convertToPersianNumbers } from "../../utils/tools";
 import { resolveOrCreateUser } from "../identity/identity-service";
 import { setDraft, clearDraft } from "../../storage/user-state-client";
-import {
-  getLatestAssessmentProfile,
-} from "../assessment/assessment-profile-service";
+import { getLatestAssessmentProfile } from "../assessment/assessment-profile-service";
 import { isCurrentAssessmentVersion } from "../assessment/question-bank";
 import { MATCH_CALLBACK, MATCH_INTRO_MAX_CHARS } from "./constants";
-import { MATCH_SYSTEM_INTRO } from "../../i18n/matching";
 import {
   MATCH_INTRO_EMPTY,
   MATCH_INTRO_PROMPT,
@@ -21,16 +23,12 @@ import {
   MATCH_INTRO_TOO_LONG,
   MATCH_NO_CANDIDATES,
   MATCH_NO_CANDIDATES_COOLDOWN,
-  MATCH_NO_PROFILE,
   MATCH_OPT_IN,
   MATCH_PROFILE_VERSION_OUTDATED,
-  MATCH_READY_INTRO,
   MATCH_REQUEST_LIMIT,
   MATCH_REQUEST_SENT,
   MATCH_SEARCH_LIMIT,
   MATCH_SUGGESTION_INVALID,
-  MATCH_VECTOR_FAILED,
-  MATCH_VECTOR_PENDING,
   MATCH_ACCEPTED_CANDIDATE,
   MATCH_DECLINED_CANDIDATE,
   MATCH_REQUEST_ALREADY_HANDLED,
@@ -49,17 +47,18 @@ import {
   buildMatchResultsKeyboard,
   buildMatchSearchKeyboard,
   buildOutgoingMatchRequestKeyboard,
+  buildSuggestionHubBackKeyboard,
   formatIncomingMatchRequestMessage,
   formatMatchCandidatesMessage,
   formatOutgoingMatchRequestMessage,
 } from "./keyboards";
 import {
   createMatchSuggestionBatch,
+  disableDiscoverability,
+  enableDiscoverability,
   expireOldMatchRequests,
   findTopMatches,
-  getMatchDashboard,
   getMatchSuggestion,
-  resolveMatchHubMenuOptions,
 } from "./match-service";
 import {
   acceptMatchRequest,
@@ -71,6 +70,9 @@ import {
 import { decryptMatchIntro } from "../../ticketing/ticketing-service";
 import { parseMatchExplanation } from "./match-scoring";
 import { getMatchQualityLabel } from "./match-quality";
+import { renderSuggestionHub } from "./suggestion-hub";
+import { sendAssessmentDashboard } from "../assessment/assessment-handlers";
+import { sendMatchProfileScreen } from "./match-profile-screen";
 
 const isBenignEditError = (error: unknown): boolean => {
   if (!error || typeof error !== "object" || !("description" in error)) {
@@ -98,66 +100,8 @@ const editMatchMessage = async (
   }
 };
 
-const dashboardMessageForState = async (
-  userId: string,
-  env: Environment
-): Promise<{ text: string; keyboard?: ReturnType<typeof buildMatchSearchKeyboard> }> => {
-  const dashboard = await getMatchDashboard(userId, env);
-  const profile = await getLatestAssessmentProfile(userId, env);
-  const outdatedNote =
-    profile && !isCurrentAssessmentVersion(profile.version)
-      ? `\n\n${MATCH_PROFILE_VERSION_OUTDATED}`
-      : "";
-
-  switch (dashboard.state) {
-    case "no_profile":
-      return { text: MATCH_NO_PROFILE };
-    case "vector_pending":
-      return { text: `${MATCH_VECTOR_PENDING}${outdatedNote}` };
-    case "vector_failed":
-      return { text: `${MATCH_VECTOR_FAILED}${outdatedNote}` };
-    case "opt_in_required":
-      return { text: `${MATCH_OPT_IN}${outdatedNote}` };
-    case "ready":
-      return {
-        text: `${MATCH_READY_INTRO}${outdatedNote}`,
-        keyboard: buildMatchSearchKeyboard(),
-      };
-  }
-};
-
-export const sendMatchDashboard = async (
-  ctx: Context,
-  userId: string,
-  env: Environment,
-  edit = false
-): Promise<void> => {
-  const { text, keyboard } = await dashboardMessageForState(userId, env);
-
-  if (edit && ctx.callbackQuery?.message) {
-    await ctx.editMessageText(
-      text,
-      withHtml(keyboard ? { reply_markup: keyboard } : {})
-    );
-    return;
-  }
-
-  if (keyboard) {
-    await ctx.reply(text, withHtml({ reply_markup: keyboard }));
-    return;
-  }
-
-  const options = await resolveMatchHubMenuOptions(userId, env);
-  await ctx.reply(text, withHtml({ reply_markup: buildMatchSystemMenu(options) }));
-};
-
 const readyInlineOptions = () =>
   withHtml({ reply_markup: buildMatchSearchKeyboard() });
-
-const matchHubKeyboard = async (userId: string, env: Environment) => {
-  const options = await resolveMatchHubMenuOptions(userId, env);
-  return buildMatchSystemMenu(options);
-};
 
 const formatPendingListHeader = (
   incomingCount: number,
@@ -175,19 +119,23 @@ export const sendPendingMatchRequests = async (
 ): Promise<void> => {
   await expireOldMatchRequests(env);
   const pending = await listPendingMatchRequests(userId, env);
-  const hubKeyboard = await matchHubKeyboard(userId, env);
 
   if (pending.incoming.length === 0 && pending.outgoing.length === 0) {
-    await ctx.reply(MATCH_PENDING_EMPTY, {
-      reply_markup: hubKeyboard,
+    await renderScreen(ctx, {
+      text: MATCH_PENDING_EMPTY,
+      replyMarkup: buildSuggestionHubBackKeyboard(),
     });
     return;
   }
 
-  await ctx.reply(formatPendingListHeader(
-    pending.incoming.length,
-    pending.outgoing.length
-  ), withHtml({ reply_markup: hubKeyboard }));
+  if (ctx.callbackQuery) {
+    await ctx.answerCallbackQuery();
+  }
+
+  await ctx.reply(
+    formatPendingListHeader(pending.incoming.length, pending.outgoing.length),
+    withHtml({ reply_markup: buildSuggestionHubBackKeyboard() })
+  );
 
   for (const request of pending.incoming) {
     const introText = await decryptMatchIntro(
@@ -239,7 +187,7 @@ const runMatchSearch = async (
 ): Promise<void> => {
   const profile = await getLatestAssessmentProfile(userId, env);
   if (!profile) {
-    await sendMatchDashboard(ctx, userId, env, true);
+    await renderSuggestionHub(ctx, env, userId);
     return;
   }
 
@@ -250,7 +198,7 @@ const runMatchSearch = async (
       await editMatchMessage(ctx, MATCH_SEARCH_LIMIT, readyInlineOptions());
       return;
     }
-    await sendMatchDashboard(ctx, userId, env, true);
+    await renderSuggestionHub(ctx, env, userId);
     return;
   }
 
@@ -275,13 +223,19 @@ const runMatchSearch = async (
     return;
   }
 
-  const text = formatMatchCandidatesMessage(
-    suggestions.map((s) => ({
-      score: s.score,
-      qualityLabel: getMatchQualityLabel(s.score),
-      explanation: parseMatchExplanation(s.explanation_json),
-    }))
-  );
+  const outdatedNote =
+    profile && !isCurrentAssessmentVersion(profile.version)
+      ? `\n\n${MATCH_PROFILE_VERSION_OUTDATED}`
+      : "";
+
+  const text =
+    formatMatchCandidatesMessage(
+      suggestions.map((s) => ({
+        score: s.score,
+        qualityLabel: getMatchQualityLabel(s.score),
+        explanation: parseMatchExplanation(s.explanation_json),
+      }))
+    ) + outdatedNote;
 
   await editMatchMessage(ctx, text, {
     ...withHtml(),
@@ -300,8 +254,7 @@ export const handleMatchCommand = async (
 
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
-    await expireOldMatchRequests(env);
-    await sendMatchDashboard(ctx, d1User.id, env);
+    await renderSuggestionHub(ctx, env, d1User.id);
   } catch (error) {
     logBotError("handleMatchCommand", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });
@@ -315,19 +268,23 @@ export const handleMatchIntroInput = async (
   env: Environment
 ): Promise<boolean> => {
   const message = ctx.message;
+  const draftKeyboard = withHtml({
+    reply_markup: buildDraftCancelKeyboard(INPUT_PLACEHOLDERS.match_intro),
+  });
+
   if (!message?.text) {
-    await ctx.reply(MATCH_INTRO_TEXT_ONLY, withHtml({ reply_markup: buildDraftMenu() }));
+    await ctx.reply(MATCH_INTRO_TEXT_ONLY, draftKeyboard);
     return true;
   }
 
   const text = message.text.trim();
   if (!text) {
-    await ctx.reply(MATCH_INTRO_EMPTY, withHtml({ reply_markup: buildDraftMenu() }));
+    await ctx.reply(MATCH_INTRO_EMPTY, draftKeyboard);
     return true;
   }
 
   if (text.length > MATCH_INTRO_MAX_CHARS) {
-    await ctx.reply(MATCH_INTRO_TOO_LONG, withHtml({ reply_markup: buildDraftMenu() }));
+    await ctx.reply(MATCH_INTRO_TOO_LONG, draftKeyboard);
     return true;
   }
 
@@ -338,6 +295,8 @@ export const handleMatchIntroInput = async (
     env,
   });
 
+  await clearDraft(env, userId);
+
   if (!result.ok) {
     if (result.reason === "request_limit") {
       await ctx.reply(MATCH_REQUEST_LIMIT, { reply_markup: mainMenu });
@@ -347,17 +306,16 @@ export const handleMatchIntroInput = async (
     ) {
       await ctx.reply(MATCH_CANDIDATE_UNAVAILABLE, { reply_markup: mainMenu });
     } else if (result.reason === "pending_exists") {
-      const hubKeyboard = await matchHubKeyboard(userId, env);
-      await ctx.reply(MATCH_PENDING_EXISTS, { reply_markup: hubKeyboard });
+      await ctx.reply(MATCH_PENDING_EXISTS, { reply_markup: mainMenu });
+      await renderSuggestionHub(ctx, env, userId);
     } else if (result.reason === "already_accepted") {
       await ctx.reply(MATCH_REQUEST_ALREADY_ACCEPTED, withHtml({ reply_markup: mainMenu }));
     } else if (result.reason === "recent_pair_cooldown") {
-      const hubKeyboard = await matchHubKeyboard(userId, env);
-      await ctx.reply(MATCH_RECENT_PAIR_COOLDOWN, { reply_markup: hubKeyboard });
+      await ctx.reply(MATCH_RECENT_PAIR_COOLDOWN, { reply_markup: mainMenu });
+      await renderSuggestionHub(ctx, env, userId);
     } else {
       await ctx.reply(HuhMessage, { reply_markup: mainMenu });
     }
-    await clearDraft(env, userId);
     return true;
   }
 
@@ -379,18 +337,47 @@ export const handleMatchCallback = async (
     const d1User = await resolveOrCreateUser(ctx, env);
     const userId = d1User.id;
 
-    await ctx.answerCallbackQuery();
-
-    if (data === MATCH_CALLBACK.back) {
-      if (ctx.callbackQuery.message) {
-        await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-      }
-      const hubMenu = await matchHubKeyboard(userId, env);
-      await ctx.reply(MATCH_SYSTEM_INTRO, withHtml({ reply_markup: hubMenu }));
+    if (data === MATCH_CALLBACK.hub) {
+      await renderSuggestionHub(ctx, env, userId);
       return;
     }
 
-    if (data === MATCH_CALLBACK.search || data === MATCH_CALLBACK.refresh) {
+    if (data === MATCH_CALLBACK.pending) {
+      await sendPendingMatchRequests(ctx, userId, env);
+      return;
+    }
+
+    if (data === MATCH_CALLBACK.profile) {
+      await sendMatchProfileScreen(ctx, userId, env);
+      return;
+    }
+
+    if (data === MATCH_CALLBACK.enableDiscover) {
+      const result = await enableDiscoverability(userId, env);
+      if (!result.ok) {
+        await ctx.answerCallbackQuery({ text: MATCH_OPT_IN });
+        return;
+      }
+      await emitStat(env, STAT_EVENTS.DISCOVERABILITY_ENABLED);
+      await renderSuggestionHub(ctx, env, userId);
+      return;
+    }
+
+    if (data === MATCH_CALLBACK.disableDiscover) {
+      await disableDiscoverability(userId, env);
+      await emitStat(env, STAT_EVENTS.DISCOVERABILITY_DISABLED);
+      await renderSuggestionHub(ctx, env, userId);
+      return;
+    }
+
+    if (data === MATCH_CALLBACK.assessment) {
+      await ctx.answerCallbackQuery();
+      await sendAssessmentDashboard(ctx, userId, env);
+      return;
+    }
+
+    if (data === MATCH_CALLBACK.search) {
+      await ctx.answerCallbackQuery();
       await runMatchSearch(ctx, userId, env);
       return;
     }
@@ -404,10 +391,14 @@ export const handleMatchCallback = async (
         return;
       }
 
+      await ctx.answerCallbackQuery();
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-      const prompt = await ctx.reply(MATCH_INTRO_PROMPT, withHtml({
-        reply_markup: buildDraftMenu(),
-      }));
+      const prompt = await ctx.reply(
+        MATCH_INTRO_PROMPT,
+        withHtml({
+          reply_markup: buildDraftCancelKeyboard(INPUT_PLACEHOLDERS.match_intro),
+        })
+      );
       await setDraft(env, userId, {
         id: "primary",
         mode: "match_intro",
@@ -422,10 +413,10 @@ export const handleMatchCallback = async (
     if (acceptMatch) {
       const requestId = acceptMatch[1];
       const result = await acceptMatchRequest(requestId, userId, env);
-      const hubKeyboard = await matchHubKeyboard(userId, env);
+      await ctx.answerCallbackQuery();
       if (result.duplicate) {
         await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        await ctx.reply(MATCH_ACCEPTED_CANDIDATE, withHtml({ reply_markup: hubKeyboard }));
+        await ctx.reply(MATCH_ACCEPTED_CANDIDATE, withHtml({ reply_markup: mainMenu }));
         return;
       }
       if (!result.ok) {
@@ -437,11 +428,11 @@ export const handleMatchCallback = async (
               ? MATCH_CANDIDATE_UNAVAILABLE
               : MATCH_REQUEST_ALREADY_HANDLED;
         await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        await ctx.reply(msg, { reply_markup: hubKeyboard });
+        await ctx.reply(msg, { reply_markup: mainMenu });
         return;
       }
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-      await ctx.reply(MATCH_ACCEPTED_CANDIDATE, withHtml({ reply_markup: hubKeyboard }));
+      await ctx.reply(MATCH_ACCEPTED_CANDIDATE, withHtml({ reply_markup: mainMenu }));
       return;
     }
 
@@ -449,14 +440,14 @@ export const handleMatchCallback = async (
     if (declineMatch) {
       const requestId = declineMatch[1];
       const result = await declineMatchRequest(requestId, userId, env);
-      const hubKeyboard = await matchHubKeyboard(userId, env);
+      await ctx.answerCallbackQuery();
       if (!result.ok && !result.duplicate) {
         await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        await ctx.reply(MATCH_REQUEST_ALREADY_HANDLED, { reply_markup: hubKeyboard });
+        await ctx.reply(MATCH_REQUEST_ALREADY_HANDLED, { reply_markup: mainMenu });
         return;
       }
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-      await ctx.reply(MATCH_DECLINED_CANDIDATE, { reply_markup: hubKeyboard });
+      await ctx.reply(MATCH_DECLINED_CANDIDATE, { reply_markup: mainMenu });
       return;
     }
 
@@ -464,18 +455,16 @@ export const handleMatchCallback = async (
     if (cancelMatch) {
       const requestId = cancelMatch[1];
       const result = await cancelMatchRequest(requestId, userId, env);
-      const hubKeyboard = await matchHubKeyboard(userId, env);
+      await ctx.answerCallbackQuery();
       if (!result.ok && !result.duplicate) {
         await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-        await ctx.reply(MATCH_REQUEST_CANCEL_FAILED, { reply_markup: hubKeyboard });
+        await ctx.reply(MATCH_REQUEST_CANCEL_FAILED, { reply_markup: mainMenu });
         return;
       }
       await ctx.editMessageReplyMarkup({ reply_markup: undefined });
-      await ctx.reply(MATCH_REQUEST_CANCELLED, { reply_markup: hubKeyboard });
+      await ctx.reply(MATCH_REQUEST_CANCELLED, { reply_markup: mainMenu });
       return;
     }
-
-    await sendMatchDashboard(ctx, userId, env, true);
   } catch (error) {
     logBotError("handleMatchCallback", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });

@@ -75,10 +75,11 @@ Details: [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architect
 /settings
 /assessment
 /match
-/match_system
 ```
 
-Main reply keyboard: `🔗 لینک من` · `🧭 پیشنهاد گفت‌وگو` · `⚙️ تنظیمات`
+Main reply keyboard: `🔗 لینک من` · `📥 صندوق پیام‌ها` · `🧭 پیشنهاد گفت‌وگو` · `⚙️ تنظیمات`
+
+Bot interaction details: [docs/architecture/bot-interaction-v1.md](./docs/architecture/bot-interaction-v1.md).
 
 ## Setup
 
@@ -132,6 +133,7 @@ pnpm bot:profile
 | [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute |
 | [AGENTS.md](./AGENTS.md) | Maintainer / agent rules |
 | [docs/security/threat-model.md](./docs/security/threat-model.md) | Threat model |
+| [docs/architecture/bot-interaction-v1.md](./docs/architecture/bot-interaction-v1.md) | Commands, keyboards, callbacks |
 | [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architecture/sealed-ticket-routing-and-inbox.md) | Sealed ticket + inbox |
 | [docs/architecture/matching-v1.md](./docs/architecture/matching-v1.md) | Conversation suggestions V1 |
 | [docs/release/](./docs/release/) | Release audit notes |

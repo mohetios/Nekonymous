@@ -20,11 +20,51 @@ import {
   MATCH_SIMILARITY_DISCLAIMER,
   formatMatchRequestSimilarityLine,
 } from "../../i18n/matching";
-import { MATCH_BUTTON } from "../../i18n/labels";
+import { BACK_BUTTON, MATCH_BUTTON, MENU } from "../../i18n/labels";
+import type { MatchHubMenuOptions } from "./match-types";
 
-/** Inline search trigger when the user is ready to match. */
+export const buildSuggestionHubKeyboard = (
+  options: MatchHubMenuOptions & { showPending: boolean }
+): InlineKeyboard => {
+  const keyboard = new InlineKeyboard();
+
+  if (options.showFind) {
+    keyboard.text(MATCH_BUTTON.search, MATCH_CALLBACK.search).row();
+  }
+
+  if (options.showPending || options.showProfile) {
+    if (options.showPending) {
+      keyboard.text(MATCH_BUTTON.pending, MATCH_CALLBACK.pending);
+    }
+    if (options.showProfile) {
+      keyboard.text(MATCH_BUTTON.profile, MATCH_CALLBACK.profile);
+    }
+    keyboard.row();
+  }
+
+  if (options.discoverabilityVariant === "can_disable") {
+    keyboard.text(MENU.matchDisable, MATCH_CALLBACK.disableDiscover).row();
+  } else if (options.discoverabilityVariant === "can_enable") {
+    keyboard.text(MENU.matchEnable, MATCH_CALLBACK.enableDiscover).row();
+  }
+
+  keyboard.text(options.assessmentLabel, MATCH_CALLBACK.assessment);
+
+  return keyboard;
+};
+
+export const buildSuggestionHubBackKeyboard = (): InlineKeyboard =>
+  new InlineKeyboard().text(
+    BACK_BUTTON.toSuggestions,
+    MATCH_CALLBACK.hub
+  );
+
+/** Inline search trigger on candidate results screens. */
 export const buildMatchSearchKeyboard = (): InlineKeyboard =>
-  new InlineKeyboard().text(MATCH_BUTTON.search, MATCH_CALLBACK.search);
+  new InlineKeyboard()
+    .text(MATCH_BUTTON.search, MATCH_CALLBACK.search)
+    .row()
+    .text(BACK_BUTTON.toSuggestions, MATCH_CALLBACK.hub);
 
 export const buildIncomingMatchRequestKeyboard = (
   requestId: string
@@ -104,7 +144,7 @@ export const buildMatchResultsKeyboard = (
     keyboard.text(MATCH_BUTTON.writeIntro(index), data).row();
   });
 
-  keyboard.text(MATCH_BUTTON.dismiss, MATCH_CALLBACK.back);
+  keyboard.text(MATCH_BUTTON.dismiss, MATCH_CALLBACK.hub);
   return keyboard;
 };
 

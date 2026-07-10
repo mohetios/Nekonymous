@@ -1,16 +1,13 @@
 import type { Context } from "grammy";
 import type { Environment } from "../../types";
 import {
-  handlePendingSettingsInput,
-  handleSettingsMenu,
-} from "../settings/settings-handlers";
-import { handleMatchIntroInput } from "../matching/match-handlers";
-import { handleMatchSystemMenu } from "../matching/match-system-handlers";
-import {
-  buildDraftMenu,
-  mainMenu,
-} from "../../bot/keyboards";
-import { handleMenuCommand } from "../../bot/menu";
+  DRAFT_CANCEL_LABEL,
+  buildDraftCancelKeyboard,
+  cancelActiveInput,
+  draftPlaceholder,
+  restoreMainMenu,
+} from "../../bot/input-navigation";
+import { handleMainMenuCommand } from "../../bot/menu";
 import { logBotError } from "../../utils/logs";
 import {
   HuhMessage,
@@ -63,7 +60,24 @@ import {
 import { escapeHtml, replyHtml, withHtml } from "../../utils/tools";
 import { buildUserDeepLink, isUserLinkId, publicDisplayName } from "../../utils/user";
 import { renderInbox } from "./render-inbox";
+import { handleMatchIntroInput } from "../matching/match-handlers";
+import { handleDisplayNameInput } from "../settings/settings-handlers";
+import { mainMenu } from "../../bot/keyboards";
+import type { UserDraft } from "../../types";
 import { recordReplySent } from "../../stats/product-events";
+
+const isTextInputDraft = (draft: UserDraft | undefined): boolean => {
+  if (!draft) {
+    return false;
+  }
+  return (
+    draft.mode === "compose" ||
+    draft.mode === "reply" ||
+    draft.mode === "nickname" ||
+    draft.mode === "display_name" ||
+    draft.mode === "match_intro"
+  );
+};
 
 export const handleStartCommand = async (
   ctx: Context,
@@ -139,7 +153,9 @@ export const handleStartCommand = async (
         "USER_NAME",
         escapeHtml(publicDisplayName(recipient))
       ),
-      withHtml({ reply_markup: buildDraftMenu() })
+      withHtml({
+        reply_markup: buildDraftCancelKeyboard(draftPlaceholder("compose")),
+      })
     );
 
     await setDraft(env, user.id, {
@@ -169,184 +185,192 @@ export const handleMessage = async (
   try {
     const d1User = await resolveOrCreateUser(ctx, env);
     const user = await toBotUser(d1User, env);
-
-    if (await handleMenuCommand(ctx, user, botUsername)) {
-      return;
-    }
-
-    if (await handleMatchSystemMenu(ctx, env)) {
-      return;
-    }
-
-    if (await handleSettingsMenu(ctx, user, env)) {
-      return;
-    }
-
-    if (await handlePendingSettingsInput(ctx, user, env)) {
-      return;
-    }
-
     const draft = (await getDraft(env, user.id)) ?? user.draft;
+    const text = message.text;
 
-    if (draft?.mode === "match_intro" && draft.replyRef) {
-      await handleMatchIntroInput(ctx, user.id, draft.replyRef, env);
-      return;
-    }
+    if (isTextInputDraft(draft)) {
+      if (text === DRAFT_CANCEL_LABEL) {
+        await cancelActiveInput(ctx, env, user.id);
+        return;
+      }
 
-    const pendingNickname = draft?.pendingNicknameAlias;
-    if (pendingNickname) {
-      if (!message.text) {
+      if (draft?.mode === "display_name") {
+        await handleDisplayNameInput(ctx, user, env);
+        return;
+      }
+
+      if (draft?.mode === "match_intro" && draft.replyRef) {
+        await handleMatchIntroInput(ctx, user.id, draft.replyRef, env);
+        return;
+      }
+
+      if (draft?.pendingNicknameAlias) {
+        if (!message.text) {
+          await ctx.reply(
+            NICKNAME_TEXT_ONLY_MESSAGE,
+            withHtml({
+              reply_markup: buildDraftCancelKeyboard(draftPlaceholder("nickname")),
+            })
+          );
+          return;
+        }
+
+        try {
+          const nickname = sanitizeNickname(message.text);
+          await setContactLabel(
+            env,
+            user.id,
+            draft.pendingNicknameAlias,
+            "",
+            nickname,
+            user.contactLabels
+          );
+          await clearDraft(env, user.id);
+          await restoreMainMenu(
+            ctx,
+            nickname
+              ? NICKNAME_SAVED_MESSAGE.replace("NAME", escapeHtml(nickname))
+              : NICKNAME_REMOVED_MESSAGE
+          );
+        } catch (error) {
+          if (error instanceof ContactLabelLimitError) {
+            await ctx.reply(NICKNAME_LIMIT_MESSAGE, { reply_markup: mainMenu });
+          } else {
+            logBotError("handleMessage:nickname", error);
+            await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+          }
+        }
+        return;
+      }
+
+      const recipientId = draft?.toUserId;
+      if (!recipientId) {
+        await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+        await clearDraft(env, user.id);
+        return;
+      }
+
+      const recipientD1 = await getUserById(recipientId, env);
+      const isThreadReply = draft?.reply_to_message_id !== undefined;
+      const draftKeyboard = buildDraftCancelKeyboard(
+        draftPlaceholder(draft?.mode === "reply" ? "reply" : "compose")
+      );
+
+      if (!recipientD1) {
+        await ctx.reply(NoUserFoundMessage, { reply_markup: mainMenu });
+        await clearDraft(env, user.id);
+        return;
+      }
+
+      const recipient = await toBotUser(recipientD1, env);
+      const linkSlug = draft?.linkSlug;
+      const activeSlug = await getActiveSlugForUser(recipient.id, env);
+
+      if (!linkSlug || activeSlug !== linkSlug) {
+        await ctx.reply(NoUserFoundMessage, { reply_markup: mainMenu });
+        await clearDraft(env, user.id);
+        return;
+      }
+
+      const blockHash = await createBlockHash(
+        env.APP_HMAC_PEPPER,
+        recipientD1.telegram_user_hash,
+        d1User.telegram_user_hash
+      );
+
+      if (recipient.blockedUserIds.includes(blockHash)) {
+        await ctx.reply(USER_IS_BLOCKED_MESSAGE, { reply_markup: mainMenu });
+        await clearDraft(env, user.id);
+        return;
+      }
+
+      const canReceive = await checkCanReceive(env, recipientD1.id, blockHash);
+      if (!canReceive.ok && !isThreadReply) {
+        if (canReceive.reason === "blocked") {
+          await ctx.reply(USER_IS_BLOCKED_MESSAGE, { reply_markup: mainMenu });
+        } else {
+          await ctx.reply(
+            RECIPIENT_PAUSED_MESSAGE.replace(
+              "USER_NAME",
+              escapeHtml(publicDisplayName(recipient, PEER_USER_FALLBACK))
+            ),
+            withHtml({ reply_markup: mainMenu })
+          );
+        }
+        await clearDraft(env, user.id);
+        return;
+      }
+
+      const payload = messageToPayload(message);
+      if (!hasDeliverablePayload(payload)) {
+        await ctx.reply(UnsupportedMessageTypeMessage, {
+          reply_markup: draftKeyboard,
+          reply_to_message_id: draft?.parent_message_id,
+        });
+        return;
+      }
+
+      const result = await sendAnonymousMessage(env, {
+        sender: d1User,
+        recipient: recipientD1,
+        payload,
+        linkSlug,
+        isThreadReply,
+        replyToMessageId: draft?.reply_to_message_id,
+      });
+
+      if (!result.ok) {
         await ctx.reply(
-          NICKNAME_TEXT_ONLY_MESSAGE,
-          withHtml({ reply_markup: buildDraftMenu() })
+          result.status === 429 ? INBOX_FULL_MESSAGE : HuhMessage,
+          {
+            reply_markup: draftKeyboard,
+            reply_to_message_id: draft?.parent_message_id,
+          }
         );
         return;
       }
 
-      try {
-        const nickname = sanitizeNickname(message.text);
-        await setContactLabel(
-          env,
-          user.id,
-          pendingNickname,
-          "",
-          nickname,
-          user.contactLabels
-        );
-        await clearDraft(env, user.id);
-        await ctx.reply(
-          nickname
-            ? NICKNAME_SAVED_MESSAGE.replace("NAME", escapeHtml(nickname))
-            : NICKNAME_REMOVED_MESSAGE,
-          withHtml({ reply_markup: mainMenu })
-        );
-      } catch (error) {
-        if (error instanceof ContactLabelLimitError) {
-          await ctx.reply(NICKNAME_LIMIT_MESSAGE, { reply_markup: mainMenu });
-        } else {
-          logBotError("handleMessage:nickname", error);
-          await ctx.reply(HuhMessage, { reply_markup: mainMenu });
+      const sentMessage =
+        draft?.mode === "reply" ? REPLY_SENT_MESSAGE : MESSAGE_SENT_MESSAGE;
+      await replyHtml(ctx, sentMessage, {
+        reply_to_message_id: draft?.parent_message_id,
+        reply_markup: mainMenu,
+      });
+
+      if (result.notify && result.pendingCount) {
+        try {
+          const sourceEventId = result.ticketHash ?? `fallback:${Date.now()}`;
+          await notifyRecipientInbox(
+            env,
+            recipientD1,
+            result.pendingCount,
+            sourceEventId
+          );
+        } catch (error) {
+          logBotError("handleMessage:notify", error);
         }
       }
-      return;
-    }
 
-    const recipientId = draft?.toUserId;
-    if (!recipientId) {
-      if (draft?.mode === "match_intro") {
-        await ctx.reply(HuhMessage, { reply_markup: buildDraftMenu() });
-        return;
+      if (draft?.mode === "reply") {
+        await recordReplySent(env);
       }
-      await ctx.reply(HuhMessage, { reply_markup: mainMenu });
-      return;
-    }
 
-    const recipientD1 = await getUserById(recipientId, env);
-    const isThreadReply = draft?.reply_to_message_id !== undefined;
-
-    if (!recipientD1) {
-      await ctx.reply(NoUserFoundMessage, { reply_markup: mainMenu });
-      await clearDraft(env, user.id);
-      return;
-    }
-
-    const recipient = await toBotUser(recipientD1, env);
-    const linkSlug = draft?.linkSlug;
-    const activeSlug = await getActiveSlugForUser(recipient.id, env);
-
-    if (!linkSlug || activeSlug !== linkSlug) {
-      await ctx.reply(NoUserFoundMessage, { reply_markup: mainMenu });
-      await clearDraft(env, user.id);
-      return;
-    }
-
-    const blockHash = await createBlockHash(
-      env.APP_HMAC_PEPPER,
-      recipientD1.telegram_user_hash,
-      d1User.telegram_user_hash
-    );
-
-    if (recipient.blockedUserIds.includes(blockHash)) {
-      await ctx.reply(USER_IS_BLOCKED_MESSAGE);
-      await clearDraft(env, user.id);
-      return;
-    }
-
-    const canReceive = await checkCanReceive(env, recipientD1.id, blockHash);
-    if (!canReceive.ok && !isThreadReply) {
-      if (canReceive.reason === "blocked") {
-        await ctx.reply(USER_IS_BLOCKED_MESSAGE);
-      } else {
-        await ctx.reply(
-          RECIPIENT_PAUSED_MESSAGE.replace(
-            "USER_NAME",
-            escapeHtml(publicDisplayName(recipient, PEER_USER_FALLBACK))
-          ),
-          withHtml()
-        );
+      if (draft?.mode === "reply" && draft.replyRef) {
+        await Promise.all([
+          markInboxPointerReplied(env, user.id, draft.replyRef),
+          markTicketReplied(env, draft.replyRef),
+        ]).catch((error) => logBotError("handleMessage:mark-replied", error));
       }
+
       await clearDraft(env, user.id);
       return;
     }
 
-    const payload = messageToPayload(message);
-    if (!hasDeliverablePayload(payload)) {
-      await ctx.reply(UnsupportedMessageTypeMessage, {
-        reply_markup: buildDraftMenu(),
-        reply_to_message_id: draft?.parent_message_id,
-      });
+    if (await handleMainMenuCommand(ctx, user, env, botUsername)) {
       return;
     }
 
-    const result = await sendAnonymousMessage(env, {
-      sender: d1User,
-      recipient: recipientD1,
-      payload,
-      linkSlug,
-      isThreadReply,
-      replyToMessageId: draft?.reply_to_message_id,
-    });
-
-    if (!result.ok) {
-      await ctx.reply(
-        result.status === 429 ? INBOX_FULL_MESSAGE : HuhMessage,
-        { reply_to_message_id: draft?.parent_message_id }
-      );
-      return;
-    }
-
-    const sentMessage =
-      draft?.mode === "reply" ? REPLY_SENT_MESSAGE : MESSAGE_SENT_MESSAGE;
-    await replyHtml(ctx, sentMessage, {
-      reply_to_message_id: draft?.parent_message_id,
-    });
-
-    if (result.notify && result.pendingCount) {
-      try {
-        const sourceEventId = result.ticketHash ?? `fallback:${Date.now()}`;
-        await notifyRecipientInbox(
-          env,
-          recipientD1,
-          result.pendingCount,
-          sourceEventId
-        );
-      } catch (error) {
-        logBotError("handleMessage:notify", error);
-      }
-    }
-
-    if (draft?.mode === "reply") {
-      await recordReplySent(env);
-    }
-
-    if (draft?.mode === "reply" && draft.replyRef) {
-      await Promise.all([
-        markInboxPointerReplied(env, user.id, draft.replyRef),
-        markTicketReplied(env, draft.replyRef),
-      ]).catch((error) => logBotError("handleMessage:mark-replied", error));
-    }
-
-    await clearDraft(env, user.id);
+    await ctx.reply(HuhMessage, { reply_markup: mainMenu });
   } catch (error) {
     logBotError("handleMessage", error);
     await ctx.reply(HuhMessage, { reply_markup: mainMenu });
@@ -357,5 +381,17 @@ export const handleInboxCommand = async (
   ctx: Context,
   env: Environment
 ): Promise<void> => {
-  await renderInbox(ctx, env);
+  await renderInbox(ctx, env, 0);
+};
+
+export const handleInboxMoreCallback = async (
+  ctx: Context,
+  env: Environment
+): Promise<void> => {
+  const data = ctx.callbackQuery?.data;
+  const offset = Number(data?.split(":")[2] ?? "0");
+  if (!Number.isFinite(offset) || offset < 0) {
+    return;
+  }
+  await renderInbox(ctx, env, offset);
 };

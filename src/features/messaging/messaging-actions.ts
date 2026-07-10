@@ -1,6 +1,10 @@
 import type { Context } from "grammy";
 import type { Environment } from "../../types";
-import { buildDraftMenu, createMessageKeyboard } from "../../bot/keyboards";
+import { createMessageKeyboard } from "../../bot/keyboards";
+import {
+  buildDraftCancelKeyboard,
+  INPUT_PLACEHOLDERS,
+} from "../../bot/input-navigation";
 import {
   getContactLabelForSender,
   lookupContactLabel,
@@ -18,7 +22,6 @@ import {
   USER_BLOCKED_MESSAGE,
   USER_IS_BLOCKED_MESSAGE,
   USER_UNBLOCKED_MESSAGE,
-  VIEWED_TICKET_SUMMARY_MESSAGE,
 } from "../../i18n/messages";
 import {
   getActiveSlugForUser,
@@ -27,13 +30,6 @@ import {
   toBotUser,
 } from "../identity/identity-service";
 import {
-  deliveryContextFromResolvedTicket,
-  hasDeliverablePayload,
-  markResolvedTicketViewed,
-  notifyMessageSeen,
-  toTicketDeliveryConversation,
-} from "./messaging-service";
-import {
   addBlock,
   markInboxPointerBlocked,
   markInboxPointerReported,
@@ -41,11 +37,8 @@ import {
   setDraft,
 } from "../../storage/user-state-client";
 import { escapeHtml, withHtml } from "../../utils/tools";
-import { sendDecryptedMessage } from "../../utils/sender";
-import { logBotError } from "../../utils/logs";
 import { emitStat } from "../../stats/emit-stat";
 import { STAT_EVENTS } from "../../stats/events";
-import { recordMessageDelivered } from "../../stats/product-events";
 import {
   resolveTicketAction,
   isExpiredTicketAction,
@@ -57,7 +50,6 @@ import {
   markTicketBlocked,
   markTicketRecordReported,
 } from "../../storage/ticket-vault/ticket-vault.client";
-import { displayNumberForTicketHash } from "./inbox-pointer";
 
 const ticketRefFromContext = (ctx: Context): string | null => {
   const ref = ctx.match?.[1];
@@ -84,102 +76,6 @@ const loadAction = async (
 
 const replyExpiredTicket = async (ctx: Context): Promise<void> => {
   await ctx.reply(EXPIRED_TICKET_MESSAGE);
-};
-
-export const handleOpenTicketAction = async (
-  ctx: Context,
-  env: Environment
-): Promise<void> => {
-  if (!ctx.from) {
-    await ctx.answerCallbackQuery();
-    return;
-  }
-
-  try {
-    const d1User = await resolveOrCreateUser(ctx, env);
-    const user = await toBotUser(d1User, env);
-    const resolved = await loadAction(
-      ctx,
-      env,
-      "open",
-      d1User.telegram_user_hash
-    );
-
-    if (!resolved) {
-      await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    if (isExpiredTicketAction(resolved)) {
-      await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    if (!isRecipientRoute(resolved.route.recipientRouteTag, d1User.telegram_user_hash)) {
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const senderD1 = await getUserByTelegramHash(
-      resolved.route.senderRouteTag,
-      env
-    );
-    const isBlocked = senderD1
-      ? user.blockedUserIds.includes(
-          await createBlockHash(
-            env.APP_HMAC_PEPPER,
-            d1User.telegram_user_hash,
-            senderD1.telegram_user_hash
-          )
-        )
-      : false;
-
-    if (!resolved.ticket.payloadEnc || resolved.ticket.status !== "active") {
-      await ctx.reply(
-        VIEWED_TICKET_SUMMARY_MESSAGE(
-          displayNumberForTicketHash(resolved.ticketHash)
-        ),
-        withHtml({
-          reply_markup: createMessageKeyboard(resolved.ticketRef, isBlocked),
-        })
-      );
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    const delivery = await deliveryContextFromResolvedTicket(
-      resolved,
-      user.contactLabels
-    );
-    if (!hasDeliverablePayload(delivery.payload)) {
-      await ctx.reply(HuhMessage);
-      await ctx.answerCallbackQuery();
-      return;
-    }
-
-    await sendDecryptedMessage(
-      ctx,
-      toTicketDeliveryConversation(resolved.route, delivery.payload, 0, 0),
-      { reply_markup: createMessageKeyboard(resolved.ticketRef, isBlocked) },
-      delivery.senderLabel
-    );
-    await markResolvedTicketViewed(env, user.id, resolved.ticketHash);
-    await recordMessageDelivered(env);
-
-    if (senderD1) {
-      await notifyMessageSeen(
-        env,
-        senderD1,
-        resolved.route.parentMessageId
-      ).catch((error) => logBotError("handleOpenTicketAction:seen", error));
-    }
-  } catch {
-    await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
-  }
 };
 
 export const handleReplyAction = async (
@@ -283,7 +179,9 @@ export const handleReplyAction = async (
       ? REPLAY_TO_NICKNAME_MESSAGE.replace("NICKNAME", escapeHtml(senderLabel))
       : REPLAY_TO_MESSAGE;
 
-    await ctx.reply(replyPrompt, withHtml({ reply_markup: buildDraftMenu() }));
+    await ctx.reply(replyPrompt, withHtml({
+      reply_markup: buildDraftCancelKeyboard(INPUT_PLACEHOLDERS.reply),
+    }));
   } catch {
     await ctx.reply(HuhMessage);
   } finally {
@@ -496,7 +394,9 @@ export const handleNicknameAction = async (
 
     await ctx.reply(
       NICKNAME_PROMPT_MESSAGE.replace("CURRENT_NICK", escapeHtml(currentNick)),
-      withHtml({ reply_markup: buildDraftMenu() })
+      withHtml({
+        reply_markup: buildDraftCancelKeyboard(INPUT_PLACEHOLDERS.nickname),
+      })
     );
   } catch {
     await ctx.reply(HuhMessage);

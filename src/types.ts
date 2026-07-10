@@ -73,7 +73,7 @@ export type UserDraft = {
   parent_message_id?: number;
   reply_to_message_id?: number;
   pendingNicknameAlias?: string;
-  pendingSettings?: "editName" | "confirmClearData" | "confirmClearBlockList" | "confirmResetMatchHistory";
+  pendingSettings?: "confirmClearData" | "confirmClearBlockList" | "confirmResetMatchHistory";
 };
 
 export type D1User = {

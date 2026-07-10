@@ -87,20 +87,36 @@ if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 "
 
 echo "==> setMyCommands"
-COMMANDS_JSON='[
-  {"command":"start","description":"شروع و دریافت لینک ناشناس"},
-  {"command":"inbox","description":"دیدن صندوق پیام‌ها"},
-  {"command":"settings","description":"تنظیمات و حریم خصوصی"},
-  {"command":"assessment","description":"ارزیابی سبک گفت‌وگو"},
-  {"command":"match","description":"پیشنهادهای گفت‌وگو"},
-  {"command":"match_system","description":"نکات فنی پیشنهاد گفت‌وگو"}
-]'
+COMMANDS_JSON="$(node --experimental-strip-types -e "
+import { BOT_COMMAND_DEFINITIONS } from './src/bot/commands.ts';
+console.log(JSON.stringify(BOT_COMMAND_DEFINITIONS));
+")"
 tg_post setMyCommands \
   --data-urlencode "commands=${COMMANDS_JSON}" \
   --data-urlencode "language_code=fa" | node -e "
 const fs=require('fs');const j=JSON.parse(fs.readFileSync(0,'utf8'));
 if(!j.ok){console.error(j);process.exit(1)} console.log('ok');
 "
+
+echo "==> getMyCommands (verify)"
+GET_COMMANDS="$(curl -sS "${API}/getMyCommands?language_code=fa")"
+echo "$GET_COMMANDS" | node -e "
+const fs=require('fs');
+const expected=JSON.parse(process.argv[1]);
+const j=JSON.parse(fs.readFileSync(0,'utf8'));
+if(!j.ok){console.error(j);process.exit(1)}
+const actual=j.result.map((c)=>({command:c.command,description:c.description}));
+const same=actual.length===expected.length && expected.every((item,idx)=>
+  actual[idx]?.command===item.command && actual[idx]?.description===item.description
+);
+if(!same){
+  console.error('getMyCommands mismatch');
+  console.error('expected', expected);
+  console.error('actual', actual);
+  process.exit(1);
+}
+console.log('ok: five commands verified');
+" "$COMMANDS_JSON"
 
 echo "==> setChatMenuButton (commands)"
 tg_post setChatMenuButton \

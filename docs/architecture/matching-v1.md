@@ -75,6 +75,16 @@ D1 fallback: recent discoverable profiles, same V1 version, match eligible, upda
 
 Pending match requests do **not** create inbox tickets. Accepted requests use the same encryption, inbox delivery, reply, block, report, nickname, and callback flow as public-link messages. See [sealed-ticket-routing-and-inbox.md](./sealed-ticket-routing-and-inbox.md).
 
+## Telegram entry points
+
+Canonical suggestion hub (`renderSuggestionHub`):
+
+- `/match`
+- Main menu `🧭 پیشنهاد گفت‌وگو`
+- Inline `m:hub`
+
+Search: `m:search`. Full callback list: [bot-interaction-v1.md](./bot-interaction-v1.md).
+
 ## Out of scope for V1
 
 - Deep or adaptive assessment

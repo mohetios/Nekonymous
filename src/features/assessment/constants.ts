@@ -14,4 +14,5 @@ export const ASSESSMENT_CALLBACK = {
   resetYes: "t:reset_yes",
   resetNo: "t:reset_no",
   menu: "t:menu",
+  backToHub: "t:hub",
 } as const;

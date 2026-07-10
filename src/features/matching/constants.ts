@@ -1,14 +1,20 @@
 export const MATCH_CALLBACK = {
+  hub: "m:hub",
   search: "m:search",
-  /** Existing result messages may still emit this. */
-  refresh: "m:refresh",
-  /** Existing dashboard messages may still emit this. */
-  back: "m:back",
+  pending: "m:pending",
+  profile: "m:profile",
+  enableDiscover: "m:disc:on",
+  disableDiscover: "m:disc:off",
+  assessment: "m:assess",
   request: (suggestionId: string) => `m:req:${suggestionId}`,
   accept: (requestId: string) => `m:acc:${requestId}`,
   decline: (requestId: string) => `m:dec:${requestId}`,
   cancel: (requestId: string) => `m:can:${requestId}`,
 } as const;
+
+/** Active match inline callbacks only. */
+export const matchCallbackQueryRegex = (): RegExp =>
+  /^m:(?:hub|search|pending|profile|disc:(?:on|off)|assess|(?:req|acc|dec|can):[A-Za-z0-9_-]+)$/;
 
 /** Max pending requests shown in the hub pending list. */
 export const MATCH_PENDING_LIST_LIMIT = 20;

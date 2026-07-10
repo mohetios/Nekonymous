@@ -1,18 +1,18 @@
 import type { Bot, Context } from "grammy";
 import type { Message } from "grammy/types";
 import type { Environment } from "../types";
-import { UNKNOWN_COMMAND_MESSAGE } from "../i18n/messages";
+import { EXPIRED_CALLBACK_MESSAGE, UNKNOWN_COMMAND_MESSAGE } from "../i18n/messages";
 import { mainMenu } from "./keyboards";
 import {
   handleBlockAction,
   handleNicknameAction,
-  handleOpenTicketAction,
   handleReportAction,
   handleReplyAction,
   handleUnblockAction,
 } from "../features/messaging/messaging-actions";
 import {
   handleInboxCommand,
+  handleInboxMoreCallback,
   handleMessage,
   handleStartCommand,
 } from "../features/messaging/messaging-commands";
@@ -25,9 +25,7 @@ import {
   handleMatchCallback,
   handleMatchCommand,
 } from "../features/matching/match-handlers";
-import {
-  handleMatchSystemCommand,
-} from "../features/matching/match-system-handlers";
+import { matchCallbackQueryRegex } from "../features/matching/constants";
 import { isBotCommand } from "./commands";
 import {
   INBOX_MENU_CALLBACK,
@@ -51,6 +49,8 @@ const unknownCommandName = (text: string): string | null => {
   return token.split("@")[0]?.toLowerCase() ?? null;
 };
 
+const isRegisteredBotCommand = (command: string): boolean => isBotCommand(command);
+
 export const registerHandlers = (bot: Bot, env: Environment): void => {
   const { BOT_USERNAME } = env;
 
@@ -63,8 +63,6 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   bot.command("assessment", (ctx) => handleAssessmentCommand(ctx, env));
 
   bot.command("match", (ctx) => handleMatchCommand(ctx, env));
-
-  bot.command("match_system", (ctx) => handleMatchSystemCommand(ctx, env));
 
   bot.on("message", (ctx) => {
     if (ctx.message && isCommandMessage(ctx.message)) {
@@ -81,7 +79,7 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     }
 
     const command = unknownCommandName(text);
-    if (!command || isBotCommand(command)) {
+    if (!command || isRegisteredBotCommand(command)) {
       return;
     }
 
@@ -93,7 +91,6 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     (ctx: Context) =>
       handler(ctx, env);
 
-  bot.callbackQuery(inboxCallbackQueryRegex("open"), onInboxCallback(handleOpenTicketAction));
   bot.callbackQuery(inboxCallbackQueryRegex("reply"), onInboxCallback(handleReplyAction));
   bot.callbackQuery(inboxCallbackQueryRegex("block"), onInboxCallback(handleBlockAction));
   bot.callbackQuery(inboxCallbackQueryRegex("unblock"), onInboxCallback(handleUnblockAction));
@@ -108,11 +105,24 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
     }
   });
 
+  bot.callbackQuery(/^ib:m:\d+$/, async (ctx) => {
+    try {
+      await handleInboxMoreCallback(ctx, env);
+    } finally {
+      await ctx.answerCallbackQuery();
+    }
+  });
+
   bot.callbackQuery(/^t:/, (ctx) => handleAssessmentCallback(ctx, env));
 
-  bot.callbackQuery(/^m:/, (ctx) => handleMatchCallback(ctx, env));
+  bot.callbackQuery(matchCallbackQueryRegex(), (ctx) => handleMatchCallback(ctx, env));
 
   bot.callbackQuery(/^s:/, (ctx) =>
     handleSettingsCallback(ctx, env, BOT_USERNAME)
   );
+
+  bot.callbackQuery(/.+/, async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.reply(EXPIRED_CALLBACK_MESSAGE, { reply_markup: mainMenu });
+  });
 };

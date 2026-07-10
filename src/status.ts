@@ -20,11 +20,12 @@ export type InboxPointerTransitionStatus = Exclude<
 /** D1 users.status — account reset hard-deletes rows; no soft-delete status. */
 export type D1UserStatus = "active";
 
-/** UserState DO draft.mode — compose/reply/settings flows. */
+/** UserState DO draft.mode — compose/reply/input flows. */
 export type UserDraftMode =
   | "compose"
   | "reply"
   | "nickname"
+  | "display_name"
   | "settings"
   | "match_intro";
 

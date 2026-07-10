@@ -25,7 +25,7 @@ How sealed tickets, the ticket vault, and inbox pointers work together. For priv
 | Inbox pointer helpers | `features/messaging/inbox-pointer.ts` | Retention, display numbers, seal/open callback ref |
 | Ticket vault DO | `storage/ticket-vault/` | Encrypted route + payload ciphertext per ticket hash |
 | User state DO | `storage/user-state-do.ts` | Per-recipient inbox pointer list (no plaintext bodies) |
-| Callback routing | `utils/telegram-callbacks.ts` | Build/validate `o:`, `r:`, `b:`, … `callback_data` |
+| Callback routing | `utils/telegram-callbacks.ts` | Build/validate inbox `callback_data` |
 | Action resolution | `features/messaging/resolve-ticket-action.ts` | Load vault record, verify owner proof, decrypt route |
 | Webhook idempotency | `storage/user-state-do.ts` + `bot/router.ts` | Two-phase update claim (`processing` lease → `done`) |
 
@@ -83,7 +83,7 @@ After delivery, **payload ciphertext is cleared** from the vault. Route material
 
 ## Inline actions (reply / block / report / nickname)
 
-Callback buttons use prefixes from `INBOX_CALLBACK` in `utils/telegram-callbacks.ts` (e.g. `o:{ref}`, `r:{ref}`).
+Active inbox callbacks: `r:{ref}`, `b:{ref}`, `u:{ref}`, `n:{ref}`, `rp:{ref}` — built from `INBOX_CALLBACK` in `utils/telegram-callbacks.ts`.
 
 1. Grammy routes regex in `bot/register-handlers.ts`.
 2. Handler calls **`resolveTicketAction`** with the action name.

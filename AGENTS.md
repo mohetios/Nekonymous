@@ -32,8 +32,9 @@ Capability-based anonymous routing is the current model. Do not reintroduce olde
 
 - V1 is **code-frozen** for public release — no feature expansion or product-scope growth before release.
 - Read `README.md` and `docs/security/threat-model.md` before editing any user-facing or public copy.
-- Read `docs/architecture/matching-v1.md` before touching conversation suggestions (`/match`, `/match_system`).
+- Read `docs/architecture/matching-v1.md` before touching conversation suggestions (`/match`).
 - Read `docs/architecture/sealed-ticket-routing-and-inbox.md` before touching inbox, ticketing, or sealed-ticket storage.
+- Read `docs/architecture/bot-interaction-v1.md` before touching commands, keyboards, menus, drafts, or callback routing.
 
 ### Docs source of truth
 
@@ -41,6 +42,7 @@ Capability-based anonymous routing is the current model. Do not reintroduce olde
 |-------|------|
 | Product overview | `README.md` |
 | Security limits | `SECURITY.md`, `docs/security/threat-model.md` |
+| Bot commands / keyboards / callbacks | `docs/architecture/bot-interaction-v1.md` |
 | Inbox / sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
 | Conversation suggestions | `docs/architecture/matching-v1.md` |
 | Release audits | `docs/release/` |
@@ -130,6 +132,7 @@ src/
 ├── bot/
 │   ├── create-bot.ts
 │   ├── register-handlers.ts         # command/callback wiring
+│   ├── commands.ts                  # BOT_COMMANDS + BotFather definitions
 │   ├── router.ts                    # POST /bot webhook only
 │   ├── menu.ts
 │   ├── menu-labels.ts
@@ -154,7 +157,7 @@ src/
 │   │   ├── profile-vector-service.ts
 │   │   ├── question-bank.ts, scoring.ts, keyboards.ts, …
 │   ├── matching/
-│   │   ├── match-handlers.ts, match-system-handlers.ts
+│   │   ├── match-handlers.ts, match-request-service.ts
 │   │   ├── match-service.ts, match-request-service.ts
 │   │   ├── match-vector-service.ts, match-selection.ts, match-scoring.ts, …
 │   └── platform/
@@ -194,6 +197,7 @@ tools/
 
 docs/
 ├── architecture/
+│   ├── bot-interaction-v1.md
 │   ├── matching-v1.md
 │   └── sealed-ticket-routing-and-inbox.md
 ├── security/threat-model.md
@@ -246,13 +250,16 @@ Route registration lives in `src/bot/router.ts`. Use `src/utils/router.ts` (`Rou
 | `/settings`          | `features/settings/settings-handlers.ts`  |
 | `/assessment`        | `features/assessment/assessment-handlers.ts` |
 | `/match`             | `features/matching/match-handlers.ts`     |
-| `/match_system`      | `features/matching/match-system-handlers.ts` |
 
 Callback prefixes (keep short; capability suffix is base64url, under Telegram 64-byte limit):
 
-- `o:`, `r:`, `b:`, `u:`, `n:`, `rp:` — inbox actions (capability token)
+- `r:`, `b:`, `u:`, `n:`, `rp:` — inbox ticket actions
+- `ib:` — inbox menu / pagination
 - `t:` — assessment flow
-- `m:` — matching inline actions
+- `m:` — active suggestion-hub callbacks only (`matchCallbackQueryRegex`)
+- `s:` — settings inline actions
+
+Unknown callbacks are answered by one generic catch-all (`EXPIRED_CALLBACK_MESSAGE`). Do not add legacy alias handlers.
 
 Core user flow:
 
@@ -260,7 +267,7 @@ Core user flow:
 2. `/start {slug}` → open compose draft to link owner (rate-limited, block-checked, pause-checked, no self-message).
 3. Sender sends message/media → seal ticket in `TicketVaultDO`, add inbox pointer in recipient `UserStateDO`, emit stats event, notify recipient via `neko-outbox` queue.
 4. `/inbox` → load active pointers from recipient `UserStateDO`, fetch/decrypt payload from `TicketVaultDO`, deliver to Telegram, clear `payload_enc`, keep `route_enc` for actions.
-5. Inline **پاسخ دادن** / **مسدود کردن** / **رفع مسدودی** / **نام خصوصی** / **گزارش کردن** → reply draft, block list, nickname, or report flow. Callback data holds short refs (`o:`, `r:`, …); never trust callback data alone — load ticket from vault + pointer and verify ownership.
+5. Inline **پاسخ دادن** / **مسدود کردن** / **رفع مسدودی** / **نام خصوصی** / **گزارش کردن** → reply draft, block list, nickname, or report flow. Callback data holds short refs (`r:`, `b:`, `u:`, `n:`, `rp:` + base64url); never trust callback data alone — load ticket from vault + pointer and verify ownership.
 
 ### Account reset (پاک کردن حساب)
 
@@ -294,7 +301,7 @@ Read `docs/architecture/sealed-ticket-routing-and-inbox.md` and `src/features/me
 |-------------------------|----------------------------------------------------------------------|
 | `sealedTicketRef`       | Opaque ticket handle for vault lookup and callback refs              |
 | `ticketHash`            | Stable hash for inbox pointer indexing                             |
-| `capability` / callback ref | Short base64url token in Telegram buttons only (`o:`, `r:`, …)   |
+| `capability` / callback ref | Short base64url token in Telegram buttons only (`r:`, `b:`, `u:`, `n:`, `rp:`) |
 | `route_enc`             | Encrypted route capsule in TicketVault (reply/block/report/nickname) |
 | `payload_enc`           | Encrypted message payload in TicketVault; cleared after delivery   |
 | `APP_MASTER_KEY`        | Encryption IKM for sealed tickets and sensitive fields               |
@@ -571,7 +578,7 @@ Validate at the boundary:
 
 - Telegram update context (`ctx.from`, `ctx.match`, message payload type)
 - deep-link slug on `/start` (`isPublicSlug` / `isUserLinkId`)
-- callback query inbox capabilities (`o:`, `r:`, `b:`, `u:`, `n:`, `rp:` + base64url token)
+- callback query inbox capabilities (`r:`, `b:`, `u:`, `n:`, `rp:` + base64url token)
 - HTTP route params sanitized by `router.ts`
 
 Prefer small explicit checks in the handler. Do not add a validation framework.

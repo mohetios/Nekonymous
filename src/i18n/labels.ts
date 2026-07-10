@@ -1,34 +1,38 @@
 /** Reply-keyboard and inline button labels shown in Telegram UI. */
 
 export const MENU = {
-  about: "ℹ️ درباره و حریم خصوصی",
   link: "🔗 لینک من",
+  inbox: "📥 صندوق پیام‌ها",
   matchSystem: "🧭 پیشنهاد گفت‌وگو",
+  settings: "⚙️ تنظیمات",
   matchProfile: "👤 پروفایل گفت‌وگو",
   matchFind: "🔎 پیدا کردن گزینه‌ها",
-  matchPending: "📥 درخواست‌های گفت‌وگو",
+  matchPending: "📥 درخواست‌ها",
   matchEnable: "✅ فعال‌سازی نمایش",
   matchDisable: "⏸ توقف نمایش",
   matchAssessment: "📝 شروع ارزیابی",
   matchAssessmentRetry: "📝 ارزیابی دوباره",
-  settings: "⚙️ تنظیمات",
   editName: "✏️ نام نمایشی",
-  cancelDraft: "↩️ لغو عملیات",
   pauseInbox: "⏸ توقف دریافت پیام",
   resumeInbox: "▶️ فعال‌سازی دریافت پیام",
   clearBlockList: "🚫 رفع مسدودی‌ها",
   resetMatchHistory: "♻️ بازنشانی پیشنهادها",
   clearData: "🗑️ پاک کردن حساب",
+  about: "ℹ️ درباره و حریم خصوصی",
   stats: "📊 آمار",
-  hubBack: "↩️ بازگشت",
-  home: "🏠 منوی اصلی",
+} as const;
+
+export const BACK_BUTTON = {
+  toSettings: "↩️ بازگشت به تنظیمات",
+  toSuggestions: "↩️ بازگشت به پیشنهادها",
 } as const;
 
 /** Inline-only confirmation labels (never on reply keyboard). */
 export const CONFIRM_BUTTON = {
   yesDelete: "بله، حسابم را پاک کن",
-  yes: "✅ تأیید",
-  noCancel: "❌ لغو",
+  confirmClearBlocks: "رفع همه مسدودی‌ها",
+  confirmResetMatch: "بازنشانی پیشنهادها",
+  cancel: "انصراف",
 } as const;
 
 export const INBOX_BUTTON = {
@@ -37,24 +41,29 @@ export const INBOX_BUTTON = {
   reply: "💬 پاسخ دادن",
   nickname: "🏷️ نام خصوصی",
   report: "⚠️ گزارش کردن",
+  loadMore: "نمایش پیام‌های بیشتر",
 } as const;
 
-export const OPEN_INBOX_BUTTON = "🗂 نمایش صندوق پیام‌ها";
+export const OPEN_INBOX_BUTTON = "📥 باز کردن صندوق";
 
 /** Prefix for delivered anonymous messages (nickname inserted). */
 export const DELIVERY_HEADER_FROM = (nickname: string): string =>
   `💬 پیام از ${nickname}:`;
 
-const MENU_LABELS = new Set<string>(Object.values(MENU));
+const MAIN_MENU_LABELS = new Set<string>([
+  MENU.link,
+  MENU.inbox,
+  MENU.matchSystem,
+  MENU.settings,
+]);
 
-export const isMenuLabel = (text: string): boolean => MENU_LABELS.has(text);
-
-/** Strip emoji/symbols so "تنظیمات" matches "⚙️ تنظیمات". */
-const plainMenuLabel = (text: string): string =>
-  text.replace(/[^\u0600-\u06FFa-zA-Z0-9\s]/g, "").trim();
+export const isMainMenuLabel = (text: string): boolean =>
+  MAIN_MENU_LABELS.has(text);
 
 export const MATCH_BUTTON = {
   search: "🔎 پیدا کردن گزینه‌ها",
+  pending: "📥 درخواست‌ها",
+  profile: "👤 پروفایل گفت‌وگو",
   accept: "✅ پذیرفتن",
   decline: "❌ رد کردن",
   cancelRequest: "↩️ لغو درخواست",
@@ -71,25 +80,15 @@ export const ASSESSMENT_BUTTON = {
   resetYes: "✅ تأیید",
   resetNo: "↩️ انصراف",
   previous: "⬅️ قبلی",
-  exit: "↩️ ذخیره و خروج",
-  backToMenu: "↩️ بازگشت",
+  exit: "ذخیره و خروج",
+  backToSuggestions: BACK_BUTTON.toSuggestions,
 } as const;
 
+/** Display names must not be empty or look like bot commands. */
 export const isReservedDisplayName = (text: string): boolean => {
-  if (isMenuLabel(text)) {
+  const trimmed = text.trim();
+  if (!trimmed) {
     return true;
   }
-
-  const plain = plainMenuLabel(text);
-  if (!plain) {
-    return false;
-  }
-
-  for (const label of MENU_LABELS) {
-    if (plainMenuLabel(label) === plain) {
-      return true;
-    }
-  }
-
-  return false;
+  return trimmed.startsWith("/");
 };

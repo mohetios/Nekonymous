@@ -21,6 +21,7 @@ Before a large pull request, open an issue or discussion first.
 | Worker entry | `src/index.ts` |
 | Bot wiring | `src/bot/register-handlers.ts` |
 | Slash commands | `src/bot/commands.ts` |
+| Bot interaction (commands, keyboards, callbacks) | `docs/architecture/bot-interaction-v1.md` |
 | Inbox callbacks | `src/utils/telegram-callbacks.ts` |
 | Sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
 | Conversation suggestions | `docs/architecture/matching-v1.md` |
@@ -33,7 +34,7 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` runs: `typecheck`, `lint`, `knip`, `test:ticketing`, `test:idempotency`, `test:assessment`, `test:matching`, `test:stats`, and `audit:ticket-storage`.
+`pnpm check` runs: `typecheck`, `lint`, `knip`, `test:ticketing`, `test:idempotency`, `test:assessment`, `test:matching`, `test:stats`, `test:bot-flow`, and `audit:ticket-storage`.
 
 Individual scripts: `pnpm typecheck`, `pnpm lint`, `pnpm knip`, `pnpm test`, `pnpm audit:d1`, `pnpm db:migrations:apply:local`.
 

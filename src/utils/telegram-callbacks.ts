@@ -52,7 +52,8 @@ export const inboxCallbackQueryRegex = (
 ): RegExp =>
   new RegExp(`^${INBOX_CALLBACK_PREFIX[action]}:(${CALLBACK_REF_PATTERN})$`);
 
-/** Inline keyboard shortcut to run /inbox from a notification. */
+/** Inline keyboard shortcuts for inbox navigation. */
 export const INBOX_MENU_CALLBACK = {
   open: "ib:open",
+  more: (offset: number) => `ib:m:${offset}`,
 } as const;

@@ -1,11 +1,11 @@
 # Public Surface Verification V1
 
-**Date:** 2026-07-07  
+**Date:** 2026-07-10  
 **Scope:** Final release gate for user-facing and public-facing text — no feature changes.
 
 ## Summary
 
-Public surfaces were audited against the V1 product canon (Persian-first anonymous Telegram relay; conversation-style assessment; optional conversation suggestions; explicit non-goals). Bot copy in `src/i18n/` passes forbidden-term checks (negatives only). Keyboards and callbacks match the reply-vs-inline UX rules. `tools/set-telegram-bot-profile.sh` was aligned to recommended Persian BotFather strings (within Telegram length limits). `site/index.html` was copy-audited (stale DO name, English discoverability, encryption wording, docs links). `AGENTS.md` was synced to sealed-ticket architecture, current bindings, docs map, and V1 release mode.
+Public surfaces were audited against the V1 product canon (Persian-first anonymous Telegram relay; conversation-style assessment; optional conversation suggestions; explicit non-goals). Bot copy in `src/i18n/` passes forbidden-term checks (negatives only). Keyboards and callbacks match the current reply-vs-inline UX rules documented in `docs/architecture/bot-interaction-v1.md`. `tools/set-telegram-bot-profile.sh` reads `BOT_COMMAND_DEFINITIONS` from `src/bot/commands.ts` and verifies `getMyCommands`. Legacy interaction aliases (`/match_system`, `m:refresh`, `m:back`) are removed — unsupported callbacks use the generic unavailable-button handler.
 
 **Risk:** Ready for manual Telegram release test — not release-ready until BotFather profile applied and live flows verified.
 
@@ -32,23 +32,30 @@ No new bot copy changes in this pass (prior UX pass already applied). Verificati
 
 ## Keyboard/callback checks
 
-### Main menu (reply)
+See [bot-interaction-v1.md](../architecture/bot-interaction-v1.md) for the full reference.
+
+### Main menu (reply, persistent)
 
 ```txt
-🔗 لینک من
-🧭 پیشنهاد گفت‌وگو
-⚙️ تنظیمات
+🔗 لینک من          📥 صندوق پیام‌ها
+🧭 پیشنهاد گفت‌وگو   ⚙️ تنظیمات
 ```
 
-### Settings menu (reply)
+### Draft mode (reply)
 
 ```txt
-✏️ نام نمایشی | ⏸/▶️ pause/resume
-🚫 رفع مسدودی‌ها | ♻️ بازنشانی پیشنهادها
-ℹ️ درباره و حریم خصوصی | 📊 آمار
-🗑️ پاک کردن حساب
-🏠 منوی اصلی
+↩️ لغو
 ```
+
+Only shown during active text-input drafts (compose, reply, nickname, display name, match intro).
+
+### Settings (inline)
+
+Home, pause/resume, about, stats, clear blocks, reset suggestion history, clear account — all inline via `s:` callbacks. Confirmations use inline yes/no; no settings reply keyboard.
+
+### Suggestion hub (inline)
+
+`renderSuggestionHub` — search, pending, profile, discoverability, assessment entry, back to hub. No secondary match-system screen or reply keyboard.
 
 ### Inbox inline actions
 
@@ -59,19 +66,20 @@ No new bot copy changes in this pass (prior UX pass already applied). Verificati
 ⚠️ گزارش کردن
 ```
 
-### Conversation-suggestions hub (reply)
+### Callback data (active)
 
-Dynamic rows in `buildMatchSystemMenu`: درخواست‌ها + پروفایل; پیدا کردن + فعال/توقف نمایش; assessment entry; منوی اصلی.
+| Prefix | Purpose |
+|--------|---------|
+| `r:`, `b:`, `u:`, `n:`, `rp:` | Inbox ticket actions + 32-char base64url ref |
+| `ib:` | Inbox open / pagination |
+| `s:` | Settings inline actions |
+| `t:` | Assessment flow |
+| `m:hub`, `m:search`, `m:pending`, `m:profile`, `m:disc:on/off`, `m:assess`, `m:req/acc/dec/can:*` | Suggestion hub (registered via `matchCallbackQueryRegex`) |
 
-### Callback data
-
-- Inbox: `o:`, `r:`, `b:`, `u:`, `n:`, `rp:` + 32-char base64url ref (`src/utils/telegram-callbacks.ts`)
-- Settings: `s:yd`, `s:yb`, `s:yr`, `s:n`
-- Assessment: `t:` prefix
-- Matching: `m:` prefix
-- Match-system inline: `ms:` prefix
-- Language-independent, no Persian in callback_data, 64-byte guard on inbox callbacks
-- Handlers call `answerCallbackQuery` where required
+- Language-independent; no Persian in `callback_data`
+- 64-byte guard on inbox callbacks
+- Unknown callbacks → `EXPIRED_CALLBACK_MESSAGE` via final catch-all in `register-handlers.ts`
+- Removed legacy: `/match_system`, `m:refresh`, `m:back`, `ms:` prefix, `o:` open handler
 
 ## Telegram profile strings
 
@@ -93,7 +101,6 @@ inbox - دیدن صندوق پیام‌ها
 settings - تنظیمات و حریم خصوصی
 assessment - ارزیابی سبک گفت‌وگو
 match - پیشنهادهای گفت‌وگو
-match_system - نکات فنی پیشنهاد گفت‌وگو
 ```
 
 ### Recommended Persian short description (applied)
@@ -130,14 +137,15 @@ Static landing remains short: intro, product cards, infra summary, stats boundar
 
 ## AGENTS.md sync
 
-Updated in this pass:
+Current references:
 
-- V1 code-frozen release mode and docs source-of-truth map
+- V1 code-frozen release mode and docs source-of-truth map (includes `bot-interaction-v1.md`)
 - Persian terminology guidance for editors
-- Sealed-ticket + inbox-pointer model (replacing stale `inbox_tickets` / payload-in-DO wording)
-- Current DOs, queues (`neko-outbox`, `neko-stats`), bindings (`TICKET_VAULT`, `REPORT_LEDGER`)
+- Sealed-ticket + inbox-pointer model
+- Current DOs, queues, bindings
 - i18n file map, stats event pipeline, `pnpm check` script list
 - Conversation suggestions naming (not matchmaking)
+- Active inbox callbacks only (`r:`, `b:`, `u:`, `n:`, `rp:`); no legacy match aliases
 
 ## Grep exceptions
 
@@ -176,11 +184,14 @@ No unexplained positive occurrences in live user-facing surfaces.
 | `rg` English forbidden terms | Pass — disclaimers/config only |
 | `node` char count for BotFather strings | short=101, long=466 |
 | `pnpm check` | Pass (typecheck, lint, knip, test:*, audit:ticket-storage) |
+| `tools/verify-bot-flow.ts` | Pass — canonical commands, no legacy match aliases in `src/` |
 
 ## Remaining manual checks
 
 - [ ] Run/apply `pnpm bot:profile` if not applied to production BotFather
-- [ ] Verify BotFather profile visually (name, descriptions, commands)
-- [ ] Real Telegram flow test (link → send → inbox → reply → block → assessment → suggestion → request)
+- [ ] Verify BotFather profile visually (name, descriptions, **five** commands)
+- [ ] Real Telegram flow test per [bot-interaction-v1.md](../architecture/bot-interaction-v1.md) manual QA section
 - [ ] Verify [mohetios.github.io/Nekonymous/](https://mohetios.github.io/Nekonymous/)
 - [ ] Draft GitHub release
+
+Do **not** QA removed `/match_system`, `m:refresh`, or `m:back` as supported behavior.

@@ -64,6 +64,7 @@ import {
   ASSESSMENT_VERSION,
   isCurrentAssessmentVersion,
 } from "./question-bank";
+import { renderSuggestionHub } from "../matching/suggestion-hub";
 import { ASSESSMENT_BUTTON } from "../../i18n/labels";
 import type { NekoContext } from "../../utils/worker";
 
@@ -238,12 +239,17 @@ export const handleAssessmentCallback = async (
       return;
     }
 
+    if (data === ASSESSMENT_CALLBACK.backToHub) {
+      await renderSuggestionHub(ctx, env, userId);
+      return;
+    }
+
     if (data === ASSESSMENT_CALLBACK.exit) {
       await cancelAssessmentSession(userId, env);
       await ctx.editMessageText(ASSESSMENT_EXIT_SAVED, {
         reply_markup: new InlineKeyboard().text(
-          ASSESSMENT_BUTTON.backToMenu,
-          ASSESSMENT_CALLBACK.menu
+          ASSESSMENT_BUTTON.backToSuggestions,
+          ASSESSMENT_CALLBACK.backToHub
         ),
       });
       return;
