@@ -155,6 +155,9 @@ export const searchConversationSuggestions = async (
       recentExposure,
       exposureTokenByPairTag
     );
+    if (results.length === 0) {
+      return { ok: false, reason: "no_candidates" };
+    }
 
     return {
       ok: true,

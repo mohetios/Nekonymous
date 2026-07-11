@@ -24,6 +24,7 @@ import {
   getUserById,
 } from "../identity/identity-service.ts";
 import { createSealedTicket } from "../messaging/create-sealed-ticket.ts";
+import { notifyRecipientInbox } from "../messaging/messaging-service.ts";
 import {
   getRequestRecord,
   setRequestStatus,
@@ -311,6 +312,21 @@ export const acceptConversationRequest = async (
 
     if (!ticketResult.ok) {
       return { ok: false, reason: "state" };
+    }
+
+    if (
+      !ticketResult.duplicate &&
+      typeof ticketResult.pendingCount === "number" &&
+      ticketResult.pendingCount > 0
+    ) {
+      const sourceEventId =
+        ticketResult.ticketHash ?? `request-accepted:${resolved.requestHash}`;
+      await notifyRecipientInbox(
+        env,
+        candidateUser,
+        ticketResult.pendingCount,
+        sourceEventId
+      );
     }
 
     await setRequestStatus(

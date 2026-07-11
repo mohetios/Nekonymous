@@ -203,7 +203,7 @@ pending → accepted | declined | canceled | expired
 
 | Terminal | Side effects |
 |----------|--------------|
-| `accepted` | Sealed inbox ticket; `intro_enc` cleared |
+| `accepted` | Sealed inbox ticket; `intro_enc` cleared; candidate gets standard unread inbox notification (`notifyRecipientInbox`) with **📥 باز کردن صندوق** |
 | `declined` | `intro_enc` cleared; declined cooldown |
 | `canceled` | `intro_enc` cleared; pending lock released |
 | `expired` | `intro_enc` cleared; pending lock released |
@@ -320,6 +320,8 @@ two Vectorize queries
 
 No D1 scan, no fallback scan, no unbounded `Promise.all`, no N+1 loops.
 
+**Vectorize binding:** query with `returnMetadata: "none"` (boolean `false` is invalid on current Workers Vectorize bindings). Do not swallow query errors into empty results — failures should surface as search errors, not silent zero hits.
+
 ## Reciprocal ranking
 
 Pure deterministic TypeScript — **no Vectorize score in final pair score**.
@@ -366,6 +368,7 @@ Blind short-lived exposure tokens only. Reranking:
 - Low exposure → small boost
 - Pending or blocked pair → exclude
 - At most **one** exploration slot if already above minimum reciprocal threshold
+- **Cold start:** if no candidate clears `MIN_RECIPROCAL_SCORE`, return the top ranked results anyway so small discoverable pools are not permanently empty
 
 No global popularity, no public profile score, no D1 exposure table.
 

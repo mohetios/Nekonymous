@@ -38,10 +38,11 @@ export const buildSuggestionHubKeyboard = (
 };
 
 export const buildSuggestionCandidateKeyboard = (
-  suggestionRef: string
+  suggestionRef: string,
+  index = 0
 ): InlineKeyboard =>
   new InlineKeyboard()
-    .text(MATCH_BUTTON.writeIntro(0), SUGGESTION_CALLBACK.request(suggestionRef))
+    .text(MATCH_BUTTON.writeIntro(index), SUGGESTION_CALLBACK.request(suggestionRef))
     .text(MATCH_BUTTON.dismiss, SUGGESTION_CALLBACK.dismiss(suggestionRef))
     .row()
     .text(BACK_BUTTON.toSuggestions, SUGGESTION_HUB_CALLBACK.hub);

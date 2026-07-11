@@ -45,10 +45,15 @@ export const selectSuggestionResults = (
     (candidate) => candidate.reciprocalScore < MIN_RECIPROCAL_SCORE
   );
 
+  // Cold start: if nothing clears the reciprocal floor, still surface the
+  // strongest candidates so small pools are not empty forever.
+  if (aboveThreshold.length === 0) {
+    return ranked.slice(0, MAX_SUGGESTION_RESULTS);
+  }
+
   const selected = [...aboveThreshold];
 
   if (
-    aboveThreshold.length > 0 &&
     belowThreshold.length > 0 &&
     selected.length < MAX_SUGGESTION_RESULTS
   ) {

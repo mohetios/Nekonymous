@@ -23,18 +23,14 @@ const queryChannel = async (
   values: number[],
   namespace: string
 ): Promise<string[]> => {
-  try {
-    const result = await env.CONVERSATION_VECTORS.query(values, {
-      topK: RETRIEVAL_TOP_K_PER_CHANNEL,
-      namespace,
-      returnMetadata: false,
-      returnValues: false,
-    });
+  const result = await env.CONVERSATION_VECTORS.query(values, {
+    topK: RETRIEVAL_TOP_K_PER_CHANNEL,
+    namespace,
+    returnMetadata: "none",
+    returnValues: false,
+  });
 
-    return result.matches.map((match) => match.id);
-  } catch {
-    return [];
-  }
+  return (result.matches ?? []).map((match) => match.id);
 };
 
 export const queryDualChannelVectorHits = async (

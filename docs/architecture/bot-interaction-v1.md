@@ -143,7 +143,7 @@ Test commands: `/start`, `/inbox`, `/settings`, `/assessment`, `/match`.
 3. User A + B: enable **نمایش در پیشنهادها** in `/match`
 4. User A: `m:search` → pick suggestion → write intro → send request
 5. User B: receives notification with accept/decline → accept
-6. User B: `/inbox` → reply; conversation continues as normal anonymous messaging
+6. User B: gets unread inbox notification (same path as normal anonymous messages) → **📥 باز کردن صندوق** or `/inbox` → reply; conversation continues as normal anonymous messaging
 
 Test inbox actions: reply, block, unblock, nickname, report.
 

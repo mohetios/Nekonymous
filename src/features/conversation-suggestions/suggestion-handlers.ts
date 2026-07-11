@@ -143,7 +143,7 @@ const runSuggestionSearch = async (
     await ctx.reply(
       `<b>${index + 1}.</b> ${MATCH_CANDIDATES_WHY_FIT}\n${escapeHtml(entry.explanation)}`,
       withHtml({
-        reply_markup: buildSuggestionCandidateKeyboard(entry.suggestionRef),
+        reply_markup: buildSuggestionCandidateKeyboard(entry.suggestionRef, index),
       })
     );
   }
