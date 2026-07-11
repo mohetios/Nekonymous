@@ -35,7 +35,6 @@ Capability-based anonymous routing is the current model. Do not reintroduce olde
 - Read `docs/architecture/conversation-suggestions-v2.md` before touching profile, indexing, retrieval, ranking, suggestions, or requests.
 - Read `docs/architecture/sealed-ticket-routing-and-inbox.md` before touching inbox, ticketing, or sealed-ticket storage.
 - Read `docs/architecture/bot-interaction-v1.md` before touching commands, keyboards, menus, drafts, or callback routing (V2 callback prefixes in V2 architecture doc).
-- Track progress in `docs/refactor/conversation-v2-checklist.md`.
 
 ### Docs source of truth
 
@@ -46,7 +45,6 @@ Capability-based anonymous routing is the current model. Do not reintroduce olde
 | Bot commands / keyboards / callbacks | `docs/architecture/bot-interaction-v1.md` |
 | Inbox / sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
 | Conversation profile + suggestions (V2) | `docs/architecture/conversation-suggestions-v2.md` |
-| V2 refactor checklist | `docs/refactor/conversation-v2-checklist.md` |
 | Release sign-off | `docs/release/pre-release-conversation-v2-acca6b9.md` |
 | Persian voice | `docs/brand/nekonymous-fa-voice-and-tone.md` |
 

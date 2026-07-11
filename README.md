@@ -147,7 +147,6 @@ pnpm bot:profile
 | [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architecture/sealed-ticket-routing-and-inbox.md) | Sealed ticket + inbox |
 | [docs/architecture/conversation-suggestions-v2.md](./docs/architecture/conversation-suggestions-v2.md) | Conversation profile + suggestions V2 |
 | [docs/brand/nekonymous-fa-voice-and-tone.md](./docs/brand/nekonymous-fa-voice-and-tone.md) | Persian product voice |
-| [docs/refactor/conversation-v2-checklist.md](./docs/refactor/conversation-v2-checklist.md) | V2 refactor checklist (complete) |
 | [docs/release/pre-release-conversation-v2-acca6b9.md](./docs/release/pre-release-conversation-v2-acca6b9.md) | Pre-release sign-off record |
 
 ## Roadmap
