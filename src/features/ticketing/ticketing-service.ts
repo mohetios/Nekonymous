@@ -138,7 +138,7 @@ export const createBlockHash = (
   hmacBase64Url(lookupSecret, `${BLOCK_INFO}${ownerHash}:${peerHash}`);
 
 const scopedPayloadSalt = (scopeId: string): Uint8Array =>
-  base64UrlToBytes(scopeId);
+  textEncoder.encode(scopeId);
 
 const deriveScopedPayloadKey = (
   scopeId: string,

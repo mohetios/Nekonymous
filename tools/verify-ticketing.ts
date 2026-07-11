@@ -47,6 +47,24 @@ if (decrypted !== sample) {
   process.exit(1);
 }
 
+const profileSessionScope =
+  "profile-session:v2:01932abc-def0-7890-abcd-ef1234567890";
+const profileAnswers = "{}";
+const profileCiphertext = await encryptMatchIntro(
+  profileSessionScope,
+  profileAnswers,
+  appMasterKey
+);
+const profileDecrypted = await decryptMatchIntro(
+  profileSessionScope,
+  profileCiphertext,
+  appMasterKey
+);
+if (profileDecrypted !== profileAnswers) {
+  console.error("Profile session scope roundtrip failed");
+  process.exit(1);
+}
+
 const chatCiphertext = await encryptTelegramChatId(123456789, appMasterKey);
 const chatId = await decryptTelegramChatId(chatCiphertext, appMasterKey);
 if (chatId !== 123456789) {
