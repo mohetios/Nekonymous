@@ -802,8 +802,9 @@
           <p class="eyebrow">محصول</p>
           <h2>نِکونیموس چه کاری انجام می‌دهد؟</h2>
           <p class="section-copy">
-            تمرکز V1 روی یک مسیر کوچک و قابل توضیح است: ساخت لینک،
-            دریافت پیام، پاسخ ناشناس، کنترل‌های safety، و پیشنهاد گفت‌وگوی اختیاری.
+            تمرکز محصول روی یک مسیر کوچک و قابل توضیح است: ساخت لینک،
+            دریافت پیام، پاسخ ناشناس، کنترل‌های safety، ارزیابی سبک گفت‌وگو
+            و پیشنهاد گفت‌وگوی اختیاری.
           </p>
         </div>
 
@@ -812,8 +813,8 @@
           <article class="card"><p class="num">۰۲</p><h3>صندوق پیام‌ها</h3><p>پیام‌های خوانده‌نشده از مسیر sealed ticket نمایش داده می‌شوند و payload پس از نمایش موفق پاک می‌شود.</p></article>
           <article class="card"><p class="num">۰۳</p><h3>پاسخ ناشناس</h3><p>پاسخ از همان مدل relay برمی‌گردد؛ بدون اینکه transcript پیام ناشناس در D1 ذخیره شود.</p></article>
           <article class="card"><p class="num">۰۴</p><h3>مسدودسازی و گزارش</h3><p>کنترل‌های safety با blind tagها طراحی شده‌اند تا graph قابل اتصال بین فرستنده و گیرنده ساخته نشود.</p></article>
-          <article class="card"><p class="num">۰۵</p><h3>ارزیابی سبک گفت‌وگو</h3><p>۵۶ پرسش در ۱۴ بُعد برای ساخت پروفایل گفت‌وگویی نسخه <code>v1</code>؛ نه تشخیص شخصیت.</p></article>
-          <article class="card"><p class="num">۰۶</p><h3>پیشنهاد گفت‌وگوی اختیاری</h3><p>فقط برای کاربرانی که ارزیابی را کامل کرده‌اند و نمایش در پیشنهادها را فعال کرده‌اند.</p></article>
+          <article class="card"><p class="num">۰۵</p><h3>ارزیابی سبک گفت‌وگو</h3><p>۲۵ پرسش در ۸ بُعد برای ساخت پروفایل گفت‌وگویی نسخه <code>v2</code>؛ نه تشخیص شخصیت.</p></article>
+          <article class="card"><p class="num">۰۶</p><h3>پیشنهاد گفت‌وگوی اختیاری</h3><p>بعد از ارزیابی می‌توانی گزینه‌های ناشناس را جست‌وجو کنی؛ «نمایش در پیشنهادها» برای دیده‌شدن توسط دیگران اختیاری است.</p></article>
         </div>
       </section>
 
@@ -871,11 +872,11 @@
             </tr>
             <tr>
               <th>Durable Objects</th>
-              <td><code>UserStateDO</code>، <code>TicketVaultDO</code>، <code>ReportLedgerDO</code> و <code>TelegramOutboxDO</code> برای hot state و هماهنگی.</td>
+              <td><code>UserStateDO</code>، <code>TicketVaultDO</code>، <code>ProfileVaultShardDO</code>، <code>ConversationVaultShardDO</code>، <code>PairLedgerShardDO</code>، <code>ReportLedgerDO</code> و <code>TelegramOutboxDO</code>.</td>
             </tr>
             <tr>
               <th>D1</th>
-              <td>منبع ساختاری برای users، links، assessment، suggestion records و جدول‌های آماری aggregate.</td>
+              <td>منبع ساختاری برای users، public links و جدول‌های آماری aggregate؛ بدون پروفایل، پاسخ ارزیابی یا graph جفت‌ها.</td>
             </tr>
             <tr>
               <th>KV</th>
@@ -883,7 +884,7 @@
             </tr>
             <tr>
               <th>Queues</th>
-              <td><code>NEKO_OUTBOX_QUEUE</code> برای ارسال‌های retryable و <code>NEKO_STATS_QUEUE</code> برای aggregation رویدادها.</td>
+              <td><code>neko-outbox</code>، <code>neko-stats</code> و <code>neko-profile-index</code> برای ارسال، aggregation و index پروفایل.</td>
             </tr>
             <tr>
               <th>Vectorize</th>
@@ -955,7 +956,7 @@
 
         <div class="doc-list">
           <a href="https://mohetios.dev/fa/lab/nekonymous-anonymous-messaging-technical-lab"><strong>یادداشت فنی Lab (مُهتیوس)</strong><span>مقاله‌ی فارسی درباره‌ی معماری، sealed ticket، ارزیابی، پیشنهاد گفت‌وگو و مرزهای حریم خصوصی.</span></a>
-          <a href="https://github.com/mohetios/Nekonymous#readme"><strong>README</strong><span>نمای کلی پروژه، وضعیت V1، اجرای محلی و مرزهای محصول.</span></a>
+          <a href="https://github.com/mohetios/Nekonymous#readme"><strong>README</strong><span>نمای کلی پروژه، وضعیت V2، اجرای محلی و مرزهای محصول.</span></a>
           <a href="https://github.com/mohetios/Nekonymous/blob/master/SECURITY.md"><strong>SECURITY.md</strong><span>گزارش مسئولانه‌ی آسیب‌پذیری و توضیح محدودیت‌های امنیتی.</span></a>
           <a href="https://github.com/mohetios/Nekonymous/blob/master/CONTRIBUTING.md"><strong>CONTRIBUTING.md</strong><span>قواعد مشارکت، نصب و اجرای پروژه.</span></a>
           <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/security/threat-model.md"><strong>Threat model</strong><span>چه چیزی محافظت می‌شود، چه چیزی محافظت نمی‌شود و چرا.</span></a>
