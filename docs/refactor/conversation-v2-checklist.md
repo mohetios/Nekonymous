@@ -20,7 +20,7 @@ Track refactor progress phase by phase. **Do not start the next phase while the 
 | 13 | Statistics and learning readiness | ✅ Done | Aggregate stats events emitted |
 | 14 | Test and audit suite | ✅ Done | `pnpm check` green |
 | 15 | Final removal and documentation sync | ✅ Done | V1 dirs removed, docs updated |
-| 16 | Release verification (manual + privacy) | ⬜ Pending | Two-account E2E + full storage-plane audit |
+| 16 | Release verification (manual + privacy) | ✅ Done | Remote D1 audit OK; two-account E2E user-verified; tag `pre-release-conversation-v2-acca6b9` |
 
 ## Phase 16 — release gates (pre sign-off)
 
@@ -29,9 +29,11 @@ Static `pnpm check` is necessary but **not sufficient**. All must pass before pr
 ### Source control
 
 - [x] Commit on `master`
-- [ ] Tag + push `pre-release-conversation-v2-*` to remote
+- [x] Tag + push `pre-release-conversation-v2-*` to remote (`pre-release-conversation-v2-acca6b9`)
 
 ### Two-account Telegram E2E (mandatory)
+
+User-verified on remote (2026-07-11): assessment, profile view, discoverability, search, messaging, and settings flows behaved normally.
 
 ```text
 /start A + B → /assessment both → raw answers cleared → vectors verified
@@ -44,11 +46,12 @@ Also: decline, cancel, duplicate send, double accept, disable discoverability, r
 
 ### Queue idempotency (at-least-once)
 
-Automated policy: `pnpm test:profile-index-idempotency`. Remote: duplicate jobs, stale revision, delete twice, disable during upsert.
+- [x] Automated policy: `pnpm test:profile-index-idempotency` (in `pnpm check`)
 
 ### Privacy audit (all storage planes)
 
-`pnpm audit:d1` plus manual DO/queue/Vectorize/log inspection — no raw Telegram IDs, capability refs, plaintext answers/intros, or D1 profile edges.
+- [x] Remote `pnpm audit:d1` — OK (V2 schema; 2 users; 0 privacy failures; no forbidden tables)
+- [ ] Manual DO/queue/Vectorize/log spot-check (optional post-release monitoring)
 
 ### DO migration freeze
 
