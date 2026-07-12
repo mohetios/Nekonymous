@@ -862,7 +862,8 @@
               <li>متن پیام ناشناس داخل D1 ذخیره نمی‌شود.</li>
               <li>برای پیام‌رسانی، ردیف دائمی <code>sender → recipient</code> در D1 ساخته نمی‌شود.</li>
               <li>شناسه خام تیکت در D1 یا KV ذخیره نمی‌شود.</li>
-              <li>پاسخ‌های خام ارزیابی بعد از ساخت موفق پروفایل حذف می‌شوند.</li>
+              <li>پروفایل، intro و workflow پیشنهاد گفت‌وگو در D1 ذخیره نمی‌شوند.</li>
+              <li>پاسخ‌های خام پروفایل گفت‌وگو بعد از نهایی‌سازی حذف می‌شوند.</li>
               <li>آمار عمومی از شمارنده‌های تجمیعی می‌آید، نه پرونده و رتبه‌بندی کاربران.</li>
             </ul>
           </div>
@@ -916,7 +917,10 @@
             </tr>
             <tr>
               <th>Durable Objects</th>
-              <td>وضعیت‌های حساس و هماهنگ مثل صندوق، تیکت‌ها، پروفایل‌ها، درخواست‌ها و جلوگیری از اجرای تکراری را مدیریت می‌کنند.</td>
+              <td>
+                TicketVault، ProfileVault، ConversationVault، PairLedger، UserState، ReportLedger و
+                TelegramOutbox — برای صندوق، تیکت‌ها، پروفایل، suggestion/request، pair state و ارسال idempotent.
+              </td>
             </tr>
             <tr>
               <th>D1</th>
@@ -928,11 +932,17 @@
             </tr>
             <tr>
               <th>Queues</th>
-              <td>ارسال اعلان‌ها، ثبت آمار و به‌روزرسانی ایندکس پروفایل را با retry و مسیر شکست کنترل‌شده انجام می‌دهند.</td>
+              <td>
+                outbox تلگرام، ثبت آمار (<code>neko-stats</code>) و ایندکس پروفایل
+                (<code>neko-profile-index</code>) را با retry و مسیر شکست کنترل‌شده انجام می‌دهند.
+              </td>
             </tr>
             <tr>
               <th>Vectorize</th>
-              <td>فقط مجموعه‌ی اولیه‌ی گزینه‌ها را پیدا می‌کند؛ رتبه‌بندی نهایی به‌صورت قطعی و دوطرفه در TypeScript انجام می‌شود.</td>
+              <td>
+                فقط بازیابی coarse دوطرفه برای پیشنهاد گفت‌وگو است؛ ranker نهایی به‌صورت قطعی و متقابل در
+                TypeScript انجام می‌شود. Workers AI در این مسیر استفاده نمی‌شود.
+              </td>
             </tr>
           </tbody>
         </table>
@@ -1020,9 +1030,9 @@
           <div class="stat-card"><strong>پیام‌ها</strong><span><code>message_created</code> · <code>message_delivered</code> · <code>message_expired</code></span></div>
           <div class="stat-card"><strong>صندوق</strong><span><code>inbox_opened</code> · <code>reply_sent</code></span></div>
           <div class="stat-card"><strong>ایمنی</strong><span><code>block_created</code> · <code>report_created</code> (با statKey اختیاری)</span></div>
-          <div class="stat-card"><strong>ارزیابی</strong><span><code>profile_started</code> · <code>profile_completed</code> · index queue events</span></div>
+          <div class="stat-card"><strong>پروفایل گفت‌وگو</strong><span><code>profile_started</code> · <code>profile_completed</code> · <code>profile_index_requested</code> · <code>profile_indexed</code></span></div>
           <div class="stat-card"><strong>پیشنهادها</strong><span><code>suggestion_search</code> · <code>suggestion_shown</code> · <code>suggestion_dismissed</code></span></div>
-          <div class="stat-card"><strong>درخواست‌ها</strong><span><code>request_sent</code> · accepted · declined · canceled</span></div>
+          <div class="stat-card"><strong>درخواست‌ها</strong><span><code>request_sent</code> · <code>request_accepted</code> · <code>request_declined</code> · <code>request_canceled</code></span></div>
         </div>
       </section>
 
@@ -1043,25 +1053,25 @@
           </a>
           <a href="https://mohetios.dev/fa/lab/nekonymous-anonymous-messaging-technical-lab">
             <strong>آزمایشگاه فنی نِکونیموس</strong>
-            <span>معماری Cloudflare-native، جریان پیام، sealed ticket، صندوق و مرزهای حریم خصوصی.</span>
+            <span>معماری Cloudflare-native، جریان پیام، sealed ticket، پروفایل گفت‌وگو و پیشنهادهای V2.</span>
           </a>
           <a href="https://github.com/mohetios/Nekonymous#readme">
             <strong>README و وضعیت فعلی</strong>
             <span>قابلیت‌های نسخه جاری، اجرای محلی، استقرار و نقشه مستندات پروژه.</span>
           </a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/security/threat-model.md">
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/threat-model.md">
             <strong>مدل تهدید</strong>
             <span>چه چیزی محافظت می‌شود، چه چیزی محافظت نمی‌شود و مرز اعتماد کجاست.</span>
           </a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/platform-stats-engine.md">
-            <strong>موتور آمار پلتفرم</strong>
-            <span>صف neko-stats، شمارنده‌های D1، record* helpers، و مرز حریم خصوصی صفحه آمار.</span>
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture.md">
+            <strong>معماری runtime</strong>
+            <span>Worker، Durable Objectها، صف‌ها، آمار تجمیعی، تعامل بات و مرزهای ذخیره‌سازی.</span>
           </a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/sealed-ticket-routing-and-inbox.md">
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/sealed-ticketing.md">
             <strong>Sealed Ticket و صندوق</strong>
             <span>جزئیات تیکت، route و payload رمزنگاری‌شده، انقضا و actionهای پیام.</span>
           </a>
-          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/architecture/conversation-suggestions-v2.md">
+          <a href="https://github.com/mohetios/Nekonymous/blob/master/docs/conversation-suggestions.md">
             <strong>پیشنهاد گفت‌وگو V2</strong>
             <span>پروفایل ۲۵ سؤالی، Vectorize دوکاناله، رتبه‌بندی متقابل و درخواست با پذیرش دوطرفه.</span>
           </a>
