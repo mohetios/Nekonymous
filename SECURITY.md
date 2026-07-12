@@ -3,74 +3,74 @@
 ## Supported version
 
 | Version | Status |
-|---------|--------|
-| `master` (Conversation Suggestions V2, pre-release `pre-release-conversation-v2-acca6b9`) | Supported — security reports accepted |
-
-Older experimental branches and pre-V2 assessment/matching code paths are not supported.
+|---|---|
+| current `master` | security reports accepted |
+| older experimental and pre-V2 branches | unsupported |
 
 ## Reporting a vulnerability
 
-**Do not** open public GitHub issues for security vulnerabilities.
+Do **not** open a public GitHub issue for a suspected vulnerability.
 
 Email: [hi@mohetios.dev](mailto:hi@mohetios.dev)
 
 Include:
 
-- affected area or file path
-- reproduction steps if available
-- expected impact
-- whether secrets, Telegram identities, message payloads, D1, Durable Objects, KV, Vectorize, or deployment credentials may be involved
+- affected component or file path;
+- reproduction steps or a minimal proof of concept;
+- expected impact;
+- whether Telegram identities, messages, callbacks, secrets, D1, Durable Objects, KV, Queues, Vectorize, or deployment credentials are involved;
+- whether the report contains real user data.
 
-## Privacy and security boundaries
+Do not send production message bodies, raw Telegram IDs, bot tokens, callback capabilities, or Cloudflare credentials unless they are necessary to understand the issue. Redact them whenever possible.
 
-Nekonymous is a **hosted anonymous Telegram relay**. It is:
+This is an independent open-source project. Reports are reviewed as soon as practical; no formal response SLA is provided.
 
-- **Not** end-to-end encrypted (E2EE)
-- **Not** zero-knowledge
-- **Not** a perfect anonymity system
+## Product security boundary
 
-**By design:**
+Nekonymous is a hosted anonymous Telegram relay.
 
-- Telegram sees messages while users send and receive through Telegram.
-- The Worker sees plaintext while processing delivery, encryption, and decryption.
-- Stored sensitive data is encrypted at rest **where implemented** (payloads, chat ids, route capsules, profiles, request intros).
-- Raw Telegram user ids are not stored in D1, KV, or Vectorize metadata.
+It is not:
 
-For the full threat model, see [docs/security/threat-model.md](./docs/security/threat-model.md).
+- end-to-end encrypted;
+- zero-knowledge;
+- a perfect-anonymity system.
 
-## What not to report as a vulnerability
+Telegram sees message plaintext while users send and receive messages. The Worker sees plaintext while processing, encrypting, decrypting, and delivering messages.
 
-The following are **documented product boundaries**, not defects:
+Sensitive stored data is encrypted at rest where implemented. Raw Telegram user IDs are not stored in D1, KV, or Vectorize metadata. Anonymous message bodies and routes are not stored as plaintext D1 rows.
 
-- Telegram visibility of messages in transit
-- Worker plaintext processing during relay
-- Absence of E2EE or zero-knowledge guarantees
-- Documented rate limits, inbox caps, and cooldowns
-- Recipient ability to screenshot or forward messages
-- Approximate (non-clinical) conversation suggestions
+Read the full [Threat Model](./docs/threat-model.md).
 
-## Sensitive data handling
+## Documented limitations, not vulnerabilities
 
-| Data | Storage |
-|------|---------|
-| Anonymous message bodies | TicketVault DO encrypted; payload cleared after inbox delivery |
-| Sender–recipient graph (relay) | Not stored in D1 as plaintext edges |
-| Telegram user id | HMAC hash in D1 |
-| Telegram chat id | AES ciphertext in D1 |
-| Callback ticket refs | Short refs in Telegram only; blind hashes / sealed pointers in storage |
-| Profile questionnaire session | Encrypted session in UserState DO; raw answers deleted after finalization |
-| Finalized conversation profile | ProfileVaultShard DO encrypted; not in D1 |
-| Request intro text | ConversationVaultShard DO encrypted |
-| Reports | Blind tags in ReportLedger DO |
+The following are expected product boundaries:
 
-Details: [docs/security/threat-model.md](./docs/security/threat-model.md) and [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architecture/sealed-ticket-routing-and-inbox.md).
+- Telegram can see messages in transit;
+- the Worker processes plaintext;
+- recipients can screenshot, forward, or copy messages;
+- rate limits, inbox caps, cooldowns, and expirations are intentional;
+- conversation suggestions are approximate product signals, not identity, safety, or psychological guarantees;
+- Nekonymous does not implement payments or Telegram Stars;
+- application-layer guarantees do not survive bot-token, Worker, Cloudflare-account, or application-key compromise.
 
-## Known limitations
+A documented limitation can still be reported when the implementation behaves more weakly than the documentation, leaks additional data, or bypasses an intended control.
 
-- Endpoint, secret, or Cloudflare/Telegram platform compromise is out of scope for application-layer guarantees.
-- Conversation suggestions are product-level signals, not safety or identity guarantees.
-- No payment flow; Telegram Stars are not implemented.
+## High-value report areas
 
-## Response expectations
+Reports are especially useful for:
 
-This is an independent open-source project. Reports are reviewed as soon as practical; no formal SLA is provided.
+- forged webhook acceptance;
+- capability guessing, ownership bypass, or callback replay;
+- duplicate ticket or request creation;
+- payload clearing before successful delivery;
+- expired route material remaining accessible;
+- raw Telegram identity or message content leaking into D1, KV, Vectorize, queues, or logs;
+- cross-user Durable Object state access;
+- stale profile-index work restoring deleted discovery data;
+- outbox lease or idempotency bypass;
+- block/report bypass;
+- secret exposure in repository, build output, or CI logs.
+
+## Safe disclosure
+
+Please allow time to investigate and prepare a fix before public disclosure. After remediation, a security advisory or release note may credit the reporter unless anonymity is requested.

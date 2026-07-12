@@ -5,7 +5,6 @@ import type {
   IndexJobStatus,
   ProfileVaultRecord,
   ProfileVaultRecordStatus,
-  ProfileVaultShardPing,
   StoreIndexJobInput,
   StoreProfileInput,
   StoreVectorRouteInput,
@@ -31,14 +30,6 @@ const doFetch = async <T>(
     throw new Error(`ProfileVaultDO ${path} failed: ${response.status}`);
   }
   return response.json<T>();
-};
-
-export const pingProfileVaultShard = async (
-  env: Environment,
-  lookupHash: string
-): Promise<ProfileVaultShardPing> => {
-  const shard = stub(env, lookupHash);
-  return shard.ping();
 };
 
 export const storeProfileRecord = async (

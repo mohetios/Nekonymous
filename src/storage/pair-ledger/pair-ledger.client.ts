@@ -1,6 +1,6 @@
 import type { Environment } from "../../types";
 import { shardNameForLookupHash } from "../shard-routing";
-import type { PairLedgerShardPing, PairStateRecord, UpsertPairStateInput } from "./pair-ledger.types";
+import type { PairStateRecord, UpsertPairStateInput } from "./pair-ledger.types";
 
 const stub = (env: Environment, pairTag: string) =>
   env.PAIR_LEDGER_DO.get(
@@ -21,26 +21,6 @@ const doFetch = async <T>(
     throw new Error(`PairLedgerDO ${path} failed: ${response.status}`);
   }
   return response.json<T>();
-};
-
-export const pingPairLedgerShard = async (
-  env: Environment,
-  pairTag: string
-): Promise<PairLedgerShardPing> => {
-  const shard = stub(env, pairTag);
-  return shard.ping();
-};
-
-export const getPairStateRecord = async (
-  env: Environment,
-  pairTag: string
-): Promise<PairStateRecord | null> => {
-  const body = await doFetch<{ record: PairStateRecord | null }>(
-    env,
-    pairTag,
-    `/pair-states/${encodeURIComponent(pairTag)}`
-  );
-  return body.record;
 };
 
 const mapBounded = async <T, R>(

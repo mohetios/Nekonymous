@@ -3,11 +3,8 @@ import type { Environment } from "../../types";
 import type {
   IndexJobRecord,
   ProfileVaultRecord,
-  ProfileVaultShardPing,
   VectorRouteRecord,
 } from "./profile-vault.types";
-
-export type { ProfileVaultShardPing } from "./profile-vault.types";
 
 type ProfileRow = {
   profile_hash: string;
@@ -466,28 +463,5 @@ export class ProfileVaultShardDurableObject extends DurableObject<Environment> {
     }
 
     return Response.json({ ok: true });
-  }
-
-  ping(): ProfileVaultShardPing {
-    const profiles =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM profiles")
-        .one().n ?? 0;
-    const vectorRoutes =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM vector_routes")
-        .one().n ?? 0;
-    const indexJobs =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM index_jobs")
-        .one().n ?? 0;
-
-    return {
-      ok: true,
-      plane: "profile",
-      profiles,
-      vectorRoutes,
-      indexJobs,
-    };
   }
 }

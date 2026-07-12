@@ -68,15 +68,3 @@ export type VectorRouteRole = "self" | "desired";
 export type VectorRouteStatus = "pending" | "active" | "deleted";
 
 export type IndexJobStatus = "pending" | "completed" | "expired";
-
-export type ProfileVaultShardPing = {
-  ok: true;
-  plane: "profile";
-  profiles: number;
-  vectorRoutes: number;
-  indexJobs: number;
-};
-
-export interface ProfileVaultShardRpc {
-  ping(): ProfileVaultShardPing;
-}

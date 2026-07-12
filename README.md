@@ -1,73 +1,26 @@
-# nekonymous
+# Nekonymous
 
-nekonymous is a Persian-first anonymous Telegram bot for personal anonymous links, anonymous messaging, anonymous replies, conversation-style assessment, and optional conversation suggestions. It runs as a single Cloudflare Worker with a Telegram webhook only — the bot is the product surface.
+**Nekonymous** is a Persian-first anonymous Telegram bot for personal anonymous links, anonymous messages and replies, a conversation-style profile, and optional conversation suggestions.
 
-- **Intro page:** [mohetios.github.io/nekonymous](https://mohetios.github.io/nekonymous/)
-- **Source:** [github.com/mohetios/nekonymous](https://github.com/mohetios/nekonymous)
+It runs as a single Cloudflare Worker. Telegram is the product surface: the Worker accepts the Telegram webhook, consumes background queues, coordinates Cloudflare storage, and sends responses back through Telegram.
 
-## Current status
-
-- **Conversation Suggestions V2** — implemented and pre-release signed off (`pre-release-conversation-v2-acca6b9`)
-- **Telegram-bot-only** — no public web app or SPA in the Worker (GitHub Pages intro is static docs only)
-- **Stack:** Cloudflare Workers + D1 + Durable Objects + KV + Queues + Vectorize (no Workers AI in the suggestion path)
-- **Before deploy:** run `pnpm check`; use `tools/setup-conversation-v2-resources.sh` for Vectorize and vault DO setup on fresh environments
+- [Intro page](https://mohetios.github.io/Nekonymous/)
+- [Documentation](./docs/README.md)
+- [Security policy](./SECURITY.md)
 
 ## What it does
 
-- Personal anonymous link (`t.me/{bot}?start={slug}`)
-- Anonymous message (deep link)
-- Inbox (`/inbox`)
-- Anonymous reply
-- Block / report / private nickname
-- Pause / resume incoming messages
-- Display name settings
-- **Conversation profile** — 25 questions, 8 dimensions, schema `v2` (`/assessment`)
-- **Conversation suggestions** — dual Vectorize retrieval, reciprocal ranking, sealed capabilities (`/match`)
-- **Conversation requests** — intro message; accept → sealed inbox ticket (`q:` callbacks)
-- Hard account reset (new internal id + link)
-- Anonymous platform stats (`platform_daily_stats` via `neko-stats` queue)
+- Creates a personal anonymous deep link: `t.me/{bot}?start={slug}`
+- Relays anonymous text messages through sealed tickets
+- Provides a bounded inbox with anonymous replies
+- Supports block, report, private nickname, and pause/resume
+- Builds a conversation profile from 25 questions across 8 dimensions
+- Offers opt-in conversation suggestions with deterministic reciprocal ranking
+- Converts an accepted conversation request into the normal sealed-ticket inbox flow
+- Supports hard account reset with a new internal identity and public link
+- Records anonymous aggregate product statistics
 
-## What it is not
-
-- Not E2EE
-- Not zero-knowledge
-- Not perfect anonymity
-- Not a dating app
-- Not a personality test or clinical diagnosis
-- Not a hosted chat app with a public logged-in UI
-- No payments / Telegram Stars
-
-Telegram and the Worker see message plaintext while messages are processed. Encryption at rest for stored sensitive data is not the same as E2EE.
-
-## Privacy boundaries
-
-nekonymous hides users from each other in normal product flows, minimizes stored data where possible, and encrypts sensitive stored data at rest where implemented.
-
-**In storage (where implemented):** HMACed Telegram hashes, encrypted chat ids and payloads, sealed ticket routing, profile and suggestion data in vault Durable Objects — not anonymous message bodies in D1.
-
-**Not protected:** Telegram/Worker plaintext during delivery, screenshots, secret or platform compromise.
-
-Full model: [docs/security/threat-model.md](./docs/security/threat-model.md). Reporting: [SECURITY.md](./SECURITY.md).
-
-## Architecture
-
-```text
-Telegram → Cloudflare Worker (grammY) → D1 / Durable Objects / KV / Queues / Vectorize → Telegram outbox
-```
-
-| Layer | Role |
-|-------|------|
-| Worker | Webhook + queue consumers |
-| D1 | Users, public links, aggregate stats only |
-| UserState DO | Inbox pointers, drafts, blocks, profile session, exposure tokens |
-| ProfileVault / ConversationVault / PairLedger DO | Encrypted profiles, suggestions, requests, pair state |
-| TicketVault DO | Sealed encrypted message tickets |
-| KV | Routing cache only |
-| Vectorize | Coarse 8-d vectors for suggestion retrieval (no Workers AI) |
-
-Details: [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architecture/sealed-ticket-routing-and-inbox.md), [docs/architecture/conversation-suggestions-v2.md](./docs/architecture/conversation-suggestions-v2.md), [docs/architecture/platform-stats-engine.md](./docs/architecture/platform-stats-engine.md).
-
-## Bot commands
+Main commands:
 
 ```text
 /start
@@ -77,51 +30,156 @@ Details: [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architect
 /match
 ```
 
-Main reply keyboard: `🔗 لینک من` · `📥 صندوق پیام‌ها` · `🧭 پیشنهاد گفت‌وگو` · `⚙️ تنظیمات`
+Main reply keyboard:
 
-Bot interaction details: [docs/architecture/bot-interaction-v1.md](./docs/architecture/bot-interaction-v1.md).
+```text
+🔗 لینک من
+📥 صندوق پیام‌ها
+🧭 پیشنهاد گفت‌وگو
+⚙️ تنظیمات
+```
 
-## Setup
+## Product flow
+
+```text
+Personal link
+  → anonymous message
+  → sealed ticket
+  → recipient inbox
+  → reply / nickname / block / report
+  → ticket expiry
+```
+
+Optional conversation suggestions use a separate flow:
+
+```text
+25-question conversation profile
+  → opt-in discoverability
+  → bounded Vectorize retrieval
+  → deterministic reciprocal ranking
+  → sealed suggestion
+  → sealed request
+  → accepted request becomes a normal message ticket
+```
+
+## Privacy boundary
+
+Nekonymous hides users from each other in normal product flows and minimizes joinable stored data. Sensitive stored data is encrypted at rest where implemented.
+
+It is **not**:
+
+- end-to-end encrypted;
+- zero-knowledge;
+- a perfect-anonymity system;
+- a dating or compatibility product;
+- a personality test or clinical assessment.
+
+Telegram sees message plaintext while users send and receive messages. The Worker also sees plaintext while processing, encrypting, decrypting, and delivering it. Encryption at rest does not change that boundary.
+
+Read the complete [threat model](./docs/threat-model.md) before making security or privacy claims.
+
+## Core architecture
+
+```text
+Telegram Bot API
+        │
+        ▼
+Cloudflare Worker + grammY
+        │
+        ├── D1
+        ├── Durable Objects
+        ├── KV
+        ├── Queues
+        └── Vectorize
+        │
+        ▼
+Telegram outbox
+        │
+        ▼
+Telegram Bot API
+```
+
+| Plane | Responsibility |
+|---|---|
+| Worker | `POST /bot`, grammY handlers, queue dispatch, Durable Object exports |
+| D1 | users, public links, and aggregate product statistics |
+| UserState DO | inbox pointers, drafts, blocks, labels, rate limits, profile sessions, exposure state |
+| TicketVault DO | encrypted ticket routes and temporary encrypted payloads |
+| ProfileVault DO | encrypted conversation profiles and Vectorize routing data |
+| ConversationVault DO | sealed suggestions, requests, and encrypted request intros |
+| PairLedger DO | blind pair locks, cooldowns, and pair state |
+| ReportLedger DO | blind abuse and report signals |
+| TelegramOutbox DO | idempotent Telegram delivery with leases and bounded retention |
+| KV | routing and short-lived cache only |
+| Queues | Telegram delivery, profile indexing, and aggregate statistics |
+| Vectorize | coarse 8-dimensional retrieval only; no final decision logic |
+
+D1 does not store anonymous message bodies or a plaintext anonymous sender-recipient graph. KV and Vectorize are not authoritative product stores.
+
+## Sealed ticketing
+
+An anonymous message is represented as a recipient-scoped sealed ticket capability:
+
+```text
+ticketRef
+  → blind ticketHash
+  → actor-bound owner proof
+  → encrypted route capsule
+  → temporary encrypted payload
+  → TicketVault
+  → sealed inbox pointer
+```
+
+The raw `ticketRef` is sent through Telegram callback data but is not stored as a database key. The payload is cleared after successful first inbox delivery. The encrypted route remains only until ticket expiry so reply, block, report, and private nickname actions can still work.
+
+See [Sealed Ticketing](./docs/sealed-ticketing.md).
+
+## Conversation suggestions
+
+Conversation Suggestions V2 uses:
+
+- 25 Persian-first questions;
+- 8 conversation dimensions;
+- separate self-style and desired-style vectors;
+- opt-in discoverability;
+- dual Vectorize retrieval;
+- deterministic TypeScript ranking;
+- blind pair state and sealed capabilities;
+- no Workers AI in the suggestion or ranking path.
+
+Vectorize retrieves a bounded candidate set. It does not make the final decision and does not receive Telegram identities.
+
+See [Conversation Suggestions](./docs/conversation-suggestions.md).
+
+## Quick start
+
+Prerequisites:
+
+- Node.js 22 or newer
+- pnpm
+- Wrangler authenticated to a Cloudflare account
+- a Telegram bot token
+- configured Cloudflare bindings from [`wrangler.jsonc.example`](./wrangler.jsonc.example)
 
 ```bash
 pnpm install
 cp .env.example .dev.vars
-# fill secrets
+# Fill local secrets.
 
 pnpm db:migrations:apply:local
-./tools/setup-conversation-v2-resources.sh   # fresh local / remote resources
+./tools/setup-conversation-v2-resources.sh
+
 pnpm check
 pnpm dev
 ```
 
-`pnpm dev` → `wrangler dev --local --port 8787`. Use an HTTPS tunnel for Telegram webhooks; `secret_token` must match `BOT_SECRET_KEY`.
+`pnpm dev` starts local Wrangler on port `8787`. Telegram must reach `POST /bot` through an HTTPS URL, and the Telegram webhook secret must match `BOT_SECRET_KEY`.
 
-Deploy: `pnpm deploy` (remote migrations + `wrangler deploy --minify`).
+The resource setup script can create or migrate Cloudflare resources. Review its target and configuration before using it outside a disposable development environment.
 
-## Configuration
+Full setup, testing, and deployment instructions are in [Development](./docs/development.md).
 
-Local secrets: `.dev.vars` from [`.env.example`](./.env.example).
-
-| Secret / var | Purpose |
-|--------------|---------|
-| `SECRET_TELEGRAM_API_TOKEN` | Bot API |
-| `BOT_SECRET_KEY` | Webhook validation |
-| `APP_MASTER_KEY` | Encryption IKM |
-| `APP_HMAC_PEPPER` | Telegram hash HMAC |
-| `BOT_INFO`, `BOT_NAME`, `BOT_USERNAME` | Bot metadata |
-
-Wrangler bindings: `DB`, `NEKO_KV`, `USER_STATE_DO`, `PROFILE_VAULT_DO`, `CONVERSATION_VAULT_DO`, `PAIR_LEDGER_DO`, `TELEGRAM_OUTBOX_DO`, `TICKET_VAULT`, `REPORT_LEDGER`, `NEKO_OUTBOX_QUEUE`, `NEKO_STATS_QUEUE`, `NEKO_PROFILE_INDEX_QUEUE`, `CONVERSATION_VECTORS`. Template: [`wrangler.jsonc.example`](./wrangler.jsonc.example).
-
-### Local testing (conversation V2)
-
-1. Apply D1 migrations: `pnpm db:migrations:apply:local`
-2. Create Vectorize index + vault DO migrations: `./tools/setup-conversation-v2-resources.sh`
-3. Fill `.dev.vars` from `.env.example`
-4. Run `pnpm check` then `pnpm dev`
-5. Point Telegram webhook at your tunnel (`POST /bot`, secret `BOT_SECRET_KEY`)
-6. Test flow: `/assessment` → complete profile → enable discoverability in `/match` → search → send intro → accept on second account
-
-## Development checks
+## Verification
 
 ```bash
 pnpm typecheck
@@ -130,35 +188,28 @@ pnpm knip
 pnpm test
 pnpm check
 pnpm audit:d1
-pnpm bot:profile
 ```
 
-`pnpm check` runs typecheck, lint, knip, all `test:*` verify scripts, and `audit:ticket-storage`.
+`pnpm check` runs type checking, linting, dead-code checks, the repository verification scripts, and the sealed-ticket storage audit.
+
+The current test suite covers ticket lifecycle, webhook and outbox idempotency, statistics, bot flow, D1 schema boundaries, profile indexing, conversation capabilities, privacy leakage, profile construction, retrieval, ranking, eligibility, requests, and release-hardening invariants.
 
 ## Documentation
 
 | Document | Purpose |
-|----------|---------|
-| [SECURITY.md](./SECURITY.md) | Vulnerability reporting and boundaries |
-| [CONTRIBUTING.md](./CONTRIBUTING.md) | How to contribute |
-| [AGENTS.md](./AGENTS.md) | Maintainer / agent rules |
-| [docs/security/threat-model.md](./docs/security/threat-model.md) | Threat model |
-| [docs/architecture/bot-interaction-v1.md](./docs/architecture/bot-interaction-v1.md) | Commands, keyboards, callbacks |
-| [docs/architecture/sealed-ticket-routing-and-inbox.md](./docs/architecture/sealed-ticket-routing-and-inbox.md) | Sealed ticket + inbox |
-| [docs/architecture/conversation-suggestions-v2.md](./docs/architecture/conversation-suggestions-v2.md) | Conversation profile + suggestions V2 |
-| [docs/architecture/platform-stats-engine.md](./docs/architecture/platform-stats-engine.md) | Anonymous stats queue, D1 aggregates, public stats page |
-| [docs/brand/nekonymous-fa-voice-and-tone.md](./docs/brand/nekonymous-fa-voice-and-tone.md) | Persian product voice |
-| [docs/release/pre-release-conversation-v2-acca6b9.md](./docs/release/pre-release-conversation-v2-acca6b9.md) | Pre-release sign-off record |
+|---|---|
+| [Documentation index](./docs/README.md) | Canonical documentation map |
+| [Architecture](./docs/architecture.md) | Runtime, storage planes, data flows, bot interaction, statistics |
+| [Sealed Ticketing](./docs/sealed-ticketing.md) | Core anonymous relay and inbox protocol |
+| [Conversation Suggestions](./docs/conversation-suggestions.md) | Profile, retrieval, ranking, suggestions, and requests |
+| [Threat Model](./docs/threat-model.md) | Trust boundaries, threats, mitigations, and residual risks |
+| [Development](./docs/development.md) | Local setup, tests, deployment, and maintenance |
+| [Security Policy](./SECURITY.md) | Private vulnerability reporting |
+| [Contributing](./CONTRIBUTING.md) | Contribution rules and quality bar |
 
-## Roadmap
+## Project status
 
-**Future backlog — not in current release:**
-
-- Telegram Stars / payments and quotas
-- Admin/moderation dashboard
-- Stronger abuse controls
-- Richer analytics
-- Multilingual polish
+`master` is the supported development line. It includes Conversation Suggestions V2 and the July 2026 release-hardening work for ticket cleanup, account reset, request idempotency, Telegram outbox leases, queue safety, log redaction, capsule validation, and automated checks.
 
 ## License
 

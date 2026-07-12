@@ -10,12 +10,9 @@ import {
   effectiveSuggestionStatus,
 } from "./suggestion-transitions.ts";
 import type {
-  ConversationVaultShardPing,
   RequestTicketRecord,
   SuggestionTicketRecord,
 } from "./conversation-vault.types";
-
-export type { ConversationVaultShardPing } from "./conversation-vault.types";
 
 type SuggestionRow = {
   suggestion_hash: string;
@@ -447,23 +444,5 @@ export class ConversationVaultShardDurableObject extends DurableObject<Environme
     );
 
     return Response.json({ ok: true, status: next });
-  }
-
-  ping(): ConversationVaultShardPing {
-    const suggestions =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM suggestion_tickets")
-        .one().n ?? 0;
-    const requests =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM request_tickets")
-        .one().n ?? 0;
-
-    return {
-      ok: true,
-      plane: "conversation",
-      suggestions,
-      requests,
-    };
   }
 }

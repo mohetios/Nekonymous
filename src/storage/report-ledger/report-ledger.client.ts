@@ -33,15 +33,3 @@ export const recordReportEvent = async (
     method: "POST",
     body: JSON.stringify(event),
   });
-
-export const hasReportForPairTag = async (
-  env: Environment,
-  pairAbuseTag: string
-): Promise<boolean> => {
-  const body = await doFetch<{ found: boolean }>(
-    env,
-    pairAbuseTag,
-    `/pair/${encodeURIComponent(pairAbuseTag)}`
-  );
-  return body.found;
-};

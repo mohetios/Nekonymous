@@ -17,13 +17,3 @@ export type UpsertPairStateInput = {
   state: PairLedgerState;
   expiresAt: number | null;
 };
-
-export type PairLedgerShardPing = {
-  ok: true;
-  plane: "pair";
-  pairStates: number;
-};
-
-export interface PairLedgerShardRpc {
-  ping(): PairLedgerShardPing;
-}

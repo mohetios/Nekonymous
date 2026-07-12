@@ -55,14 +55,3 @@ export type StoreRequestInput = {
   status: RequestTicketStatus;
   expiresAt: number;
 };
-
-export type ConversationVaultShardPing = {
-  ok: true;
-  plane: "conversation";
-  suggestions: number;
-  requests: number;
-};
-
-export interface ConversationVaultShardRpc {
-  ping(): ConversationVaultShardPing;
-}

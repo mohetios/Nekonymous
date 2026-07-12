@@ -1,7 +1,6 @@
 import type { Environment } from "../../types";
 import { shardNameForLookupHash } from "../shard-routing";
 import type {
-  ConversationVaultShardPing,
   RequestTicketRecord,
   RequestTicketStatus,
   StoreRequestInput,
@@ -31,14 +30,6 @@ const doFetch = async <T>(
     throw new Error(`ConversationVaultDO ${path} failed: ${response.status}`);
   }
   return response.json<T>();
-};
-
-export const pingConversationVaultShard = async (
-  env: Environment,
-  lookupHash: string
-): Promise<ConversationVaultShardPing> => {
-  const shard = stub(env, lookupHash);
-  return shard.ping();
 };
 
 export const storeSuggestionRecord = async (

@@ -41,10 +41,6 @@ export class ReportLedgerDurableObject extends DurableObject<Environment> {
       return this.createReport(request);
     }
 
-    if (request.method === "GET" && pathname.startsWith("/pair/")) {
-      return this.hasPairReport(pathname.slice("/pair/".length));
-    }
-
     return new Response("Not Found", { status: 404 });
   }
 
@@ -81,20 +77,5 @@ export class ReportLedgerDurableObject extends DurableObject<Environment> {
     }
 
     return Response.json({ ok: true, duplicate: false });
-  }
-
-  private hasPairReport(pairAbuseTag: string): Response {
-    if (!isSafeTag(pairAbuseTag)) {
-      return new Response("Invalid tag", { status: 400 });
-    }
-
-    const row = this.ctx.storage.sql
-      .exec<{ report_id: string }>(
-        "SELECT report_id FROM report_events WHERE pair_abuse_tag = ? LIMIT 1",
-        pairAbuseTag
-      )
-      .toArray()[0];
-
-    return Response.json({ found: !!row });
   }
 }

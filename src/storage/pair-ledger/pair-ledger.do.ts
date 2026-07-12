@@ -3,9 +3,7 @@ import type { Environment } from "../../types";
 import {
   evaluateAcquirePairPending,
 } from "./pair-pending.ts";
-import type { PairLedgerShardPing, PairStateRecord } from "./pair-ledger.types";
-
-export type { PairLedgerShardPing } from "./pair-ledger.types";
+import type { PairStateRecord } from "./pair-ledger.types";
 
 type PairStateRow = {
   pair_tag: string;
@@ -70,28 +68,7 @@ export class PairLedgerShardDurableObject extends DurableObject<Environment> {
       return this.releasePairPending(request);
     }
 
-    if (pathname.startsWith("/pair-states/")) {
-      const pairTag = decodeURIComponent(pathname.slice("/pair-states/".length));
-      if (!pairTag || pairTag.length > 86) {
-        return new Response("Invalid pair tag", { status: 400 });
-      }
-      if (request.method === "GET") {
-        return this.getPairState(pairTag);
-      }
-    }
-
     return new Response("Not Found", { status: 404 });
-  }
-
-  private getPairState(pairTag: string): Response {
-    const row = this.ctx.storage.sql
-      .exec<PairStateRow>(
-        "SELECT * FROM pair_states WHERE pair_tag = ? LIMIT 1",
-        pairTag
-      )
-      .toArray()[0];
-
-    return Response.json({ record: row ? rowToPairState(row) : null });
   }
 
   private async batchGetPairStates(request: Request): Promise<Response> {
@@ -227,14 +204,5 @@ export class PairLedgerShardDurableObject extends DurableObject<Environment> {
     );
 
     return Response.json({ ok: true, released: true });
-  }
-
-  ping(): PairLedgerShardPing {
-    const pairStates =
-      this.ctx.storage.sql
-        .exec<{ n: number }>("SELECT COUNT(*) AS n FROM pair_states")
-        .one().n ?? 0;
-
-    return { ok: true, plane: "pair", pairStates };
   }
 }

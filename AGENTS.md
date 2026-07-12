@@ -31,23 +31,22 @@ Capability-based anonymous routing is the current model. Do not reintroduce olde
 ## V2 refactor mode
 
 - **Conversation Suggestions V2** is a clean-slate refactor — delete V1 assessment/matching; no migration, dual-read, or compatibility adapters.
-- Read `README.md` and `docs/security/threat-model.md` before editing any user-facing or public copy.
-- Read `docs/architecture/conversation-suggestions-v2.md` before touching profile, indexing, retrieval, ranking, suggestions, or requests.
-- Read `docs/architecture/sealed-ticket-routing-and-inbox.md` before touching inbox, ticketing, or sealed-ticket storage.
-- Read `docs/architecture/bot-interaction-v1.md` before touching commands, keyboards, menus, drafts, or callback routing (V2 callback prefixes in V2 architecture doc).
+- Read `README.md` and `docs/threat-model.md` before editing any user-facing or public copy.
+- Read `docs/conversation-suggestions.md` before touching profile, indexing, retrieval, ranking, suggestions, or requests.
+- Read `docs/sealed-ticketing.md` before touching inbox, ticketing, or sealed-ticket storage.
+- Read `docs/architecture.md` before touching commands, keyboards, menus, drafts, or callback routing (V2 callback prefixes in V2 architecture doc).
 
 ### Docs source of truth
 
 | Topic | Path |
 |-------|------|
 | Product overview | `README.md` |
-| Security limits | `SECURITY.md`, `docs/security/threat-model.md` |
-| Bot commands / keyboards / callbacks | `docs/architecture/bot-interaction-v1.md` |
-| Inbox / sealed tickets | `docs/architecture/sealed-ticket-routing-and-inbox.md` |
-| Conversation profile + suggestions (V2) | `docs/architecture/conversation-suggestions-v2.md` |
-| Platform stats engine | `docs/architecture/platform-stats-engine.md` |
-| Release sign-off | `docs/release/pre-release-conversation-v2-acca6b9.md` |
-| Persian voice | `docs/brand/nekonymous-fa-voice-and-tone.md` |
+| Security limits | `SECURITY.md`, `docs/threat-model.md` |
+| Bot commands / keyboards / callbacks | `docs/architecture.md` |
+| Inbox / sealed tickets | `docs/sealed-ticketing.md` |
+| Conversation profile + suggestions (V2) | `docs/conversation-suggestions.md` |
+| Platform stats engine | `docs/architecture.md` |
+| Persian voice | `CONTRIBUTING.md` |
 
 ### Persian product terminology (user-facing)
 
@@ -106,7 +105,7 @@ Public brand: **Nekonymous** / **نِکونیموس** (`package.json` name: `nek
 
 - No KV inbox/conversation storage. Do not add dual-read, dual-write, or migration fallbacks.
 - No soft-deleted user rows for account reset — use hard delete (`hardDeleteUserAccount`).
-- Profile schema version is **`v2`** only (`CONVERSATION_PROFILE_VERSION` in `conversation-profile/constants.ts`).
+- Profile schema version is **`v2`** only (`CONVERSATION_PROFILE_VERSION` in `conversation/profile/constants.ts`).
 - User-facing copy says **ارزیابی**, not تست. Command is `/assessment` only (no `/test`).
 - No D1 profile, answer, or pair-graph rows. No Workers AI in suggestion path.
 - Raw questionnaire answers deleted after successful profile finalization.
@@ -131,86 +130,36 @@ There is no Nuxt, GraphQL, separate `workers/` package, public website SPA, or p
 ```
 src/
 ├── index.ts                         # DO exports, fetch, queue
-├── status.ts                        # domain status unions (InboxPointerStatus, …)
+├── status.ts                        # domain status unions
 ├── types.ts                         # Environment, BotUser, shared payloads
-├── bot/
+├── bot/                             # Telegram webhook, grammY wiring, menus, callbacks
+│   ├── webhook.ts
 │   ├── create-bot.ts
-│   ├── register-handlers.ts         # command/callback wiring
-│   ├── commands.ts                  # BOT_COMMANDS + BotFather definitions
-│   ├── router.ts                    # POST /bot webhook only
-│   ├── menu.ts
-│   ├── menu-labels.ts
-│   └── keyboards.ts
+│   ├── register-handlers.ts
+│   ├── callback-data.ts
+│   ├── sender.ts
+│   └── commands.ts, menu.ts, keyboards.ts, user-rate-limit.ts
 ├── features/
-│   ├── identity/
-│   │   └── identity-service.ts      # users, links, KV cache, hard delete, recreate
-│   ├── messaging/
-│   │   ├── messaging-service.ts
-│   │   ├── messaging-commands.ts    # /start, /inbox
-│   │   ├── messaging-actions.ts     # reply, block, nickname, report
-│   │   ├── payload-service.ts
-│   │   └── report-service.ts
+│   ├── identity/                    # users, links, KV cache, hard delete, recreate
+│   ├── ticketing/                   # sealed-ticket protocol and anonymous inbox
+│   ├── conversation/
+│   │   ├── profile/                 # 25-question / 8-dimension flow (v2)
+│   │   └── suggestions/             # retrieval, ranking, suggestions, requests
 │   ├── settings/
-│   │   ├── settings-handlers.ts
-│   │   └── settings-home.ts
-│   ├── conversation-profile/        # 25-question / 8-dimension flow (v2)
-│   │   ├── profile-handlers.ts
-│   │   ├── profile-session-service.ts, profile-service.ts
-│   │   ├── question-bank.ts, profile-builder.ts, normalization.ts, …
-│   ├── conversation-suggestions/    # dual retrieval, eligibility
-│   │   ├── candidate-retrieval.ts, candidate-resolution.ts, …
-│   ├── conversation-ranking/      # reciprocal deterministic ranker
-│   │   ├── rank-candidates.ts, reciprocal-fit.ts, explanations.ts, …
-│   ├── ticketing/                 # sealed-ticket + conversation capability crypto
-│   │   ├── base64url.ts, hkdf.ts, hmac.ts, aes-gcm.ts, envelope.ts, keys.ts
-│   │   ├── ticketing-service.ts, conversation-keys.ts, conversation-resolvers.ts
-│   └── platform/                      # (reserved; stats live in src/stats/)
-├── storage/
-│   ├── user-state-do.ts
-│   ├── user-state-client.ts         # only place for UserStateDO fetch calls
-│   ├── profile-vault/               # ProfileVaultShardDO + RPC client
-│   ├── conversation-vault/          # ConversationVaultShardDO + RPC client
-│   ├── pair-ledger/                 # PairLedgerShardDO + RPC client
-│   ├── ticket-vault/                # sealed ticket vault DO + client
-│   ├── report-ledger/               # blind report ledger DO + client
-│   ├── telegram-outbox-do.ts
-│   └── telegram-outbox-client.ts
-├── stats/                           # event emission, queue consumer, /stats reader
-├── queues/
-│   ├── telegram-outbox.types.ts
-│   └── outbox-consumer.ts
-├── i18n/
-│   ├── messages.ts, labels.ts, settings.ts, matching.ts, conversation-profile-ui.ts
-└── utils/
-    ├── router.ts, sender.ts, tools.ts, user.ts, contact.ts, …
-    └── logs.ts                        # logBotError only
-
-migrations/
-└── 0001_init.sql                      # squashed core schema (V2: identity + stats only)
-
-tools/
-├── verify-ticketing.ts                # pnpm test:ticketing
-├── verify-conversation-profile.ts     # pnpm test:conversation-profile (V2)
-├── verify-conversation-ranking.ts     # pnpm test:conversation-ranking (V2)
-├── verify-conversation-capabilities.ts
-├── verify-conversation-storage-leak.ts
-├── verify-conversation-e2e.ts
-├── audit-d1.sh / audit-d1.sql         # pnpm audit:d1
-├── setup-conversation-v2-resources.sh
-├── set-telegram-bot-profile.sh        # pnpm bot:profile
-├── flush-remote-d1.sql
-└── flush-remote.sh
+│   └── moderation/
+├── storage/                         # Durable Objects, storage clients, sharding
+├── queues/                          # Telegram outbox and background consumers
+├── stats/                           # event emission, queue consumer, readers
+├── i18n/                            # Persian-first visible copy
+└── utils/                           # logs.ts, text.ts, timing-safe-equal.ts only
 
 docs/
-├── architecture/
-│   ├── bot-interaction-v1.md
-│   ├── conversation-suggestions-v2.md
-│   └── sealed-ticket-routing-and-inbox.md
-├── brand/
-│   └── nekonymous-fa-voice-and-tone.md
-├── security/threat-model.md
-└── release/
-    └── pre-release-conversation-v2-acca6b9.md
+├── README.md
+├── architecture.md
+├── sealed-ticketing.md
+├── conversation-suggestions.md
+├── threat-model.md
+├── development.md
 
 LICENSE
 SECURITY.md
@@ -221,7 +170,7 @@ Do not create alternative roots unless the project already uses them.
 
 `wrangler.jsonc` is committed with binding IDs. `.dev.vars` is gitignored. Secrets are set via `wrangler secret put` in production.
 
-GitHub Actions (`.github/workflows/`) are **manual only** (`workflow_dispatch`). Deploy with `pnpm deploy` unless explicitly running a workflow.
+GitHub Actions (`.github/workflows/`) run checks on pull requests, `master` pushes, and manually (`workflow_dispatch`). Deploy with `pnpm deploy` unless explicitly running a workflow.
 
 ## Worker Entry and Routes
 
@@ -236,7 +185,7 @@ GitHub Actions (`.github/workflows/`) are **manual only** (`workflow_dispatch`).
 
 Export `UserStateDurableObjectV3`, `ProfileVaultShardDurableObjectV3`, `ConversationVaultShardDurableObjectV3`, `PairLedgerShardDurableObjectV3`, `TicketVaultDurableObjectV3`, `ReportLedgerDurableObjectV3`, and `TelegramOutboxDurableObjectV3` from `src/index.ts` for Wrangler DO bindings.
 
-Route registration lives in `src/bot/router.ts`. Use `src/utils/router.ts` (`Router` class) for new HTTP routes. Do not add a second router or framework.
+Webhook handling lives in `src/bot/webhook.ts`. Do not add a generic router or second HTTP framework.
 
 ## Bot Architecture Rules
 
@@ -252,14 +201,14 @@ Route registration lives in `src/bot/router.ts`. Use `src/utils/router.ts` (`Rou
 
 | Surface              | Handler location                          |
 |----------------------|-------------------------------------------|
-| `/start`             | `features/messaging/messaging-commands.ts` |
-| `/inbox`             | `features/messaging/messaging-commands.ts` |
-| incoming messages    | `features/messaging/messaging-commands.ts` |
-| reply/block/unblock/nickname/report | `features/messaging/messaging-actions.ts` |
+| `/start`             | `features/ticketing/handlers.ts` |
+| `/inbox`             | `features/ticketing/handlers.ts` |
+| incoming messages    | `features/ticketing/handlers.ts` |
+| reply/block/unblock/nickname/report | `features/ticketing/actions.ts` |
 | reply keyboard menu  | `bot/menu.ts`, `bot/keyboards.ts`         |
 | `/settings`          | `features/settings/settings-handlers.ts`  |
-| `/assessment`        | `features/conversation-profile/profile-handlers.ts` |
-| `/match`             | `features/conversation-suggestions/*` (hub handlers) |
+| `/assessment`        | `features/conversation/profile/profile-handlers.ts` |
+| `/match`             | `features/conversation/suggestions/*` (hub handlers) |
 
 Callback prefixes (keep short; capability suffix is base64url, under Telegram 64-byte limit):
 
@@ -307,7 +256,7 @@ Do not hardcode new English bot strings unless the task explicitly asks for loca
 
 ## Message and Crypto Rules
 
-Read `docs/architecture/sealed-ticket-routing-and-inbox.md` and `src/features/messaging/create-sealed-ticket.ts` before changing storage or inbox behavior.
+Read `docs/sealed-ticketing.md` and `src/features/ticketing/create-sealed-ticket.ts` before changing storage or inbox behavior.
 
 | Concept                 | Role                                                                 |
 |-------------------------|----------------------------------------------------------------------|
@@ -427,7 +376,7 @@ Avoid:
 
 ## Conversation profile and suggestions (V2)
 
-Read `docs/architecture/conversation-suggestions-v2.md` — canonical contracts.
+Read `docs/conversation-suggestions.md` — canonical contracts.
 
 ### Conversation profile
 
@@ -484,7 +433,7 @@ Allowed at module scope:
 - pure config maps
 - compiled regex constants
 - immutable helper data
-- `Router` instance and route table in `src/bot/router.ts`
+- immutable route constants in `src/bot/webhook.ts`
 
 Forbidden at module scope:
 
@@ -575,7 +524,7 @@ Privacy:
 - anonymity depends on not leaking Telegram IDs in public surfaces
 - do not add logging of message content, user IDs, or ticket ids
 - error replies to users should stay generic (`HuhMessage`) — avoid echoing `JSON.stringify(error)` in new code
-- read `docs/security/threat-model.md` before changing storage, matching metadata, or public security claims
+- read `docs/threat-model.md` before changing storage, matching metadata, or public security claims
 
 Rate limiting:
 
