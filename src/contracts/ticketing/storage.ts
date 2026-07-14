@@ -28,11 +28,10 @@ export type StoreTicketInput = Readonly<{
   expiresAt: UnixMillis;
 }>;
 
-export type StoreTicketResult = Readonly<{
-  ok: boolean;
-  duplicate?: boolean;
-  invalid?: boolean;
-}>;
+export type StoreTicketResult =
+  | Readonly<{ status: "created" }>
+  | Readonly<{ status: "existing" }>
+  | Readonly<{ status: "invalid" }>;
 
 export type TicketVaultGetResult =
   | Readonly<{ status: "found"; record: TicketVaultRecord }>

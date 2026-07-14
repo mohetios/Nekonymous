@@ -30,6 +30,7 @@ import {
   DISPLAY_NAME_EMPTY,
   DISPLAY_NAME_FALLBACK,
 } from "../../i18n/defaults";
+import { logBotError } from "../../utils/logs";
 
 const isTelegramUserHashConflict = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
@@ -40,6 +41,38 @@ const isTelegramUserHashConflict = (error: unknown): boolean => {
     message.includes("unique constraint") &&
     message.includes("telegram_user_hash")
   );
+};
+
+const kvGet = async (
+  env: Environment,
+  key: string
+): Promise<string | null> => {
+  try {
+    return await env.NEKO_KV.get(key);
+  } catch (error) {
+    logBotError("kv:get", error);
+    return null;
+  }
+};
+
+const kvPut = async (
+  env: Environment,
+  key: string,
+  value: string
+): Promise<void> => {
+  try {
+    await env.NEKO_KV.put(key, value);
+  } catch (error) {
+    logBotError("kv:put", error);
+  }
+};
+
+const kvDelete = async (env: Environment, key: string): Promise<void> => {
+  try {
+    await env.NEKO_KV.delete(key);
+  } catch (error) {
+    logBotError("kv:delete", error);
+  }
 };
 
 export const ensureUserStateInitialized = async (
@@ -134,8 +167,8 @@ const cacheUserRouting = async (
   slug: string
 ): Promise<void> => {
   await Promise.all([
-    env.NEKO_KV.put(tgCacheKey(telegramHash), userId),
-    env.NEKO_KV.put(linkCacheKey(slug), userId),
+    kvPut(env, tgCacheKey(telegramHash), userId),
+    kvPut(env, linkCacheKey(slug), userId),
   ]);
 };
 
@@ -168,13 +201,13 @@ export const getUserByTelegramHash = async (
   telegramHash: string,
   env: Environment
 ): Promise<D1User | null> => {
-  const cachedId = await env.NEKO_KV.get(tgCacheKey(telegramHash));
+  const cachedId = await kvGet(env, tgCacheKey(telegramHash));
   if (cachedId) {
     const user = await getUserById(cachedId, env);
     if (user) {
       return user;
     }
-    await env.NEKO_KV.delete(tgCacheKey(telegramHash));
+    await kvDelete(env, tgCacheKey(telegramHash));
   }
 
   const row = await env.DB.prepare(
@@ -225,10 +258,10 @@ export const hardDeleteUserAccount = async (
   ]);
 
   if (user) {
-    await env.NEKO_KV.delete(tgCacheKey(user.telegram_user_hash));
+    await kvDelete(env, tgCacheKey(user.telegram_user_hash));
   }
   for (const link of links.results ?? []) {
-    await env.NEKO_KV.delete(linkCacheKey(link.slug));
+    await kvDelete(env, linkCacheKey(link.slug));
   }
 };
 
@@ -236,13 +269,13 @@ export const getUserByPublicSlug = async (
   slug: string,
   env: Environment
 ): Promise<D1User | null> => {
-  const cachedId = await env.NEKO_KV.get(linkCacheKey(slug));
+  const cachedId = await kvGet(env, linkCacheKey(slug));
   if (cachedId) {
     const user = await getUserById(cachedId, env);
     if (user) {
       return user;
     }
-    await env.NEKO_KV.delete(linkCacheKey(slug));
+    await kvDelete(env, linkCacheKey(slug));
   }
 
   const row = await env.DB.prepare(
@@ -270,7 +303,7 @@ export const createPublicLinkForUser = async (
     .bind(slug, userId, now, now)
     .run();
 
-  await env.NEKO_KV.put(linkCacheKey(slug), userId);
+  await kvPut(env, linkCacheKey(slug), userId);
   await recordLinkCreated(env);
   return slug;
 };
@@ -301,24 +334,30 @@ export const createUserFromTelegram = async (
     env.APP_MASTER_KEY
   );
 
-  const insertUserRow = async (): Promise<"inserted" | "duplicate"> => {
+  const slug = generateOpaqueId(16);
+
+  const insertUserAndLink = async (): Promise<"inserted" | "duplicate"> => {
     try {
-      await env.DB.prepare(
-        `INSERT INTO users (
-          id, telegram_user_hash, telegram_chat_ciphertext,
-          locale, locale_source, onboarding_completed,
-          status, bucket_id, created_at, updated_at
-        ) VALUES (?, ?, ?, 'fa', 'fallback', 0, 'active', ?, ?, ?)`
-      )
-        .bind(
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO users (
+            id, telegram_user_hash, telegram_chat_ciphertext,
+            locale, locale_source, onboarding_completed,
+            status, bucket_id, created_at, updated_at
+          ) VALUES (?, ?, ?, 'fa', 'fallback', 0, 'active', ?, ?, ?)`
+        ).bind(
           userId,
           telegramHash,
           chatCiphertext,
           bucketForHash(telegramHash),
           now,
           now
-        )
-        .run();
+        ),
+        env.DB.prepare(
+          `INSERT INTO public_links (slug, owner_user_id, is_active, created_at, updated_at)
+           VALUES (?, ?, 1, ?, ?)`
+        ).bind(slug, userId, now, now),
+      ]);
       return "inserted";
     } catch (error) {
       if (isTelegramUserHashConflict(error)) {
@@ -328,7 +367,7 @@ export const createUserFromTelegram = async (
     }
   };
 
-  if ((await insertUserRow()) === "duplicate") {
+  if ((await insertUserAndLink()) === "duplicate") {
     const existing = await getUserByTelegramHash(telegramHash, env);
     if (existing) {
       await ensureUserStateInitialized(env, existing.id);
@@ -340,15 +379,15 @@ export const createUserFromTelegram = async (
       await hardDeleteUserAccount(leftover.id, env);
     }
 
-    if ((await insertUserRow()) === "duplicate") {
+    if ((await insertUserAndLink()) === "duplicate") {
       throw new Error("Failed to create user");
     }
   }
 
-  const slug = await createPublicLinkForUser(userId, env);
   await cacheUserRouting(env, userId, telegramHash, slug);
   await initUserState(env, userId, displayCiphertext);
   await recordUserCreated(env);
+  await recordLinkCreated(env);
 
   const user = await getUserById(userId, env);
   if (!user) {

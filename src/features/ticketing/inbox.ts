@@ -271,18 +271,20 @@ const deliverClaim = async (
       actorUserId: d1User.id,
     });
   } catch (error) {
-    logBotError("inbox:resolve-ticket", error);
-    let ticketHash: string | undefined;
-    try {
-      ticketHash = await createTicketHash(
-        env.APP_HMAC_PEPPER,
-        parseTicketCapability(capability)
-      );
-    } catch {
-      // Malformed material — unread orphan only.
+    // Unexpected DO/storage/crypto exceptions must not destroy a healthy ticket.
+    // Only explicit missing/expired/invalid results below orphan permanently.
+    logBotError("inbox:resolve-ticket", error, {
+      retryable: true,
+      delaySeconds: 5,
+    });
+    const released = await releaseUnreadDelivery(env, d1User.id, {
+      itemId: claim.itemId,
+      deliveryAttemptId: claim.deliveryAttemptId,
+    });
+    if (!released.ok) {
+      logBotError("inbox:release", new Error("stale delivery attempt"));
     }
-    await completeOrphan(env, d1User.id, claim, ticketHash);
-    return { outcome: "unavailable" };
+    return { outcome: "retryable-failure", delaySeconds: 5 };
   }
 
   if (!resolved || isExpiredTicketAction(resolved)) {

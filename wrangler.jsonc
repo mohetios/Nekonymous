@@ -211,7 +211,15 @@
       ]
     },
     {
-      // ReportLedger → SafetyState rename on remotes that applied v9 before the class rename.
+      // Applied history note (do not rewrite applied tags):
+      // - Production remotes that ran v9 before the ReportLedger→SafetyState rename
+      //   still hold ReportLedgerDurableObjectV4 until this tag runs.
+      // - Current source rewrote older tags in-repo so fresh deploys create
+      //   SafetyStateDurableObjectV4 in v9 already.
+      // - new_sqlite_classes here is intentional for pre-rename remotes only;
+      //   fresh envs that already created SafetyState in v9 must treat a repeat
+      //   create as an ops-reviewed exception, not a silent history rewrite.
+      // Prefer inspecting Cloudflare's applied migration tags before changing.
       "tag": "v11-safety-state-replace-report-ledger-v4",
       "new_sqlite_classes": ["SafetyStateDurableObjectV4"],
       "deleted_classes": ["ReportLedgerDurableObjectV4"]

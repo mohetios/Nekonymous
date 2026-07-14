@@ -223,13 +223,73 @@ describe("TicketVault typed RPC", () => {
       createdAt: now,
       expiresAt: now + 60_000,
     });
-    expect(stored.ok).toBe(true);
+    expect(stored).toEqual({ status: "created" });
 
     const loaded = await stub.getTicket(safeTicketHash);
     expect(loaded.status).toBe("found");
     if (loaded.status === "found") {
       expect(loaded.record.ticketHash).toBe(safeTicketHash);
       expect(loaded.record.status).toBe("active");
+    }
+  });
+
+  it("reports existing on deterministic ticket_hash conflict and never treats other SQL as duplicate", async () => {
+    const ticketHash = `c${"c".repeat(42)}`;
+    const stub = env.TICKET_VAULT.get(
+      env.TICKET_VAULT.idFromName(`ticket:${ticketHash.slice(0, 2)}`)
+    );
+    const now = Date.now();
+    const input = {
+      ticketHash,
+      ownerProofTag: "owner-proof-tag-12345678",
+      routeEnc: "route-ciphertext",
+      payloadEnc: "payload-ciphertext",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    };
+
+    expect(await stub.storeTicket(input)).toEqual({ status: "created" });
+    expect(await stub.storeTicket(input)).toEqual({ status: "existing" });
+
+    const loaded = await stub.getTicket(ticketHash);
+    expect(loaded.status).toBe("found");
+  });
+
+  it("keeps an existing deterministic ticket when a later attempt deletes only created rows", async () => {
+    const ticketHash = `d${"d".repeat(42)}`;
+    const stub = env.TICKET_VAULT.get(
+      env.TICKET_VAULT.idFromName(`ticket:${ticketHash.slice(0, 2)}`)
+    );
+    const now = Date.now();
+    const input = {
+      ticketHash,
+      ownerProofTag: "owner-proof-tag-12345678",
+      routeEnc: "route-ciphertext-v1",
+      payloadEnc: "payload-ciphertext-v1",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    };
+
+    const first = await stub.storeTicket(input);
+    expect(first.status).toBe("created");
+
+    const second = await stub.storeTicket({
+      ...input,
+      routeEnc: "route-ciphertext-v2",
+      payloadEnc: "payload-ciphertext-v2",
+    });
+    expect(second.status).toBe("existing");
+
+    // Compensation must only run when this invocation created the row.
+    if (second.status === "created") {
+      await stub.deleteTicket(ticketHash);
+    }
+
+    const loaded = await stub.getTicket(ticketHash);
+    expect(loaded.status).toBe("found");
+    if (loaded.status === "found") {
+      expect(loaded.record.routeEnc).toBe("route-ciphertext-v1");
+      expect(loaded.record.payloadEnc).toBe("payload-ciphertext-v1");
     }
   });
 

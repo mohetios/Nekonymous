@@ -33,6 +33,16 @@ const rowToRecord = (row: TicketRow): TicketVaultRecord => ({
 const isSafeHash = (value: string): boolean =>
   /^[A-Za-z0-9_-]{32,86}$/.test(value);
 
+const isTicketHashConflict = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("unique constraint") && message.includes("ticket_hash")
+  );
+};
+
 const EXPIRY_SWEEP_LIMIT = 50;
 
 export class TicketVaultDurableObject extends DurableObject<Environment> {
@@ -182,7 +192,7 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
       !Number.isSafeInteger(body.expiresAt) ||
       body.expiresAt <= body.createdAt
     ) {
-      return { ok: false, invalid: true };
+      return { status: "invalid" };
     }
 
     try {
@@ -200,12 +210,15 @@ export class TicketVaultDurableObject extends DurableObject<Environment> {
         body.createdAt,
         body.expiresAt
       );
-    } catch {
-      return { ok: false, duplicate: true };
+    } catch (error) {
+      if (isTicketHashConflict(error)) {
+        return { status: "existing" };
+      }
+      throw error;
     }
 
     await this.scheduleNextExpiryAlarm();
-    return { ok: true };
+    return { status: "created" };
   }
 
   async getTicket(ticketHash: string): Promise<TicketVaultGetResult> {

@@ -18,6 +18,9 @@ assertIncludes(ticketVault, "meta_enc = NULL", "expired tickets must clear meta_
 assertIncludes(ticketVault, "async alarm()", "TicketVault must sweep expiry by alarm");
 assertIncludes(ticketVault, "EXPIRY_SWEEP_LIMIT", "TicketVault expiry sweep must be bounded");
 assertIncludes(ticketVault, "next.expires_at <= now", "TicketVault must reschedule overdue expiry sweeps");
+assertIncludes(ticketVault, "isTicketHashConflict", "ticket insert must only treat unique ticket_hash as existing");
+assertIncludes(ticketVault, 'status: "created"', "storeTicket must report created ownership");
+assertIncludes(ticketVault, 'status: "existing"', "storeTicket must report existing ownership");
 assertIncludes(
   read("src/contracts/ticketing/lifecycle.ts"),
   '"active"',
@@ -104,7 +107,16 @@ assertIncludes(createSealedTicket, "getSafetyDecision", "new tickets must check 
 assertIncludes(createSealedTicket, "sealUnreadCapability", "new tickets must seal capability into unread row");
 assertIncludes(createSealedTicket, "addUnreadItem", "new tickets must create unread delivery queue item");
 assertIncludes(createSealedTicket, "unreadAccepted = true", "ticket creation must mark unread acceptance before notification enqueue");
-assertIncludes(createSealedTicket, "if (!unreadAccepted)", "ticket creation must compensate when unread insert fails");
+assertIncludes(
+  createSealedTicket,
+  "createdThisInvocation",
+  "ticket compensation must track whether this invocation created the vault row"
+);
+assertIncludes(
+  createSealedTicket,
+  "!unreadAccepted && createdThisInvocation",
+  "ticket compensation must only delete vault rows created by this invocation"
+);
 assertIncludes(createSealedTicket, "createUnreadInboxDedupeTag", "new unread items must use blind dedupe");
 assertIncludes(createSealedTicket, "eventId:", "notify payload must use notification eventId");
 assertNotIncludes(createSealedTicket, "senderRouteTag", "RouteCapsule must not store removed sender route tag");
@@ -169,6 +181,11 @@ assertIncludes(resolver, "actorUserId", "owner proof must include current intern
 const identity = read("src/features/identity/identity-service.ts");
 assertIncludes(identity, "invalidateUserConversationProfile", "reset must invalidate profile vault state");
 assertIncludes(identity, "isTelegramUserHashConflict", "user insert must only treat unique telegram hash as duplicate");
+assertIncludes(identity, "kvGet", "identity KV reads must fail open to D1");
+assertIncludes(identity, "kvPut", "identity KV writes must be best-effort");
+assertIncludes(identity, "kvDelete", "identity KV deletes must be best-effort");
+assertIncludes(identity, "insertUserAndLink", "user creation must insert users and public_links atomically");
+assertIncludes(identity, "env.DB.batch([", "user+link creation must use a D1 batch");
 assertNotIncludes(
   identity,
   "invalidateUserConversationProfile(env, userId).catch(() => undefined)",
@@ -270,8 +287,28 @@ assertIncludes(outboxClient, "stub.sendJob(job)", "outbox client must use typed 
 const ticketVaultClient = read("src/storage/ticket-vault/ticket-vault.client.ts");
 assertIncludes(ticketVaultClient, ".storeTicket(input)", "ticket vault client must use typed DO RPC");
 assertIncludes(ticketVaultClient, ".getTicket(ticketHash)", "ticket vault client must use typed DO RPC");
+assertIncludes(
+  ticketVaultClient,
+  'Promise<"created" | "existing">',
+  "storeTicket client must report created vs existing ownership"
+);
 assertNotIncludes(ticketVaultClient, "markTicketBlocked", "TicketVault must not mark blocked status");
 assertNotIncludes(ticketVaultClient, "markTicketRecordReported", "TicketVault must not mark reported status");
+
+const inbox = read("src/features/ticketing/inbox.ts");
+assertIncludes(
+  inbox,
+  'return { outcome: "retryable-failure", delaySeconds: 5 };',
+  "unexpected resolve failures must retry without orphaning"
+);
+assertIncludes(inbox, "releaseUnreadDelivery", "retryable drain failures must release the delivery lease");
+if (
+  /catch \(error\) \{\s*logBotError\("inbox:resolve-ticket", error\);\s*[\s\S]*?completeOrphan/.test(
+    inbox
+  )
+) {
+  fail("unexpected resolveTicketAction errors must not completeOrphan healthy tickets");
+}
 
 const userStateClient = read("src/storage/user-state-client.ts");
 assertIncludes(userStateClient, ".getState()", "user state client must use typed DO RPC");

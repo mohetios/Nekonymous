@@ -165,7 +165,7 @@ export const createSealedTicket = async (
     ),
   ]);
 
-  await storeTicket(env, {
+  const storeResult = await storeTicket(env, {
     ticketHash,
     ownerProofTag,
     routeEnc,
@@ -174,6 +174,7 @@ export const createSealedTicket = async (
     createdAt: now,
     expiresAt,
   });
+  const createdThisInvocation = storeResult === "created";
 
   let unreadAccepted = false;
   try {
@@ -248,7 +249,9 @@ export const createSealedTicket = async (
         : {}),
     };
   } finally {
-    if (!unreadAccepted) {
+    // Only compensate tickets this invocation created — never delete a
+    // deterministic ticket that already existed from a prior accept attempt.
+    if (!unreadAccepted && createdThisInvocation) {
       await cleanupStoredTicket(env, ticketHash);
     }
   }

@@ -21,11 +21,12 @@ const stub = (env: Environment, ticketHash: string) =>
 export const storeTicket = async (
   env: Environment,
   input: StoreTicketInput
-): Promise<void> => {
+): Promise<"created" | "existing"> => {
   const result = await stub(env, input.ticketHash).storeTicket(input);
-  if (!result.ok && !result.duplicate) {
+  if (result.status === "invalid") {
     throw new Error("TicketVaultDO storeTicket rejected input");
   }
+  return result.status;
 };
 
 export const getTicketRecord = async (
