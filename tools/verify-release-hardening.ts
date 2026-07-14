@@ -302,12 +302,49 @@ assertIncludes(
   "unexpected resolve failures must retry without orphaning"
 );
 assertIncludes(inbox, "releaseUnreadDelivery", "retryable drain failures must release the delivery lease");
+assertIncludes(
+  inbox,
+  "Claim ownership first",
+  "orphan cleanup must complete unread before deleting TicketVault"
+);
+assertIncludes(
+  inbox,
+  "inbox:finalization-stale",
+  "payload-cleared but unread-completion miss must log finalization-stale"
+);
+assertIncludes(
+  inbox,
+  "SEEN_RECEIPTS_ENABLED",
+  "seen receipts must be gated behind an explicit V1 switch"
+);
+assertIncludes(
+  inbox,
+  "isPermanentUnreadCapabilityError",
+  "unread capability open must distinguish permanent vs retryable errors"
+);
 if (
   /catch \(error\) \{\s*logBotError\("inbox:resolve-ticket", error\);\s*[\s\S]*?completeOrphan/.test(
     inbox
   )
 ) {
   fail("unexpected resolveTicketAction errors must not completeOrphan healthy tickets");
+}
+{
+  const orphanStart = inbox.indexOf("const completeOrphan");
+  const orphanEnd = inbox.indexOf("const isPermanentUnreadCapabilityError");
+  const orphanFn =
+    orphanStart >= 0 && orphanEnd > orphanStart
+      ? inbox.slice(orphanStart, orphanEnd)
+      : "";
+  if (
+    !orphanFn ||
+    orphanFn.indexOf("completeUnreadDelivery") >
+      orphanFn.indexOf("deleteTicketRecord")
+  ) {
+    fail(
+      "completeOrphan must complete unread ownership before deleting TicketVault"
+    );
+  }
 }
 
 const userStateClient = read("src/storage/user-state-client.ts");

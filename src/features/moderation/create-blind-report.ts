@@ -7,6 +7,11 @@ import {
   createReportEventTag,
 } from "../ticketing/blind-tags";
 
+const REPORT_REASON_CODES = new Set<ReportReasonCode>([
+  "inbox_report",
+  "spam",
+]);
+
 export type CreateBlindReportInput = {
   actorHash: string;
   ticketHash: string;
@@ -18,6 +23,9 @@ export const createBlindReport = async (
   env: Environment,
   input: CreateBlindReportInput
 ): Promise<{ reportId: string; duplicate: boolean }> => {
+  if (!REPORT_REASON_CODES.has(input.reasonCode)) {
+    throw new Error("Invalid report reason code");
+  }
   const [eventTag, reporterSubjectTag] = await Promise.all([
     createReportEventTag(
       env.APP_HMAC_PEPPER,

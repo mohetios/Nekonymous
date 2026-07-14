@@ -51,6 +51,9 @@ import {
   TELEGRAM_MESSAGE_TEXT_MAX,
   truncateUtf8,
 } from "../../bot/telegram-limits";
+
+/** V1 default: skip per-delivery seen receipts to limit TelegramOutbox load. */
+const SEEN_RECEIPTS_ENABLED = false;
 import { INBOX_DELIVERY_LIMIT } from "./inbox-constants";
 
 const textWithLabel = (
@@ -195,19 +198,39 @@ const completeOrphan = async (
   userId: string,
   claim: UnreadDeliveryClaim,
   ticketHash?: string
-): Promise<void> => {
-  if (ticketHash) {
-    await deleteTicketRecord(env, ticketHash).catch((error) =>
-      logBotError("inbox:orphan-vault", error)
-    );
-  }
+): Promise<{ orphaned: boolean }> => {
+  // Claim ownership first: a stale attempt must never delete TicketVault while
+  // a newer claim still owns the unread row.
   const completed = await completeUnreadDelivery(env, userId, {
     itemId: claim.itemId,
     deliveryAttemptId: claim.deliveryAttemptId,
   });
   if (!completed.ok) {
     logBotError("inbox:orphan-complete", new Error("stale delivery attempt"));
+    return { orphaned: false };
   }
+
+  if (ticketHash) {
+    await deleteTicketRecord(env, ticketHash).catch((error) =>
+      logBotError("inbox:orphan-vault", error)
+    );
+  }
+  return { orphaned: true };
+};
+
+const isPermanentUnreadCapabilityError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const message = error.message.toLowerCase();
+  // Only clearly malformed ciphertext is permanent. Auth/config mismatches
+  // (wrong key, OperationError) must retry so healthy rows are not destroyed.
+  return (
+    message.includes("invalid ciphertext envelope") ||
+    message.includes("invalid aes-gcm ciphertext") ||
+    message.includes("unexpected end of json") ||
+    message.includes("is not valid json")
+  );
 };
 
 const resolveLabel = async (
@@ -259,7 +282,22 @@ const deliverClaim = async (
       claim.sealedCapabilityEnc
     );
   } catch (error) {
-    logBotError("inbox:open-unread-capability", error);
+    if (!isPermanentUnreadCapabilityError(error)) {
+      // Unknown/runtime/config errors: conserve data and retry.
+      logBotError("inbox:open-unread-capability", error, {
+        retryable: true,
+        delaySeconds: 5,
+      });
+      const released = await releaseUnreadDelivery(env, d1User.id, {
+        itemId: claim.itemId,
+        deliveryAttemptId: claim.deliveryAttemptId,
+      });
+      if (!released.ok) {
+        logBotError("inbox:release", new Error("stale delivery attempt"));
+      }
+      return { outcome: "retryable-failure", delaySeconds: 5 };
+    }
+    logBotError("inbox:open-unread-capability", error, { permanent: true });
     await completeOrphan(env, d1User.id, claim);
     return { outcome: "unavailable" };
   }
@@ -387,17 +425,23 @@ const deliverClaim = async (
     deliveryAttemptId: claim.deliveryAttemptId,
   });
   if (!completed.ok) {
-    logBotError("inbox:complete", new Error("stale delivery attempt"));
+    // Payload may already be cleared; unread will scrub on a later orphan path.
+    logBotError(
+      "inbox:finalization-stale",
+      new Error("payload cleared but unread completion missed attempt")
+    );
   }
   await recordMessageDelivered(env);
 
-  await notifyMessageSeenRoute(
-    env,
-    resolved.route.senderChatRoute,
-    resolved.route.replyRouteTag,
-    `seen:${resolved.ticketHash}:${resolved.route.parentMessageId ?? "none"}`,
-    resolved.route.parentMessageId
-  ).catch((error) => logBotError("inbox:seen", error));
+  if (SEEN_RECEIPTS_ENABLED) {
+    await notifyMessageSeenRoute(
+      env,
+      resolved.route.senderChatRoute,
+      resolved.route.replyRouteTag,
+      `seen:${resolved.ticketHash}:${resolved.route.parentMessageId ?? "none"}`,
+      resolved.route.parentMessageId
+    ).catch((error) => logBotError("inbox:seen", error));
+  }
 
   return { outcome: "delivered" };
 };

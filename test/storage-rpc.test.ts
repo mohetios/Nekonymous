@@ -131,6 +131,79 @@ describe("UserState typed RPC", () => {
     expect(completed.summary.unreadCount).toBe(0);
   });
 
+  it("refuses stale orphan vault deletes when a newer claim owns the unread row", async () => {
+    const userStub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-stale-orphan")
+    );
+    await userStub.initState("vitest-stale-orphan");
+    const now = Date.now();
+    const ticketHash = `e${"e".repeat(42)}`;
+    const vaultStub = env.TICKET_VAULT.get(
+      env.TICKET_VAULT.idFromName(`ticket:${ticketHash.slice(0, 2)}`)
+    );
+
+    await vaultStub.storeTicket({
+      ticketHash,
+      ownerProofTag: "owner-proof-tag-12345678",
+      routeEnc: "route-ciphertext",
+      payloadEnc: "payload-ciphertext",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    });
+
+    await userStub.addUnreadItem({
+      itemId: "stale-orphan-item",
+      sealedCapabilityEnc: "sealed-capability-ciphertext",
+      dedupeTag: "dedupe-tag-stale-orphan-12345",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    });
+
+    const claimA = await userStub.claimNextUnreadItem();
+    expect(claimA?.itemId).toBe("stale-orphan-item");
+    if (!claimA) {
+      throw new Error("missing claim A");
+    }
+
+    // Simulate lease recovery: attempt A no longer owns the row; B reclaims.
+    const released = await userStub.releaseUnreadDelivery({
+      itemId: claimA.itemId,
+      deliveryAttemptId: claimA.deliveryAttemptId,
+    });
+    expect(released.ok).toBe(true);
+
+    const claimB = await userStub.claimNextUnreadItem();
+    expect(claimB?.itemId).toBe(claimA.itemId);
+    expect(claimB?.deliveryAttemptId).not.toBe(claimA.deliveryAttemptId);
+    if (!claimB) {
+      throw new Error("missing claim B");
+    }
+
+    // completeOrphan ownership rule: attempt A must not delete TicketVault.
+    const staleComplete = await userStub.completeUnreadDelivery({
+      itemId: claimA.itemId,
+      deliveryAttemptId: claimA.deliveryAttemptId,
+    });
+    expect(staleComplete.ok).toBe(false);
+    if (staleComplete.ok) {
+      await vaultStub.deleteTicket(ticketHash);
+    }
+
+    const stillThere = await vaultStub.getTicket(ticketHash);
+    expect(stillThere.status).toBe("found");
+
+    const liveComplete = await userStub.completeUnreadDelivery({
+      itemId: claimB.itemId,
+      deliveryAttemptId: claimB.deliveryAttemptId,
+    });
+    expect(liveComplete.ok).toBe(true);
+    if (liveComplete.ok) {
+      await vaultStub.deleteTicket(ticketHash);
+    }
+    const gone = await vaultStub.getTicket(ticketHash);
+    expect(gone.status).toBe("not_found");
+  });
+
   it("notifies independently on every newly accepted unread item", async () => {
     const stub = env.USER_STATE_DO.get(
       env.USER_STATE_DO.idFromName("vitest-inbox-notify")
