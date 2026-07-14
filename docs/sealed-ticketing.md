@@ -1,343 +1,422 @@
 # Sealed Ticketing
 
-**Status:** canonical specification for anonymous message routing and inbox behavior.
+**Status:** canonical anonymous messaging and inbox protocol for the current `master` branch.
 
-Sealed ticketing is the core Nekonymous relay model. Anonymous messages are not stored as normal sender-recipient rows. Each new message becomes a recipient-scoped capability backed by blind lookup keys and encrypted capsules.
+The protocol minimizes joinable stored data while preserving a usable Telegram inbox, anonymous replies, private nicknames, blocking, reporting, and bounded recovery from Queue or Telegram failures.
 
-## Design Goals
+## Design goals
 
-- Hide users from each other in normal product flows.
-- Avoid a plaintext anonymous sender-recipient graph.
-- Keep message payload storage temporary.
-- Preserve reply, block, report, and nickname actions after first display.
-- Keep Telegram callback data short and language-independent.
-- Bound Worker CPU, storage reads, and decryptions.
-- Make webhook, queue, callback, and cleanup retries idempotent.
+- independent capability per message;
+- no plaintext anonymous message body in D1 or KV;
+- no plaintext sender-recipient graph in D1;
+- no recoverable per-user `ticketHash` index;
+- recipient/account-bound ticket actions;
+- temporary unread state with explicit leases and retention;
+- payload clearing after successful delivery;
+- blind, domain-separated relationship tags;
+- idempotent creation, notification, delivery, and request acceptance;
+- conservative failure semantics: temporary failures do not destroy healthy tickets.
 
-This model does not hide plaintext from Telegram or the Worker while a message is processed.
+## Capability format
 
-## Ticket Model
-
-```text
-TicketCapability
-  -> lookupNonce + keySeed
-  -> ticketHash
-  -> ownerProofTag
-  -> route_enc
-  -> payload_enc
-  -> TicketVault
-  -> unread UserState item
-  -> inbox claim
-  -> delivered Telegram message with action buttons
-```
-
-### `TicketCapability`
-
-A 32-byte binary capability encoded with unpadded base64url:
+`TicketCapability` is exactly 32 bytes:
 
 ```text
-lookupNonce = 16 random bytes
-keySeed = 16 random bytes
-encoded length = 43 characters
+bytes 0..15   lookupNonce
+bytes 16..31  keySeed
 ```
 
-Examples:
+Canonical encoding:
 
 ```text
-o:{ticketCapability}
-r:{ticketCapability}
-b:{ticketCapability}
-u:{ticketCapability}
-n:{ticketCapability}
-rp:{ticketCapability}
+43 unpadded Base64URL characters
+[A-Za-z0-9_-]{43}
 ```
 
-Rules:
+There is no capability version byte or legacy format.
 
-- the raw value is not stored as a database key or recoverable inbox pointer;
-- it contains no user ID, chat ID, locale, or message text;
-- handlers validate exact length, canonical base64url encoding, and callback size before cryptographic work;
-- possession is not sufficient: actor ownership must also be verified;
-- after successful Telegram notification delivery, Telegram chat history is the persistent ticket index.
+Two creation modes exist:
 
-### `ticketHash`
+- random material for ordinary messages and replies;
+- deterministic HKDF material for retry-safe operations such as accepting a conversation request.
 
-A blind lookup key derived with a domain-separated HMAC:
+A deterministic capability uses the stable application master key and an operation-specific `dedupeKey`. The same operation derives the same capability and therefore the same `ticketHash` and unread dedupe tag.
+
+## Ticket lookup and keys
+
+`ticketHash` is derived only from `lookupNonce` with a domain-separated HMAC:
 
 ```text
-ticketHash = HMAC(K_TICKET_LOOKUP, "nekonymous:ticket:lookup" || lookupNonce)
+HMAC(APP_HMAC_PEPPER,
+     "nekonymous:ticket:lookup" || lookupNonce)
 ```
 
-TicketVault uses this hash for lookup and sharding. `keySeed` must not affect `ticketHash`.
+Database lookup therefore does not require or reveal `keySeed`.
 
-### `ownerProofTag`
+Ticket encryption keys are derived from:
 
-An actor-bound proof derived from the current actor and ticket:
+- stable `APP_MASTER_KEY` input key material;
+- salt containing `ticketHash` and `keySeed`;
+- domain-separated HKDF labels.
+
+Independent AES-GCM keys protect:
+
+- route capsule;
+- payload capsule;
+- metadata capsule.
+
+Each capsule uses separate associated data bound to `ticketHash`. An encrypted capsule cannot be moved to another ticket or capsule domain without authentication failure.
+
+## Owner proof
+
+Ticket actions require both capability possession and the correct Telegram actor/current account.
+
+The stored owner proof binds:
 
 ```text
-ownerProofTag = HMAC(
-  K_OWNER_PROOF,
-  "nekonymous:ticket:owner" || actorHash || currentInternalAccountId || ticketHash
-)
+recipient stable Telegram actor hash
++ recipient current internal account id
++ ticketHash
 ```
 
-The Worker recomputes the proof during a callback and compares it in constant time with the stored value. Hard account reset creates a new internal account id, so old capabilities fail owner proof immediately even though old ciphertext physically expires through the normal ticket lifecycle.
+The Worker recomputes the proof and compares it in constant time before decrypting action material.
 
-### Ticket Keys
+Hard reset creates a new internal account id. Old capabilities therefore fail authorization immediately even if their encrypted vault records have not yet expired.
 
-Route, payload, and metadata keys require the capability `keySeed`:
+## TicketVault record
+
+TicketVault uses the blind `ticketHash` as its primary lookup key and stores:
 
 ```text
-ticketRootKey = HKDF-SHA-256(
-  ikm = APP_MASTER_KEY,
-  salt = ticketHash || keySeed,
-  info = "nekonymous:ticket:root"
-)
+ticket_hash
+owner_proof_tag
+route_enc
+payload_enc
+meta_enc
+status
+created_at
+expires_at
 ```
 
-Separate route, payload, and metadata keys are derived from that root. `APP_MASTER_KEY` plus `ticketHash` alone is intentionally insufficient to decrypt a ticket.
+It does not store:
 
-AAD values:
+- raw capability;
+- lookup nonce or key seed;
+- Telegram user id or chat id in plaintext;
+- direct sender or recipient account id;
+- message transcript;
+- conversation graph.
+
+### Route capsule
+
+The encrypted route capsule contains only action material required after delivery:
 
 ```text
-nekonymous:ticket:{ticketHash}:route
-nekonymous:ticket:{ticketHash}:payload
-nekonymous:ticket:{ticketHash}:meta
+senderChatRoute       encrypted Telegram chat route
+replyRouteTag         sender stable Telegram actor hash
+contactTag            recipient-scoped nickname key
+blockTag              recipient-scoped stable block key
+abuseSubjectTag       stable blind safety subject
+replyPolicy           bounded reply rules
+parentMessageId       minimal Telegram reply context
+replyToMessageId      optional reply context
 ```
 
-## Capsules
+### Payload capsule
 
-`route_enc` is one compact AES-GCM envelope containing only the routing material required for anonymous reply, block, unblock, report, private nickname, action policy, and expiry checks.
+The payload capsule contains either:
 
-`payload_enc` contains the message body and minimal payload metadata. It is encrypted at rest and exists only until the first successful Telegram delivery.
+- text plus minimal Telegram context; or
+- a supported Telegram file identifier and caption context.
 
-Route data is not duplicated into UserState, D1, KV, logs, or callback data.
+Payload ciphertext is temporary. After successful Telegram delivery, it is cleared and the ticket is marked viewed.
 
-## Storage Boundaries
+### Metadata capsule
 
-| Plane | Stores | Does not store |
-|---|---|---|
-| D1 | users, public links, aggregate statistics | anonymous body, ticket route, sender-recipient message edge |
-| TicketVault DO | blind ticket hash, owner proof, encrypted route, temporary encrypted payload, status and expiry | raw capability or plaintext capsule |
-| UserState DO | unread item id, sealed capability ciphertext, blind dedupe tag, delivery lease metadata | message body, plaintext route, ticket hash, or raw capability |
-| KV | optional routing/cache data | ticket, inbox, report, or message authority |
-| ReportLedger DO | blind abuse and reporter tags | reversible sender-recipient relation |
-| Telegram | callback capability and delivered message | application-controlled storage guarantees |
+Metadata contains non-routing display data such as the short ticket display number and creation time. It is encrypted separately.
 
-## Message Creation
+## Blind relationship tags
+
+All tags use HMAC with length-delimited fields and distinct domains.
+
+### `contactTag`
 
 ```text
-1. Resolve the recipient from the public deep link.
-2. Validate sender state, recipient pause state, blocks, limits, and message length.
-3. Claim the stable operation/dedupe identity.
-4. Generate TicketCapability.
-5. Derive ticketHash from lookupNonce and ownerProofTag from actor/account/ticketHash.
-6. Build compact route and payload capsules.
-7. Derive route/payload/meta keys from APP_MASTER_KEY, ticketHash, and keySeed.
-8. Encrypt route, payload, and meta.
-9. Store the TicketVault record.
-10. Seal the encoded capability as authenticated ciphertext in a recipient unread item.
-11. Queue one unread notice per newly accepted unread item (with live unread count).
-12. Emit best-effort aggregate statistics.
+recipient current internal account id
++ sender current internal account id
 ```
 
-If unread item creation fails after vault storage, compensation removes the orphaned ticket. Repeating the same operation must not create multiple durable tickets.
+Used as the primary key for the recipient's encrypted private nickname. Reset by either side changes the tag and ends nickname continuity.
 
-## Inbox Lifecycle
-
-Maximum retention:
+### `blockTag`
 
 ```text
-30 days
+recipient current internal account id
++ sender stable Telegram actor hash
 ```
 
-### Unseen Ticket
+A sender hard reset does not bypass an existing recipient block. A recipient hard reset clears the recipient-local block list because the recipient account scope changes.
+
+### `abuseSubjectTag`
 
 ```text
-status: active
-route_enc: present
-payload_enc: present
+sender stable Telegram actor hash
 ```
 
-The inbox claim flow:
+Used to route to one SafetyState Durable Object. It survives ordinary sender account reset.
 
-1. claims an unread item from UserState;
-2. decrypts the sealed capability in memory;
-3. derives `ticketHash` from `lookupNonce` and loads TicketVault;
-4. resolves the current Telegram actor and internal account id;
-5. verifies owner proof and expiry;
-6. derives keys from `keySeed` and decrypts route/payload;
-7. sends the complete message through Telegram;
-8. clears the payload only after Telegram confirms successful delivery;
-9. marks the ticket viewed and deletes the unread row.
-
-A failed Telegram send does not clear the payload.
-
-### Viewed Ticket
+### `reportEventTag`
 
 ```text
-status: viewed / replied / reported / blocked
-route_enc: present
-payload_enc: absent
+ticketHash
++ reporter stable Telegram actor hash
 ```
 
-The original Telegram-delivered message remains the primary message view. Re-opening the direct button can render a compact shell without decrypting a payload. The shell can retain only actions allowed by the current state.
+Prevents the same reporter from counting the same ticket more than once.
 
-### Expired Ticket
-
-After expiry:
+### `reporterSubjectTag`
 
 ```text
-route_enc: removed
-payload_enc: removed
-meta_enc: removed
-callback: unavailable
+abuseSubjectTag
++ reporter stable Telegram actor hash
 ```
 
-The TicketVault record is deleted, or only a bounded non-sensitive tombstone is retained when required for idempotency. Sensitive route and payload material never remains as an expired archive.
+Counts distinct reporters for one abuse subject without creating a reusable global reporter identity.
 
-TicketVault alarms are bounded and idempotent because Durable Object alarms may run more than once.
+## Ticket creation
 
-## State Transitions
+`createSealedTicket` performs the following durable sequence:
 
-The exact state list is defined in code. The product transition policy is:
+1. create random or deterministic capability material;
+2. derive `ticketHash`;
+3. derive owner proof and ticket keys;
+4. derive contact, block, and abuse tags;
+5. load Safety decision for the sender;
+6. enforce recipient pause and block state;
+7. construct bounded route, payload, and metadata capsules;
+8. encrypt all three capsules;
+9. store the TicketVault record;
+10. initialize recipient UserState when necessary;
+11. derive a blind unread dedupe tag;
+12. generate a random unread item id;
+13. seal the encoded capability for that recipient and unread item;
+14. insert the unread row;
+15. return the authoritative pending count and notification event id.
+
+TicketVault storage returns either `created` or `existing`. Compensation deletes only a vault record created by the current invocation. A retry of a deterministic accept operation can never delete a healthy ticket created by an earlier attempt.
+
+The durable acceptance point is successful vault storage plus accepted unread insertion. Notification and statistics run as deferred side effects.
+
+## Unread storage
+
+One recipient UserState row is created for each undelivered ticket:
 
 ```text
-active
-  -> viewed
-  -> replied / reported / blocked
-  -> expired or deleted
+item_id                  random UUID
+sealed_capability_enc    authenticated encrypted capability
+dedupe_tag               blind ticket-specific dedupe value
+delivery_state           active | delivering
+delivery_attempt_id      random lease owner
+delivery_lease_until     lease expiry
+created_at
+expires_at
 ```
 
-Valid direct transitions can also occur from `active`, for example a block or report before a reply.
+UserState does not store the ticket hash, plaintext capability, message body, route capsule, or sender account id.
 
-Rules:
-
-- state does not regress;
-- `expired` is terminal;
-- repeated same-state operations return idempotent success;
-- SQL compare-and-set conditions enforce the current state;
-- a stale callback cannot overwrite a newer terminal action.
-
-## Action Resolution
-
-All ticket actions follow one resolver boundary:
+Limits:
 
 ```text
-callback data
-  -> validate action and parse capability
-  -> derive actorHash and current internal account id
-  -> derive ticketHash
-  -> load TicketVault record
-  -> constant-time owner-proof check
-  -> reject expiry or illegal state
-  -> derive route key from keySeed
-  -> decrypt and validate route capsule
-  -> execute action
+maximum active unread items: 50
+maximum items attempted in one drain: 50
+unread delivery lease: 60 seconds
 ```
 
-`payload_enc` is not decrypted for reply, nickname, block, or normal report routing.
+Expired leases are recovered to `active`. Expired unread rows are removed in bounded batches.
 
-Decrypted capsules are runtime-validated. TypeScript types alone are not accepted as validation.
+## Notification events
 
-## Replies
-
-A reply uses the route capsule to create another sealed ticket for the other participant. It follows the same creation, payload, direct-open delivery, and expiry rules as the original message. The parent capability is not reused.
-
-The bot does not create a persistent conversation transcript.
-
-## Block And Private Nickname
-
-Block state and private nicknames are recipient-local.
-
-- Blocking prevents the same blinded route from creating new messages.
-- A private nickname is not visible to the sender.
-- Neither feature requires a plaintext sender identity in D1.
-- Limits remain bounded to prevent unbounded UserState growth.
-
-## Reports
-
-Reports use blind, domain-separated tags derived from encrypted route seeds:
+Every newly inserted unread row returns one random notification event id.
 
 ```text
-senderAbuseTag
-pairAbuseTag
-linkAbuseTag
-reporterProofTag
-evidenceTag
+accepted unread
+  → inbox-notification(accountId, eventId)
+  → consumer reads current unread count
+  → fresh Telegram message: X unread
+  → callback ib:d
 ```
 
-The evidence tag is derived in the report domain; it is not a direct prefix of the TicketVault lookup hash.
+Notification properties:
 
-ReportLedger stores structured abuse signals and reason codes, not message bodies or reversible user relations by default. Detailed report events have an explicit retention window and bounded cleanup. Long-lived aggregate abuse state, when present, remains blind.
+- independent event per unread;
+- stable idempotency key per account and event;
+- count is not stored in the Queue job;
+- count is read from UserState at send time;
+- no capability, ticket hash, message body, route, or sender identity in the job;
+- if live count is zero, the consumer sends nothing;
+- no editable notification, message id registry, aggregate cycle, revision, or generation.
 
-## Idempotency
+Multiple quick messages can therefore produce multiple notifications with the same latest count. This is intentional product behavior and does not group ticket authority.
 
-### Telegram Webhook
+## Inbox drain
 
-Telegram updates use a sharded two-phase processed-event claim:
+The user starts a drain through `/inbox`, the main Inbox button, or `ib:d`.
+
+The webhook only validates current state, enqueues a drain job, and immediately replies that messages are being opened. Actual delivery occurs through the Outbox Queue.
+
+For each claimed unread item:
+
+1. open the sealed capability in memory;
+2. parse the canonical capability;
+3. derive `ticketHash`;
+4. load TicketVault;
+5. verify owner proof for the current actor/current account;
+6. derive keys and authenticate capsules;
+7. load recipient block state and optional private nickname;
+8. construct one TelegramOutbox job with `ticket-delivery:{ticketHash}` idempotency;
+9. deliver through the recipient's per-chat TelegramOutbox Durable Object;
+10. clear payload and mark the ticket viewed;
+11. complete the matching unread attempt and delete the row.
+
+Private nickname lookup is cached during one drain to avoid repeated storage reads for the same contact tag.
+
+## Delivery failure semantics
+
+### Retryable failures
+
+The unread lease is released and the Queue message is retried when there is a temporary:
+
+- Durable Object or D1 failure;
+- Queue/consumer failure;
+- unexpected crypto runtime or configuration error;
+- Telegram network or 5xx failure;
+- Telegram `429` response;
+- active Outbox lock or pacing delay.
+
+The drain result explicitly reports `retry`; it is never acknowledged as complete by mistake.
+
+### Permanent orphan conditions
+
+An unread item is completed as unavailable when the capability/ticket is explicitly:
+
+- malformed in a clearly permanent way;
+- missing;
+- expired;
+- already terminal without a payload;
+- unsupported for delivery;
+- permanently rejected by Telegram.
+
+Orphan cleanup first completes the exact unread attempt. Only the attempt that still owns the row may delete the TicketVault record. This prevents an expired worker from deleting a ticket claimed by a newer worker.
+
+Unknown exceptions are conservative: release and retry, not destructive cleanup.
+
+## TelegramOutbox semantics
+
+One TelegramOutbox Durable Object is addressed by chat hash.
+
+It provides:
+
+- stable idempotency records;
+- per-chat send lock and lease;
+- immediate first send;
+- approximately one second between real sends;
+- Telegram `retry_after` handling;
+- five-second generic retry;
+- permanent rejection classification;
+- seven-day bounded event retention and alarm cleanup.
+
+The Queue consumer creates independent sequential lanes per chat and processes different chats concurrently.
+
+## Actions after delivery
+
+The delivered Telegram message owns future ticket capability callbacks until ticket expiry.
+
+### Reply
+
+Reply action:
+
+- verifies ticket ownership and reply policy;
+- resolves the sender through the encrypted route tag;
+- creates a bounded reply draft;
+- the resulting reply calls `createSealedTicket` again;
+- recipient block/pause and sender Safety checks are always re-evaluated.
+
+A previous ticket never grants permanent permission to contact someone.
+
+### Private nickname
+
+Nickname state is stored in recipient UserState:
 
 ```text
-new
-  -> processing with lease
-  -> done
+contact_tag primary key
+nickname_ciphertext
+created_at
+updated_at
 ```
 
-A duplicate completed update returns safely. A duplicate update observed while the original claim is still `processing` returns a retryable non-2xx response, so Telegram can retry if the original execution crashes before completion. A crashed processing lease can be reclaimed after expiry.
+The nickname is visible only to the recipient and is applied when future tickets with the same contact tag are delivered.
 
-### Ticket Creation
+Nickname drafts have explicit expiry. All drafts have a default bounded TTL.
 
-Stable operation keys prevent a retried webhook or accepted conversation request from creating duplicate tickets.
+### Block and unblock
 
-### Telegram Outbox
+Blocking stores only `blockTag` in recipient UserState. The receive gate checks it before direct messages, replies, and conversation requests are accepted.
 
-Outbox delivery uses:
+Block/unblock mutations are idempotent and aggregate statistics are emitted only on real state transitions.
+
+### Report and Safety
+
+A report derives `reportEventTag` and `reporterSubjectTag` and submits them to the SafetyState Durable Object addressed by `abuseSubjectTag`.
+
+SafetyState stores:
 
 ```text
-idempotency key
-  -> atomic lease claim
-  -> Telegram call
-  -> lease-guarded finalize
+report event tag
+reporter subject tag
+reason code
+created and expiry timestamps
+singleton sanction state for this abuse subject
 ```
 
-A duplicate with a valid active lease does not call Telegram. A stale lease owner cannot overwrite a newer attempt.
+Allowed reason codes are runtime validated. Current public actions use `inbox_report`; internal policy also recognizes `spam`.
 
-Unread notices are ordinary Telegram outbox jobs. They carry no capability, ticket hash, unread count authority, or message plaintext. The inbox control card reloads authoritative state from UserState.
+Policy:
 
-After Telegram confirms success, the queue message is acknowledged and the Durable Object retains only bounded delivery metadata. If Telegram delivery fails, the encrypted capability remains in the queue message for retry; no raw capability is logged or stored in durable outbox state.
+- 5 distinct reporters within 24 hours → 72-hour suspension;
+- suspension transitions to 30-day probation;
+- 3 distinct reporters within 7 days during probation → indefinite ban;
+- a later complete first-strike threshold after a prior strike may ban;
+- event retention: 90 days.
 
-## Cryptographic Boundaries
+## Retention
 
-Primitive operations use Web Crypto:
+| Data | Retention/lifecycle |
+|---|---|
+| Ticket route/meta | up to 30 days, unless orphan cleanup removes earlier |
+| Ticket payload | until successful delivery, permanent orphan cleanup, or 30-day expiry |
+| Unread row | until delivery, orphan completion, reset, or ticket expiry |
+| Outbox idempotency row | 7 days |
+| Report event | 90 days |
+| Private nickname/block | until recipient removes it or resets account |
+| Draft | explicit expiry or 24-hour default |
 
-- HMAC for blind lookups and proofs;
-- HKDF for domain-separated derived keys;
-- AES-GCM for route, payload, profile, and request envelopes;
-- cryptographically secure random bytes for capability material.
+Retention cleanup is bounded. No request path scans all vault records.
 
-Rules:
+## Hard reset
 
-- use explicit HKDF domain strings;
-- do not reuse stable actor tags across storage planes;
-- do not log keys, plaintext capsules, ciphertext envelopes, raw capabilities, callback data, or Telegram IDs;
-- use compact envelopes with version and key identifier fields;
-- validate supported envelope versions before decryption or use.
+Hard reset:
 
-This design reduces stored joinability. It does not protect data if application secrets or the running Worker are compromised.
+- invalidates profile/discovery state before rotating identity;
+- attempts to remove unread ticket records;
+- purges UserState, including unread rows, drafts, blocks, and nicknames;
+- hard-deletes user and public links from D1;
+- removes KV routing entries best effort;
+- creates a new internal account and public link.
 
-## Logging
+Old callbacks immediately fail owner proof because the internal account id changed. Sanctions use the stable abuse subject and are not cleared by ordinary account reset.
 
-Allowed operational fields:
+## Security limits
 
-- high-level status names;
-- bounded counts;
-- generic action names;
-- non-sensitive queue and alarm states.
+Sealed ticketing protects stored data from casual relational inspection and reduces joinable application state. It does not prevent Telegram or the Worker from seeing plaintext during normal processing, protect a compromised bot token or application key, prevent recipients from copying content, or provide perfect anonymity.
 
-Forbidden operational fields:
-
-- Telegram user IDs or chat IDs;
-- raw ticket capabilities;
-- message bodies;
-- decrypted route or payload capsules;
-- app secrets or derived key material.
+See [Threat Model](./threat-model.md).

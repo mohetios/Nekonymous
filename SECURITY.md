@@ -1,15 +1,15 @@
 # Security Policy
 
-## Supported version
+## Supported versions
 
 | Version | Status |
 |---|---|
 | current `master` | security reports accepted |
-| older experimental and pre-V2 branches | unsupported |
+| older experimental, pre-V2, and removed storage branches | unsupported |
 
 ## Reporting a vulnerability
 
-Do **not** open a public GitHub issue for a suspected vulnerability.
+Do **not** open a public issue for a suspected security or privacy vulnerability.
 
 Email: [hi@mohetios.dev](mailto:hi@mohetios.dev)
 
@@ -18,62 +18,64 @@ Include:
 - affected component or file path;
 - reproduction steps or a minimal proof of concept;
 - expected impact;
-- whether Telegram identities, messages, callbacks, secrets, D1, Durable Objects, KV, Queues, Vectorize, or deployment credentials are involved;
+- whether Telegram identity, message content, callback capability, cryptographic material, D1, Durable Objects, KV, Queue, Vectorize, or deployment credentials are involved;
 - whether the report contains real user data.
 
-Do not send production message bodies, raw Telegram IDs, bot tokens, callback capabilities, or Cloudflare credentials unless they are necessary to understand the issue. Redact them whenever possible.
+Do not send production message bodies, raw Telegram identifiers, bot tokens, ticket capabilities, encryption keys, HMAC peppers, ciphertext dumps, or Cloudflare credentials unless strictly necessary. Redact them whenever possible.
 
-This is an independent open-source project. Reports are reviewed as soon as practical; no formal response SLA is provided.
+This is an independent open-source project. Reports are reviewed as soon as practical; no formal SLA or bounty is promised.
 
-## Product security boundary
+## Security boundary
 
-Nekonymous is a hosted anonymous Telegram relay.
+Nekonymous is a hosted anonymous Telegram relay with encryption at rest and capability-gated actions.
 
-It is not:
+It is **not**:
 
 - end-to-end encrypted;
 - zero-knowledge;
 - a perfect-anonymity system.
 
-Telegram sees message plaintext while users send and receive messages. The Worker sees plaintext while processing, encrypting, decrypting, and delivering messages.
+Telegram sees message plaintext while users send and receive it. The Worker sees plaintext while processing, encrypting, decrypting, and delivering it.
 
-Sensitive stored data is encrypted at rest where implemented. Raw Telegram user IDs are not stored in D1, KV, or Vectorize metadata. Anonymous message bodies and routes are not stored as plaintext D1 rows.
+Before inbox delivery, the recipient UserState stores an encrypted ticket capability. After delivery, Telegram callback data carries the capability for ticket actions. Capability possession is combined with an owner proof bound to the current Telegram actor and current internal account.
 
-Telegram chat history holds the ticket capability after notification delivery. Nekonymous stores encrypted ticket material but does not retain a recoverable per-user ticket index. Possession of the capability and the correct Telegram actor are both required for ticket actions.
+D1 does not store anonymous message bodies, ticket capabilities, finalized conversation profiles, request intros, or a plaintext anonymous relationship graph.
 
-Deleting the Telegram notification or chat history can permanently remove the user's ability to access that ticket. Telegram and the Worker still see plaintext while processing. This is not E2EE, zero-knowledge, or perfect anonymity.
+Read the complete [Threat Model](./docs/threat-model.md).
 
-Read the full [Threat Model](./docs/threat-model.md).
+## Documented limitations
 
-## Documented limitations, not vulnerabilities
+The following are expected boundaries, not vulnerabilities by themselves:
 
-The following are expected product boundaries:
-
-- Telegram can see messages in transit;
+- Telegram can see messages sent through Telegram;
 - the Worker processes plaintext;
-- recipients can screenshot, forward, or copy messages;
-- rate limits, inbox caps, cooldowns, and expirations are intentional;
-- conversation suggestions are approximate product signals, not identity, safety, or psychological guarantees;
-- Nekonymous does not implement payments or Telegram Stars;
-- application-layer guarantees do not survive bot-token, Worker, Cloudflare-account, or application-key compromise.
+- recipients can copy, screenshot, forward, or publish messages;
+- infrastructure timing and row-count metadata exist;
+- rate limits, inbox caps, expiry, pacing, cooldowns, and automated sanction thresholds are intentional;
+- conversation suggestions are approximate product signals, not safety or compatibility guarantees;
+- application guarantees do not survive compromise of the bot token, Worker code, Cloudflare account, `APP_MASTER_KEY`, or `APP_HMAC_PEPPER`.
 
-A documented limitation can still be reported when the implementation behaves more weakly than the documentation, leaks additional data, or bypasses an intended control.
+A documented limitation is reportable when the implementation exposes more data than documented, bypasses an intended authorization/policy check, or destroys/duplicates data contrary to the documented state machine.
 
 ## High-value report areas
 
 Reports are especially useful for:
 
-- forged webhook acceptance;
-- capability guessing, ownership bypass, or callback replay;
-- duplicate ticket or request creation;
+- webhook secret bypass;
+- capability guessing, non-canonical parsing, ownership bypass, or cross-account callback use;
+- unread Queue access by the wrong actor;
+- transient failures deleting healthy TicketVault or unread state;
+- stale delivery attempts deleting a newer claim's ticket;
+- duplicate Telegram delivery despite idempotency;
+- duplicate deterministic ticket creation during request accept;
 - payload clearing before successful delivery;
-- expired route material remaining accessible;
-- raw Telegram identity or message content leaking into D1, KV, Vectorize, queues, or logs;
+- expired/terminal route material remaining usable;
+- block bypass through reply, reset, or conversation requests;
+- Safety threshold, distinct-reporter, phase-window, or reset bypass;
+- raw Telegram identity, content, capability, tag, or secret leaking into D1, KV, Vectorize, Queue payloads, or logs;
 - cross-user Durable Object state access;
-- stale profile-index work restoring deleted discovery data;
-- outbox lease or idempotency bypass;
-- block/report bypass;
-- secret exposure in repository, build output, or CI logs.
+- stale profile-index work restoring reset/deleted discovery state;
+- committed or logged credentials.
 
 ## Safe disclosure
 

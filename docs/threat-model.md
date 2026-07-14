@@ -1,316 +1,287 @@
 # Threat Model
 
-**Scope:** current Nekonymous `master` — a Persian-first, Telegram-bot-only hosted anonymous relay on Cloudflare.
+**Status:** canonical security and privacy model for the current `master` branch.
 
-This document describes application-level guarantees and limitations. It does not extend the guarantees of Telegram, Cloudflare, user devices, networks, or operators.
+This document describes what Nekonymous is designed to protect, what data each storage plane can expose, and which risks remain outside the product's guarantees.
 
-## Security summary
+## System statement
 
-Nekonymous hides users from each other in normal product flows, minimizes joinable stored data, and encrypts sensitive stored data at rest where implemented.
+Nekonymous is a hosted anonymous Telegram relay with encryption at rest and capability-gated actions.
 
-It does not provide:
+It is not end-to-end encrypted, zero-knowledge, perfectly anonymous, or independent of Telegram and Cloudflare trust.
 
-- end-to-end encryption;
-- zero-knowledge processing;
-- perfect anonymity or untraceability;
-- protection from a compromised Telegram account or device;
-- protection from a compromised Worker, deployment account, or application secret;
-- identity verification or safety guarantees for conversation suggestions.
+## Security objectives
 
-Telegram and the Worker see plaintext while processing messages.
+Nekonymous aims to:
 
-## Protected assets
-
-- Telegram bot token and webhook secret
-- application master key and HMAC pepper
-- Telegram user and chat identities
-- anonymous message payloads
-- encrypted ticket routes
-- ticket capabilities, blind slots, and local labels
-- finalized conversation profiles
-- request intros and suggestion/request capabilities
-- pair state and abuse reports
-- Cloudflare account, bindings, queues, and deployment credentials
-
-## Actors
-
-| Actor | Capability |
-|---|---|
-| anonymous sender | opens a deep link, submits messages, may spam or probe limits |
-| recipient | reads inbox, replies, blocks, reports, labels routes |
-| suggestion participant | builds a profile, enables discovery, sends or receives requests |
-| Telegram | transports updates and messages and sees plaintext |
-| Worker/runtime operator | processes plaintext and controls deployment secrets |
-| storage attacker | obtains exports from D1, Durable Objects, KV, Vectorize, or queues |
-| external attacker | forges webhooks, steals secrets, probes callbacks or public links |
-| compromised user device | reads Telegram history, screenshots, forwards content |
-| abusive user | harasses, floods, evades social expectations, or misuses suggestions |
+- hide normal sender identity from message recipients;
+- prevent callback use by the wrong Telegram actor or a reset account;
+- avoid plaintext anonymous message bodies in D1 and KV;
+- avoid a plaintext sender-recipient graph in D1;
+- minimize joinable relationship data across storage planes;
+- clear message payloads after successful Telegram delivery;
+- bound inbox, ticket, report, outbox, profile, and request retention;
+- enforce pause, block, Safety sanctions, expiry, and request state server-side;
+- tolerate duplicate Queue delivery and partial retries without duplicate logical effects;
+- avoid logging message content, capabilities, raw Telegram identifiers, or secrets.
 
 ## Trust boundaries
 
+### Telegram
+
+Telegram receives plaintext messages from senders and plaintext deliveries to recipients. Telegram controls chat accounts, message history, callback delivery, file identifiers, and Bot API availability.
+
+### Cloudflare Worker runtime
+
+The Worker receives plaintext while processing and holds application secrets needed to encrypt/decrypt stored data. A compromised Worker deployment or secret set can access messages processed during that compromise.
+
+### Cloudflare storage
+
+D1, Durable Objects, KV, Queues, and Vectorize are separate logical planes but share the Cloudflare account trust boundary. Application design minimizes what each plane stores; it does not make the platform untrusted.
+
+### Project operator
+
+An operator with deployment credentials and application keys can deploy code that observes plaintext or decrypts stored ciphertext. The architecture reduces accidental exposure and database joinability; it does not remove operator power.
+
+### Telegram users
+
+Senders and recipients may be malicious. Recipients can copy, screenshot, forward, or publish messages. A user may automate Telegram input, replay callbacks, or coordinate abusive reports.
+
+## Protected assets
+
+- Telegram bot token and webhook secret;
+- application master key and HMAC pepper;
+- raw Telegram user and chat identifiers;
+- anonymous message content and media references;
+- ticket capabilities and derived keys;
+- encrypted route metadata;
+- private nicknames and block state;
+- active profile answers and finalized conversation profiles;
+- suggestion/request capabilities and encrypted request intros;
+- blind safety subject and reporter tags;
+- deployment and Cloudflare credentials.
+
+## Storage exposure by plane
+
+| Plane | Stored data | Important exclusions |
+|---|---|---|
+| D1 | active user rows with HMACed Telegram actor hash, encrypted chat route, public links, aggregate daily statistics | message bodies, ticket capabilities, finalized profiles, suggestions, request intros, pair graph |
+| KV | best-effort `tg:{hash}` and `link:{slug}` routing cache, short stats cache | message/profile/inbox authority, plaintext Telegram id |
+| UserState DO | sealed unread capabilities, blind dedupe, delivery leases, drafts, block tags, encrypted nicknames, rate state, encrypted active profile session, discoverability/exposure state | message body, ticket hash, plaintext capability, global relation graph |
+| TicketVault DO | blind ticket hash, owner proof, encrypted route/payload/meta, status and expiry | raw capability, direct sender/recipient ids, transcript |
+| SafetyState DO | blind report events, distinct-reporter tags, reason code, sanction state | message body, reversible subject/reporter identity |
+| ProfileVault DO | encrypted finalized profile, revision/status, sealed index authorization | raw Telegram id, D1 profile row |
+| ConversationVault DO | sealed suggestions/requests, encrypted route and intro, accept lease/result | public pair graph, D1 request relation |
+| PairLedger DO | blind pair lock, cooldown, block, state | reversible account pair |
+| TelegramOutbox DO | encrypted chat route in jobs, method/payload needed for send, idempotency/lease/error metadata | permanent transcript or unbounded log |
+| Queue | bounded job payloads and references | long-lived authority; profile JSON in index jobs; ticket capability in unread notification jobs |
+| Vectorize | controlled 8-dimensional self/desired vectors and minimal routing metadata | raw answers, Telegram ids, display names, intros, final rank authority |
+
+## Ticket capability exposure
+
+Before delivery, the capability exists as authenticated ciphertext in the recipient UserState unread row.
+
+After delivery, the capability appears in Telegram callback data attached to the delivered ticket message. TicketVault never stores the raw capability.
+
+Capability possession alone is insufficient. The Worker verifies an owner proof bound to:
+
 ```text
-User device
-  ↔ Telegram
-  ↔ public network
-  ↔ Cloudflare Worker
-  ↔ D1 / Durable Objects / KV / Queues / Vectorize
-  ↔ Telegram
-  ↔ recipient device
+recipient stable Telegram actor hash
++ recipient current internal account id
++ ticketHash
 ```
 
-Plaintext exists at the user device, Telegram, and Worker processing boundary.
+Residual risk: a compromised recipient Telegram account can use callbacks available to that same account until expiry. The capability is intentionally a bearer component inside an actor-bound authorization check.
 
-Application-layer encryption primarily protects stored exports and accidental cross-plane disclosure. It does not protect against a malicious or compromised running Worker with access to keys.
+## Threats and mitigations
 
-## Data inventory
+### 1. D1 disclosure
 
-| Data | Storage |
+**Threat:** database inspection reveals anonymous content or a social graph.
+
+**Mitigations:**
+
+- no anonymous message body or ticket route in D1;
+- no finalized profile or request/pair graph in D1;
+- Telegram user ids are HMACed;
+- chat ids are encrypted;
+- aggregate statistics are not user timelines;
+- automated D1 audit checks forbidden columns and data shapes.
+
+**Residual risk:** user and public-link structure remains visible, and an attacker with application secrets can resolve HMAC/encrypted identity material.
+
+### 2. Durable Object disclosure
+
+**Threat:** storage dump reveals messages, routes, profiles, or relationship state.
+
+**Mitigations:**
+
+- route/payload/meta/profile/intro data encrypted at rest;
+- lookup keys and relationship tags are blind and domain separated;
+- UserState does not contain plaintext capability or ticket hash;
+- vaults are sharded and not globally scanned;
+- payload cleared after successful delivery;
+- bounded expiry and cleanup.
+
+**Residual risk:** ciphertext length, timestamps, row counts, status, and access patterns are metadata. Application-key compromise defeats encryption at rest.
+
+### 3. Capability guessing or tampering
+
+**Threat:** attacker guesses a ticket reference or changes callback data.
+
+**Mitigations:**
+
+- 256-bit capability material;
+- canonical Base64URL parser;
+- blind HMAC lookup;
+- AES-GCM authenticated capsules and domain-specific AAD;
+- actor/account-bound owner proof;
+- expiry and status checks.
+
+**Residual risk:** capability copied from a compromised recipient account remains usable by that account while authorization and lifecycle permit.
+
+### 4. Cross-user inbox access
+
+**Threat:** one actor drains another recipient's unread queue.
+
+**Mitigations:**
+
+- `/inbox` and `ib:d` resolve the current Telegram actor to the current internal account;
+- UserState is addressed by internal account id;
+- opened ticket owner proof must match current actor/account;
+- Queue job contains the recipient account id but no capability and is validated at runtime.
+
+### 5. Queue duplication and crash windows
+
+**Threat:** at-least-once delivery sends duplicate notifications/messages or corrupts state.
+
+**Mitigations:**
+
+- random notification event id and stable Outbox idempotency key;
+- `ticket-delivery:{ticketHash}` delivery idempotency;
+- per-chat lanes, locks, leases, and bounded retention;
+- truthful UserState attempt results;
+- claim/release/complete requires matching attempt id;
+- deterministic capability for request accept;
+- compensation deletes only a ticket created by the current invocation.
+
+**Residual risk:** a platform crash after Telegram accepts a message but before local success persistence can cause a retry. Telegram's Bot API does not provide an application transaction with Worker storage; idempotency reduces but cannot cryptographically eliminate every external side-effect ambiguity.
+
+### 6. Destructive retry or stale worker
+
+**Threat:** a temporary error or expired worker deletes a healthy ticket.
+
+**Mitigations:**
+
+- unexpected DO/storage/crypto errors release and retry;
+- permanent orphan classification is explicit;
+- orphan cleanup first completes the exact unread claim;
+- stale attempt cannot delete TicketVault;
+- unread/ticket state is retained on transient failure.
+
+### 7. Block bypass
+
+**Threat:** blocked sender uses reply, reset, or conversation suggestions to initiate contact.
+
+**Mitigations:**
+
+- `blockTag` binds recipient current account to sender stable actor hash;
+- receive gate runs for direct messages, replies, and request creation;
+- accepted request uses normal sealed-ticket gates;
+- sender account reset does not change stable actor hash.
+
+**Residual risk:** recipient account reset clears recipient-local blocks by design.
+
+### 8. Report manipulation
+
+**Threat:** duplicate or coordinated reports incorrectly sanction someone.
+
+**Mitigations:**
+
+- duplicate same-ticket/same-reporter event tag;
+- distinct reporter count scoped to one abuse subject;
+- reporter tag is not globally joinable;
+- phase-specific time windows;
+- runtime reason-code allowlist;
+- report event retention and operator clear path.
+
+**Residual risk:** coordinated distinct Telegram accounts can still trigger automated thresholds. Sanctions are an abuse-control heuristic, not a proof of misconduct.
+
+### 9. Safety reset bypass
+
+**Threat:** suspended or banned actor resets account.
+
+**Mitigation:** SafetyState is addressed by an abuse subject derived from the stable Telegram actor hash, not the current internal account id.
+
+### 10. Profile/request privacy leakage
+
+**Threat:** D1/Vectorize reveals questionnaire answers or a relationship graph.
+
+**Mitigations:**
+
+- raw answers only in encrypted active session and deleted after finalization;
+- finalized profile encrypted in ProfileVault;
+- Vectorize stores controlled 8-dimensional projections only;
+- no Workers AI;
+- request intros encrypted in ConversationVault;
+- pair state uses blind PairLedger tags;
+- stale index revision checks prevent reset rollback.
+
+**Residual risk:** vector values and controlled metadata reveal approximate conversation-style projection. Vectorize access must still be treated as sensitive infrastructure access.
+
+### 11. Reset inconsistency
+
+**Threat:** user believes reset completed while old discoverability or ticket authority remains.
+
+**Mitigations:**
+
+- profile invalidation must succeed before identity rotation;
+- UserState is purged and D1 identity is hard-deleted;
+- public links and KV routes are removed;
+- new internal id invalidates old ticket owner proofs;
+- stale profile-index work cannot restore a deleted revision.
+
+**Residual risk:** physical removal of every old encrypted vault record is bounded and may be completed by expiry/cleanup after logical access has already been revoked.
+
+### 12. Logging leakage
+
+**Threat:** production logs contain messages, raw IDs, capabilities, ciphertext, tags, tokens, or full error objects.
+
+**Mitigations:**
+
+- generic user-facing errors;
+- stage-based `logBotError` calls;
+- safe metadata limited to retry/permanent status, delay, and timing;
+- no message body or identity fields in timing logs;
+- audits and review rules prohibit sensitive logs.
+
+## Retention summary
+
+| Data | Normal lifecycle |
 |---|---|
-| Telegram user ID | HMAC-derived identity in D1; raw value not stored there |
-| Telegram chat ID | encrypted at rest where required for delivery |
-| public link slug | D1 and routing cache |
-| anonymous message body | encrypted TicketVault payload; cleared after successful Telegram delivery |
-| anonymous route | encrypted TicketVault route; removed at expiry |
-| ticket capability | Telegram callback button after notification delivery; encrypted queue payload until delivery succeeds |
-| inbox entry | blind UserState slot |
-| private nickname | recipient-local encrypted/local state |
-| block state | blinded/local route state |
-| report | blind tags and structured reason in ReportLedger |
-| raw profile answers | encrypted active session; deleted after profile finalization |
-| finalized profile | encrypted ProfileVault record |
-| suggestion/request intro | encrypted ConversationVault record |
-| candidate retrieval vector | controlled 8-dimensional Vectorize value |
-| aggregate statistics | D1 daily counters; optional short-lived KV cache |
-
-D1 does not store anonymous message bodies, finalized profiles, request intros, or a plaintext anonymous social graph.
-
-Vectorize does not receive Telegram IDs, display names, answers, or message text.
-
-## Main threats and controls
-
-### Forged Telegram webhook
-
-**Threat:** an attacker sends fake updates to `POST /bot`.
-
-**Controls:**
-
-- webhook secret validation;
-- POST-only bot endpoint;
-- strict update parsing;
-- no general public API surface;
-- stable webhook event idempotency.
-
-**Residual risk:** theft of the webhook secret or deployment configuration bypasses this boundary.
-
-### Duplicate or reordered updates
-
-**Threat:** Telegram or infrastructure retries the same update, or concurrent callbacks race.
-
-**Controls:**
-
-- sharded processed-event claims with leases;
-- stable operation keys;
-- compare-and-set status transitions;
-- idempotent ticket and request creation;
-- generic handling for expired or already-completed callbacks.
-
-### Callback capability guessing or replay
-
-**Threat:** an attacker guesses a callback reference or reuses an old button.
-
-**Controls:**
-
-- cryptographically random base64url capabilities;
-- blind HMAC lookup keys derived from lookup nonces;
-- actor/account-bound owner proofs;
-- decryption keys that require the capability keySeed;
-- strict callback format and action validation;
-- expiration and state checks;
-- raw capabilities not stored in D1, KV, UserState, or TicketVault after successful notification delivery.
-
-**Residual risk:** a capability visible on a compromised Telegram account can be replayed by that account until expiry and allowed-state checks reject it. Deleting the Telegram notification or chat history can permanently remove the user's ability to access that ticket.
-
-### Storage export
-
-**Threat:** D1, Durable Object, KV, queue, or Vectorize data is copied.
-
-**Controls:**
-
-- separate storage planes;
-- encrypted route, payload, profile, and intro capsules;
-- blind lookup and pair tags;
-- no message body or relay graph in D1;
-- no identity metadata in Vectorize;
-- temporary payload and bounded route retention;
-- encrypted ticket material is not decryptable from storage plus `APP_MASTER_KEY` without the Telegram-held capability keySeed;
-- blind reports and aggregate statistics.
-
-**Residual risk:** ciphertext, timing, counts, status, and coarse vectors can still provide metadata. Compromise of application encryption keys can expose non-ticket encrypted records; ticket payloads and routes also require the corresponding ticket capability.
-
-### Worker or secret compromise
-
-**Threat:** an attacker controls the deployed Worker or obtains bot/application secrets.
-
-**Impact:**
-
-- plaintext can be observed during processing;
-- encrypted stored data may become decryptable;
-- identities and routes may be correlated;
-- Telegram messages may be forged.
-
-**Controls:**
-
-- secrets stored through Cloudflare secret configuration;
-- no secrets in repository examples;
-- minimal logging;
-- direct bindings rather than public service credentials;
-- least-necessary data retention;
-- automated repository checks.
-
-This is a high-impact residual risk. Nekonymous does not claim protection from the runtime operator.
-
-### Anonymous message abuse
-
-**Threat:** flooding, harassment, repeated links, or bypass attempts.
-
-**Controls:**
-
-- global action throttling;
-- inbox caps and bounded rendering;
-- message length limits;
-- pause/resume;
-- route block and unblock;
-- reports with blind abuse tags;
-- ticket expiry;
-- idempotent creation and notification.
-
-**Residual risk:** a determined user can create new Telegram accounts or use out-of-band information. The system is not an identity-proof or anti-abuse guarantee.
-
-### Conversation suggestion misuse
-
-**Threat:** users interpret suggestions as psychological truth, identity proof, safety, or compatibility.
-
-**Controls:**
-
-- direct non-clinical questions;
-- no demographic inference;
-- opt-in discoverability;
-- deterministic documented ranking;
-- no public compatibility percentage;
-- sealed suggestions and requests;
-- accept/decline control;
-- pair blocks, cooldowns, and exposure limits.
-
-**Residual risk:** users can misrepresent themselves. Similar conversation preferences do not establish trust or safety.
-
-### Telegram outbox duplication
-
-**Threat:** queue at-least-once delivery or Durable Object interleaving sends duplicate Telegram messages.
-
-**Controls:**
-
-- stable idempotency keys;
-- atomic delivery leases;
-- lease expiry and reclaim;
-- lease-guarded completion;
-- per-chat ordering;
-- bounded cross-chat concurrency;
-- bounded sent/failure retention.
-
-### Logs expose sensitive context
-
-**Threat:** errors serialize Telegram objects, callback data, text, routes, or responses.
-
-**Controls:**
-
-- production-safe error serializer;
-- stable error codes;
-- no arbitrary request/error object logging;
-- verification script for forbidden log patterns.
-
-## Retention and deletion
-
-### Message tickets
-
-- payload: until first successful Telegram delivery, or ticket expiry;
-- route: until ticket expiry;
-- blind slot: until successful open, terminal invalidation, or ticket expiry;
-- raw capability: not retained by Nekonymous storage after successful notification delivery;
-- expired/evicted ticket: sensitive route, payload, and metadata removed;
-- outbox idempotency records: bounded operational retention.
-
-### Profiles and requests
-
-- active raw answers: deleted after profile finalization;
-- profile: retained while account/profile exists;
-- Vectorize entry: deleted on profile removal, discoverability changes when required, or account reset;
-- suggestion/request capabilities: bounded by status and expiry;
-- pair and report state: bounded according to abuse/cooldown policy.
-
-### Aggregate statistics
-
-Anonymous aggregate counters may survive account reset because they do not contain account-linked records or message content.
-
-## Hard reset
-
-Hard reset creates a new internal identity and public link after attempting to revoke the old account across storage planes.
-
-Current reset behavior covers:
-
-- public link and D1 identity;
-- UserState data and blind ticket slots;
-- profile vault state;
-- known Vectorize routes;
-- suggestion/request capabilities;
-- new identity and link creation;
-- rejection of stale profile-index work.
-
-Ticket access revocation is immediate because old callbacks no longer satisfy the owner proof after the internal account id changes. Physical ciphertext removal is bounded by the existing ticket expiry lifecycle; reset does not require a replacement user-to-ticketHash registry.
-
-Known migration limitation:
-
-Some profile records created before the July 2026 hardening did not persist their Vectorize identifiers in the encrypted profile route. Automated reset is complete for profiles indexed after that change. Older records without the route can require operator cleanup. This limitation must remain documented until historical data is migrated or removed.
-
-Hard reset does not remove:
-
-- messages already delivered into Telegram chat history;
-- screenshots or forwarded copies;
-- Telegram-side data;
-- anonymous aggregate statistics;
-- external backups outside application control.
-
-## Key management limitations
-
-The repository defines key derivation and envelope versioning but does not provide a universal transparent key-rotation system for all existing encrypted records.
-
-Operational rules:
-
-- never reuse development secrets in production;
-- keep master and HMAC secrets independent;
-- rotate the Telegram token and webhook secret after suspected exposure;
-- treat master-key or HMAC-pepper exposure as a security incident;
-- document any migration/re-encryption procedure before rotating data-encryption keys.
-
-## Security claims
-
-Acceptable:
-
-> Nekonymous is a hosted anonymous Telegram relay with encrypted-at-rest storage boundaries, data minimization, sealed capabilities, and explicit privacy limitations.
-
-Not acceptable:
-
-```text
-end-to-end encrypted
-zero-knowledge
-Telegram cannot see messages
-the Worker cannot see messages
-perfect anonymity
-fully private
-secure messenger
-safe match
-verified compatibility
-```
-
-## Reporting
-
-Report suspected vulnerabilities privately using [`SECURITY.md`](../SECURITY.md). Do not include real message contents, Telegram identities, bot tokens, callback references, or production secrets in public issues.
+| Ticket payload | until successful delivery, permanent orphan cleanup, reset cleanup, or 30-day expiry |
+| Ticket route/meta | up to 30 days |
+| Unread item | until delivery, orphan completion, reset, or expiry |
+| TelegramOutbox event | 7 days |
+| Safety report event | 90 days |
+| Sanction state | until policy transition or operator clear; ban is indefinite |
+| Draft | explicit TTL or 24-hour default |
+| Active profile answers | until finalization, abandonment expiry, or reset |
+| Finalized profile | until replacement, deletion, or reset |
+| Suggestion/request | bounded capability/status lifecycle |
+| Block/nickname | until recipient changes it or resets |
+| Aggregate statistics | retained as anonymous aggregates and not decremented on reset |
+
+## Explicit non-goals
+
+Nekonymous does not protect against:
+
+- Telegram or Worker plaintext access during normal processing;
+- compromised bot token, Cloudflare account, Worker code, master key, or HMAC pepper;
+- malicious recipients copying or publishing messages;
+- endpoint malware or compromised Telegram accounts;
+- legal/platform access to Telegram or Cloudflare data;
+- traffic analysis by infrastructure providers;
+- determined identity inference from writing style or content;
+- coordinated abuse by many distinct accounts;
+- perfect anonymity or guaranteed safe conversation partners.

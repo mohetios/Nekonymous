@@ -1,92 +1,123 @@
-# Development
+# Development and Operations
 
-This guide covers local setup, Cloudflare resources, verification, deployment, and maintenance for Nekonymous.
+**Status:** canonical setup, verification, deploy, and manual QA guide for the current `master` branch.
 
 ## Prerequisites
 
-- Node.js 22 or newer
-- pnpm
-- Wrangler CLI through the repository dependency
-- a Cloudflare account
-- a Telegram bot created through BotFather
-- an HTTPS tunnel for local Telegram webhook testing
+- Node.js 22 or newer;
+- pnpm;
+- Wrangler 4 authenticated to the target Cloudflare account;
+- Telegram bot token from BotFather;
+- Cloudflare Workers, D1, KV, Durable Objects, Queues, and Vectorize.
 
-Install dependencies:
+Workers AI is not required by Conversation Suggestions V2.
+
+## Install
 
 ```bash
 pnpm install
-```
-
-## Local secrets
-
-Copy the template:
-
-```bash
 cp .env.example .dev.vars
 ```
 
-Required values include:
+Fill `.dev.vars` with local secrets. Never commit it.
 
-| Name | Purpose |
-|---|---|
-| `SECRET_TELEGRAM_API_TOKEN` | Telegram Bot API token |
-| `BOT_SECRET_KEY` | Telegram webhook secret validation |
-| `APP_MASTER_KEY` | input key material for encrypted storage |
-| `APP_HMAC_PEPPER` | HMAC identity and blind-lookup protection |
-| `BOT_INFO` | bot metadata/copy configuration |
-| `BOT_NAME` | visible bot name |
-| `BOT_USERNAME` | Telegram bot username |
+## Secrets and variables
 
-Never commit `.dev.vars`, production secrets, exported Cloudflare data, or real Telegram update payloads.
+| Name | Type | Purpose |
+|---|---|---|
+| `SECRET_TELEGRAM_API_TOKEN` | secret | Telegram Bot API token |
+| `BOT_SECRET_KEY` | secret | Telegram webhook `secret_token` validation |
+| `APP_MASTER_KEY` | secret | AES-GCM/HKDF key material for tickets, chat routes, labels, profiles, requests |
+| `APP_HMAC_PEPPER` | secret | HMAC for Telegram actor hash and blind tags |
+| `BOT_INFO` | secret/var | cached Telegram `getMe` result object |
+| `BOT_NAME` | secret/var | display name used in copy |
+| `BOT_USERNAME` | secret/var | username without `@`, used for deep links |
 
-## Cloudflare bindings
+Use at least 32 bytes of entropy for `APP_MASTER_KEY` and `APP_HMAC_PEPPER`.
 
-The deployment template is [`wrangler.jsonc.example`](../wrangler.jsonc.example).
+Production:
 
-Current binding families:
-
-```text
-DB
-NEKO_KV
-
-USER_STATE_DO
-PROFILE_VAULT_DO
-CONVERSATION_VAULT_DO
-PAIR_LEDGER_DO
-TELEGRAM_OUTBOX_DO
-TICKET_VAULT
-REPORT_LEDGER
-
-NEKO_OUTBOX_QUEUE
-NEKO_STATS_QUEUE
-NEKO_PROFILE_INDEX_QUEUE
-
-CONVERSATION_VECTORS
+```bash
+wrangler secret put SECRET_TELEGRAM_API_TOKEN
+wrangler secret put BOT_SECRET_KEY
+wrangler secret put APP_MASTER_KEY
+wrangler secret put APP_HMAC_PEPPER
+wrangler secret put BOT_INFO
+wrangler secret put BOT_NAME
+wrangler secret put BOT_USERNAME
 ```
 
-Keep binding names and exported Durable Object class names aligned with Wrangler migrations. Renaming a class or binding is a deployment migration, not a normal source-file cleanup.
+## Bindings
 
-## Database and conversation resources
+Current runtime bindings:
 
-Apply local D1 migrations:
+| Binding | Resource |
+|---|---|
+| `DB` | D1 `nekonymous_core` |
+| `NEKO_KV` | routing/cache KV |
+| `USER_STATE_DO` | `UserStateDurableObjectV4` |
+| `TELEGRAM_OUTBOX_DO` | `TelegramOutboxDurableObjectV4` |
+| `TICKET_VAULT` | `TicketVaultDurableObjectV4` |
+| `SAFETY_STATE_DO` | `SafetyStateDurableObjectV4` |
+| `PROFILE_VAULT_DO` | `ProfileVaultShardDurableObjectV2` |
+| `CONVERSATION_VAULT_DO` | `ConversationVaultShardDurableObjectV2` |
+| `PAIR_LEDGER_DO` | `PairLedgerShardDurableObjectV2` |
+| `NEKO_OUTBOX_QUEUE` | `neko-outbox` |
+| `NEKO_STATS_QUEUE` | `neko-stats` |
+| `NEKO_PROFILE_INDEX_QUEUE` | `neko-profile-index` |
+| `CONVERSATION_VECTORS` | `nekonymous-conversation-v2` |
+
+The committed `wrangler.jsonc` includes deployment-specific ids. For another Cloudflare account, start from `wrangler.jsonc.example` and replace resource identifiers deliberately.
+
+## Queue configuration
+
+Current consumer behavior:
+
+| Queue | Batch size | Batch timeout | Retries |
+|---|---:|---:|---:|
+| `neko-outbox` | 10 | 0 seconds | 5 + DLQ |
+| `neko-stats` | 50 | 5 seconds | 5 + DLQ |
+| `neko-profile-index` | 5 | 5 seconds | 5 + DLQ |
+
+Outbox is latency-sensitive. Do not reintroduce a batch wait without measuring the user-facing effect.
+
+## Local D1
 
 ```bash
 pnpm db:migrations:apply:local
 ```
 
-Provision or migrate the Conversation Suggestions V2 resources:
+Remote:
+
+```bash
+pnpm db:migrations:apply:remote
+```
+
+Review every remote migration before applying it.
+
+## Durable Object migrations
+
+`wrangler.jsonc` contains historical migration tags required by already deployed environments. Do not reorder, rename, or rewrite applied tags.
+
+The `v11-safety-state-replace-report-ledger-v4` tag exists for remotes that previously created `ReportLedgerDurableObjectV4`. Fresh environments may already create `SafetyStateDurableObjectV4` in the rewritten `v9` chain. Validate first-time deploys and existing remote histories separately.
+
+Before changing DO migration history:
+
+```bash
+wrangler deployments list
+wrangler versions list
+wrangler deploy --dry-run
+```
+
+Never assume a fresh environment and an existing production environment need the same history edit.
+
+## Conversation V2 resources
 
 ```bash
 ./tools/setup-conversation-v2-resources.sh
 ```
 
-The setup script can affect configured Cloudflare resources. Read the script and verify the active account/environment before using it against a remote environment.
-
-Audit local D1 schema:
-
-```bash
-pnpm audit:d1:local
-```
+Review the script and target account before running it. It can create or modify remote resources.
 
 ## Run locally
 
@@ -94,82 +125,65 @@ pnpm audit:d1:local
 pnpm dev
 ```
 
-This starts:
+Wrangler listens on port `8787`. Telegram requires a public HTTPS endpoint; expose the local port through a tunnel and register:
 
 ```text
-wrangler dev --local --port 8787
+https://your-tunnel.example/bot
 ```
 
-Telegram must reach:
+The webhook `secret_token` must equal `BOT_SECRET_KEY`.
 
-```text
-POST /bot
+## Telegram webhook
+
+Example registration:
+
+```bash
+curl -X POST "https://api.telegram.org/bot${SECRET_TELEGRAM_API_TOKEN}/setWebhook" \
+  -H 'content-type: application/json' \
+  -d '{
+    "url": "https://your-worker.example/bot",
+    "secret_token": "YOUR_BOT_SECRET_KEY",
+    "allowed_updates": ["message", "callback_query"]
+  }'
 ```
 
-Use an HTTPS tunnel and configure the Telegram webhook secret to match `BOT_SECRET_KEY`.
-
-The Worker does not expose a public application API. Non-`POST /bot` requests should return `404`.
+Do not place real tokens or secrets in committed scripts, shell history, screenshots, or issues.
 
 ## Verification commands
 
-### Required before every pull request or deploy
+### Full release gate
 
 ```bash
-pnpm run check
-git diff --check
+pnpm check
 ```
 
-`pnpm run check` runs:
+Current `check` chain:
 
 ```text
-types:check (wrangler binding drift)
-typecheck
-lint
-knip
-all repository verification scripts
-sealed-ticket storage audit
-test:workers (Vitest in workerd)
+types:check
+→ typecheck
+→ lint
+→ knip
+→ test:verify
+→ test:workers
+→ audit:ticket-storage
+→ audit:types
 ```
 
-Use the global Wrangler CLI (`wrangler`, not `pnpm exec wrangler`) for remote operations in this repository.
-
-Regenerate binding types after `wrangler.jsonc` binding changes:
+### Focused commands
 
 ```bash
-pnpm types:bindings
 pnpm types:check
-```
-
-### Individual commands
-
-```bash
 pnpm typecheck
-pnpm types:bindings
-pnpm types:check
 pnpm lint
-pnpm lint:fix
 pnpm knip
-pnpm test
 pnpm test:workers
-pnpm audit:d1
-pnpm audit:d1:local
-pnpm audit:ticket-storage
-```
-
-`pnpm test` runs the Node verification scripts only. `pnpm test:workers` runs Vitest with `@cloudflare/vitest-pool-workers` for runtime integration tests under `test/`.
-
-### Focused verification
-
-```bash
 pnpm test:ticketing
 pnpm test:idempotency
-pnpm test:stats
 pnpm test:bot-flow
+pnpm test:stats
 pnpm test:d1-schema
-
-pnpm test:conversation-v2-resources
-pnpm test:conversation-capabilities
-pnpm test:conversation-privacy
+pnpm test:release-hardening
 pnpm test:conversation-profile
 pnpm test:conversation-index
 pnpm test:conversation-retrieval
@@ -177,197 +191,147 @@ pnpm test:conversation-ranking
 pnpm test:conversation-eligibility
 pnpm test:conversation-suggestions
 pnpm test:conversation-requests
+pnpm test:conversation-capabilities
+pnpm test:conversation-privacy
 pnpm test:profile-index-idempotency
-
-pnpm test:release-hardening
-pnpm test:workers
+pnpm audit:d1
+pnpm audit:d1:local
+pnpm audit:ticket-storage
+pnpm audit:types
 ```
 
-The verification scripts use Node's TypeScript stripping and do not introduce a runtime test framework into the Worker.
+Use `git diff --check` before committing.
 
-Tooling note: keep TypeScript on the latest `5.9.x` line until `typescript-eslint` officially supports TypeScript 7. The July 2026 dependency update keeps `typescript-eslint` on `8.63.x`, whose supported peer range is `<6.1`.
-
-Vitest worker tests cover:
-
-- webhook auth and routing (`test/worker-runtime.test.ts`)
-- queue dispatch fail-closed behavior
-- typed Durable Object RPC smoke tests (`test/storage-rpc.test.ts`)
-
-### Queue setup
-
-Create or verify Cloudflare Queues and dedicated DLQs:
+## Deploy
 
 ```bash
-./tools/setup-queues.sh
+pnpm deploy
 ```
 
-Primary queues: `neko-outbox`, `neko-stats`, `neko-profile-index`
+`pnpm deploy` applies remote D1 migrations and then runs a minified Wrangler deploy.
 
-Dead-letter queues: `neko-outbox-dlq`, `neko-stats-dlq`, `neko-profile-index-dlq`
+Deployment is a remote mutation. Run it only against the intended account and environment.
 
-The legacy shared `neko-dlq` producer binding is removed from `wrangler.jsonc`.
+After deploy:
 
-## Manual two-account QA
+```bash
+wrangler tail
+```
 
-Use two Telegram accounts.
+Observe webhook timing, Queue consumers, Outbox retry/rejection, and Durable Object failures without logging message bodies or identifiers.
 
-### Core bot
+## Safe observability
 
-1. Run `/start` on both accounts.
-2. Open account A's personal link from account B.
-3. Send an anonymous message.
-4. Confirm A receives only a generic new-message notification.
-5. Open `/inbox` and verify the body appears.
-6. Open `/inbox` again and verify the compact viewed shell.
-7. Reply from A and verify B receives a new sealed ticket.
-8. Set and update a private nickname.
-9. Block, confirm future delivery is denied, then test unblock.
-10. Report a ticket.
-11. Pause and resume incoming messages.
-12. Test destructive hard-reset confirmation and old-link rejection.
+Hot-path timing emits stage durations such as:
 
-### Conversation Suggestions V2
+```text
+identityMs
+draftMs
+recipientMs
+slugMs
+sealMs
+ackMs
+totalMs
+```
 
-1. Complete `/assessment` on both accounts.
-2. Verify 25 questions and a finalized profile.
-3. Wait for or trigger profile-index queue processing.
-4. Enable «نمایش در پیشنهادها» for both accounts.
-5. Search from account A.
-6. Open a suggestion and write an intro.
-7. Confirm account B receives one request notification.
-8. Accept twice or tap concurrently where possible; verify one resulting ticket.
-9. Test decline and cancel paths.
-10. Verify accepted conversation continues through the normal anonymous inbox.
-11. Reset one account and confirm old profile/capability behavior is unavailable.
+Timing metadata must not include raw ids, capabilities, hashes, tags, ciphertext, message text, or request bodies.
+
+Important error stages include:
+
+```text
+queue:telegram
+queue:inbox-drain
+queue:inbox-notification
+telegram-outbox:internal
+telegram-outbox:dispatch
+inbox:open-unread-capability
+inbox:resolve-ticket
+inbox:finalization-stale
+```
+
+## Manual QA
+
+Use at least two Telegram accounts.
+
+### Identity and link
+
+1. `/start` creates one account and active public link.
+2. repeated `/start` reuses the active account.
+3. personal link opens a compose draft for the correct recipient.
+4. self-message is rejected.
+5. hard reset creates a new link and the old link stops resolving.
+
+### Anonymous messaging
+
+1. send one text message;
+2. verify sender acknowledgment is prompt;
+3. verify recipient receives a fresh notification with live unread count;
+4. send 3 and 10 messages quickly and observe per-message notifications under one-second chat pacing;
+5. press `/inbox` or `ib:d` and verify actual message delivery begins;
+6. press `ib:d` twice and verify each ticket is delivered logically once;
+7. run `/inbox` and `ib:d` concurrently and verify leases/idempotency;
+8. test text and every supported Telegram media type;
+9. verify payload is no longer deliverable after successful delivery while actions remain available;
+10. verify a 51st unread is rejected when 50 are active.
 
 ### Failure behavior
 
-- Tap an expired or unsupported callback and verify the generic unavailable message.
-- Repeat a command/update if your test harness supports it and confirm idempotency.
-- Temporarily fail Telegram delivery in local verification and confirm payload/state is not finalized incorrectly.
+- force a retryable Outbox result and verify Queue retry, unread retention, and vault retention;
+- simulate Telegram `429` and verify `retry_after` is respected;
+- simulate generic transient failure and verify five-second retry;
+- verify malformed Queue jobs are logged and acknowledged rather than crashing a batch;
+- verify stale unread attempt cannot delete a newer claim's TicketVault;
+- verify permanent Telegram rejection completes unreachable unread/vault state.
 
-## Telegram profile
+### Ticket actions
 
-BotFather profile tooling:
+1. reply anonymously;
+2. block sender and verify direct message, reply, and conversation request are denied;
+3. reset sender and verify block remains effective;
+4. unblock and verify contact becomes possible;
+5. set/change private nickname and verify future deliveries display it;
+6. allow nickname draft to expire and verify it is ignored;
+7. report the same ticket twice and verify one logical report event.
+
+### Safety
+
+1. submit reports from five distinct accounts inside the first window;
+2. verify subject becomes suspended;
+3. verify suspended subject cannot initiate message, reply, or request;
+4. verify transition to probation using test-time controls;
+5. submit three distinct probation reports in the phase window and verify ban;
+6. reset subject account and verify sanction remains.
+
+### Conversation Suggestions
+
+1. complete all 25 questions on two accounts;
+2. verify finalized encrypted profile and successful index revision;
+3. enable discoverability explicitly;
+4. search and open a suggestion;
+5. send an intro and verify one durable request notification;
+6. decline and verify cooldown;
+7. accept twice/concurrently and verify one resulting ticket;
+8. verify accepted intro arrives through the normal unread inbox;
+9. block requester before request creation and verify request is denied;
+10. hard reset and verify stale profile/index/request capability is unavailable.
+
+## Telegram profile tooling
 
 ```bash
 pnpm bot:profile
 ```
 
-The script reads the canonical command definitions from code and verifies the Telegram command profile.
+This mutates the live BotFather profile. Run only when intentionally updating production bot metadata.
 
-Treat this as a remote mutation. Run it only when intentionally updating the live bot profile.
-
-## Deployment
-
-The deploy script performs remote D1 migration before Worker deployment:
+## Destructive tools
 
 ```bash
-pnpm deploy
-```
-
-Equivalent behavior:
-
-```text
-wrangler d1 migrations apply DB --remote
-wrangler deploy --minify
-```
-
-Before deploying:
-
-```bash
-git status --short
-pnpm run check
-pnpm audit:d1
-```
-
-Also verify:
-
-- correct Cloudflare account and environment;
-- secrets exist for the target Worker;
-- D1, KV, Durable Object, Queue, DLQ, and Vectorize bindings match Wrangler;
-- Durable Object migration history is valid;
-- Telegram webhook URL and secret match the deployed Worker;
-- no flush or remote cleanup command is being run unintentionally.
-
-The following scripts are destructive or environment-sensitive and must never be part of a normal validation run:
-
-```bash
-pnpm flush:remote              # data wipe: D1 + KV + Vectorize (repeatable)
-pnpm flush:remote -- --full-do-reset  # one-shot DO generation reset (needs new migration pair after v11)
+pnpm flush:remote
 pnpm flush:remote:local
-pnpm db:migrations:apply:remote
-pnpm bot:profile
-pnpm deploy
 ```
 
-## Code boundaries
-
-### Worker hot path
-
-- keep `src/index.ts` mechanical;
-- accept Telegram webhook, dispatch known queues, export Durable Objects;
-- no general route framework or plugin registry;
-- reject unknown queues explicitly;
-- avoid request-scoped module globals;
-- await correctness-critical storage work;
-- use `waitUntil` only for non-critical best-effort work.
-
-### Product logic
-
-- Telegram handlers parse, authorize, invoke product behavior, and render;
-- sealed ticketing remains an explicit core domain;
-- deterministic ranking remains pure TypeScript;
-- Durable Objects own atomic state transitions;
-- D1 is not a transcript or profile graph;
-- KV is cache/routing only;
-- Vectorize retrieves candidates only.
-
-### Performance
-
-- all lists, scans, decryptions, and candidate sets are bounded;
-- no unbounded `Promise.all`;
-- preserve per-chat Telegram order;
-- use bounded concurrency across independent chats;
-- use Cloudflare bindings directly;
-- keep encrypted capsules compact;
-- give persistent Durable Object rows explicit expiry or retention.
-
-### Security
-
-- no raw Telegram IDs in D1, KV, or Vectorize metadata;
-- no raw callback capabilities in storage;
-- no plaintext message body or anonymous route in D1;
-- no arbitrary production error-object logging;
-- no security claim stronger than the threat model;
-- update or add a verification script when changing an invariant.
+Review implementation before use. Remote flush is destructive and Durable Object state may require explicit migration/class rotation rather than D1/KV/Vectorize cleanup alone.
 
 ## Documentation maintenance
 
-When changing:
-
-| Area | Update |
-|---|---|
-| Worker/storage/queue topology | `docs/architecture.md` |
-| ticket creation, inbox, callbacks, reports, expiry | `docs/sealed-ticketing.md` |
-| profile, retrieval, ranking, suggestions, requests | `docs/conversation-suggestions.md` |
-| trust boundary, retention, reset, cryptography | `docs/threat-model.md` and possibly `SECURITY.md` |
-| setup, scripts, bindings, deployment | `docs/development.md` |
-| public feature list or status | `README.md` |
-| contribution quality bar | `CONTRIBUTING.md` |
-
-## Pull request completion report
-
-A meaningful implementation pull request should state:
-
-```text
-what changed
-why it changed
-storage or privacy impact
-CPU/subrequest impact
-files and migrations
-tests run
-manual QA
-known limitations
-remote actions not run
-```
+When behavior changes, update the owning document listed in [`docs/README.md`](./README.md). Do not keep old and new architectures in parallel.

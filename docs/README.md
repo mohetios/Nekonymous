@@ -1,53 +1,69 @@
 # Nekonymous Documentation
 
-This directory contains the canonical technical documentation for Nekonymous.
+This directory is the canonical technical documentation set for the current `master` branch.
 
-The documentation is intentionally small. Each document owns one subject and should be updated with the implementation that it describes.
+The documents describe implemented behavior. They are not a roadmap and must not preserve removed V1 storage paths, compatibility layers, or historical names.
 
-## Start here
+## Document ownership
 
 | Document | Owns |
 |---|---|
-| [Architecture](./architecture.md) | Worker runtime, Cloudflare planes, bot interaction, queues, statistics, and source boundaries |
-| [Sealed Ticketing](./sealed-ticketing.md) | Anonymous message capability, TicketVault, inbox lifecycle, actions, expiry, and report routing |
-| [Conversation Suggestions](./conversation-suggestions.md) | Conversation profile, Vectorize retrieval, deterministic ranking, suggestions, and requests |
-| [Threat Model](./threat-model.md) | Security assumptions, stored data, threats, mitigations, limitations, and reset semantics |
-| [Development](./development.md) | Setup, configuration, checks, deployment, manual QA, and documentation maintenance |
+| [Architecture](./architecture.md) | Worker runtime, Cloudflare planes, bot surfaces, queues, statistics, source boundaries, performance |
+| [Sealed Ticketing](./sealed-ticketing.md) | Anonymous ticket capability, TicketVault, unread inbox, notifications, actions, blind tags, safety routing, retention |
+| [Conversation Suggestions](./conversation-suggestions.md) | Profile V2, indexing, retrieval, deterministic ranking, suggestions, requests, accept idempotency |
+| [Threat Model](./threat-model.md) | Assets, trust assumptions, storage exposure, threats, mitigations, retention, reset semantics, limitations |
+| [Development](./development.md) | Local setup, bindings, migrations, tests, deploy, observability, manual QA, troubleshooting |
 
 Repository-level documents:
 
-- [`README.md`](../README.md): public project front door
-- [`SECURITY.md`](../SECURITY.md): private vulnerability reporting
-- [`CONTRIBUTING.md`](../CONTRIBUTING.md): contributor workflow
-- [`AGENTS.md`](../AGENTS.md): maintainer and coding-agent constraints
-- [`LICENSE`](../LICENSE): MIT license
+- [`README.md`](../README.md): public project entry;
+- [`SECURITY.md`](../SECURITY.md): private vulnerability reporting;
+- [`CONTRIBUTING.md`](../CONTRIBUTING.md): contribution workflow and quality bar;
+- [`AGENTS.md`](../AGENTS.md): coding-agent and maintainer constraints;
+- [`src/features/ticketing/README.md`](../src/features/ticketing/README.md): implementation-local ticketing map;
+- [`LICENSE`](../LICENSE): MIT license.
 
 ## Source-of-truth order
 
-When documents disagree, use this order:
+When information conflicts, use this order:
 
-1. Current code and tests
-2. `wrangler.jsonc`, migrations, and package scripts
-3. Canonical documents in this directory
-4. Root README summaries
-5. Git history and removed design drafts
+1. current code and Workers-runtime tests;
+2. `wrangler.jsonc`, D1 migrations, and package scripts;
+3. canonical documents in this directory;
+4. root README summaries;
+5. Git history and historical design notes.
 
-## Documentation rules
+## Documentation invariants
 
-- Keep product and security claims conservative.
-- Describe current behavior, not an intended future implementation.
-- Use `Nekonymous` for the product name.
-- Use Persian product terms such as «پیشنهاد گفت‌وگو», not dating or compatibility language.
-- Do not call the relay E2EE, zero-knowledge, fully private, or perfectly anonymous.
-- Keep callback values, internal table names, and code identifiers in code formatting.
-- Link to code areas instead of duplicating large implementation listings.
-- Update tests and docs in the same change when an invariant changes.
-- Keep deployment-specific secrets and identifiers out of documentation.
+All documents must reflect these current rules:
 
-## What was consolidated
+- one Cloudflare Worker and Telegram webhook surface;
+- no public application API or web application inside the Worker;
+- D1 stores account structure and aggregate statistics, not anonymous transcripts or profile graphs;
+- KV is best-effort routing/cache only;
+- every anonymous message is an independent sealed ticket;
+- UserState holds a temporary encrypted unread capability, not a ticket hash or message body;
+- each newly accepted unread creates one idempotent notification event;
+- notification count is read live from UserState when the notification is sent;
+- `/inbox` and `ib:d` drain the current actor's queue; there is no inbox list, pagination, or persistent inbox control card;
+- delivered ticket actions are capability-gated and actor/account-bound;
+- block, contact label, and abuse/report relationships use domain-separated blind tags;
+- `SafetyStateDO`, not `ReportLedgerDO`, owns report events and sanction state;
+- Conversation Suggestions uses ProfileVault, ConversationVault, PairLedger, Vectorize, and deterministic TypeScript ranking;
+- Workers AI is not in the suggestion path;
+- hard reset creates a new internal identity and public link;
+- no E2EE, zero-knowledge, perfect-anonymity, dating, or clinical claims.
 
-The canonical set replaces overlapping architecture notes for bot interaction, platform statistics, sealed ticketing, and Conversation Suggestions V2.
+## Writing rules
 
-Bot commands, keyboards, callback families, queue routing, and statistics now live in [Architecture](./architecture.md). Sealed ticketing and conversation suggestions remain separate because they are core product protocols with their own storage and privacy models.
+- Describe current behavior, not intended behavior.
+- Use `Nekonymous` for the project name and «نِکونیموس» in Persian brand copy.
+- Prefer Persian product terms such as «صندوق پیام‌ها», «نام خصوصی», «ارزیابی سبک گفت‌وگو», and «پیشنهاد گفت‌وگو».
+- Keep identifiers and callback values in code formatting.
+- Avoid reproducing large source listings; document invariants and point to owning modules.
+- Do not publish real binding IDs, tokens, ciphertext, capabilities, raw Telegram identifiers, or production data.
+- Update tests and the owning document in the same change when an invariant changes.
 
-Persian voice constraints belong in visible copy, tests, contribution rules, and `AGENTS.md`; they do not require a separate public architecture document.
+## Historical notes
+
+`docs/architecture/README.md` is only a pointer retained for old links. It must not contain an alternative architecture specification.

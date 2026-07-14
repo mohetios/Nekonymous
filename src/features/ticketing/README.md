@@ -1,21 +1,55 @@
 # Ticketing
 
-Nekonymous anonymous delivery is a sealed-ticket protocol:
+This directory owns the sealed anonymous-message protocol and its Telegram inbox/actions.
+
+Canonical specification: [`docs/sealed-ticketing.md`](../../../docs/sealed-ticketing.md).
+
+## Core model
 
 ```text
-TicketCapability -> lookupNonce + keySeed -> ticketHash
-                 -> ownerProof -> encrypted route/payload
-                 -> TicketVault + blind UserState slot
-                 -> Telegram open button -> actions -> expiry
+TicketCapability
+  → 16-byte lookupNonce + 16-byte keySeed
+  → 43-character unpadded Base64URL
+  → blind ticketHash from lookupNonce
+  → actor/account-bound owner proof
+  → independently encrypted route, payload, and metadata
+  → TicketVault record
+  → recipient UserState sealed unread capability
+  → per-unread notification event
+  → inbox drain and TelegramOutbox delivery
+  → payload clear + unread completion
+  → capability actions until 30-day expiry
 ```
 
-- `TicketCapability` is a 43-character unpadded base64url capability shown only in Telegram callback data.
-- `ticketHash` is the vault lookup key derived only from the capability lookup nonce.
-- `keySeed` is required with `APP_MASTER_KEY` to decrypt route, payload, and meta capsules.
-- `ownerProof` binds the ticket to the recipient actor and current internal account id before actions run.
-- `route_enc` keeps encrypted reply/block/report routing until ticket expiry.
-- `payload_enc` is temporary and is cleared after successful Telegram delivery.
-- `TicketVaultDO` stores encrypted ticket material; `UserStateDO` stores blind slot tags only.
-- Inline actions must resolve the ticket, verify ownership, decrypt route material, and then apply policy.
+## File ownership
 
-This feature owns anonymous message sealing, direct ticket opening, ticket actions, payload validation, contact labels, and ticket lifecycle policy. It must not store plaintext message bodies or raw callback capabilities in D1, KV, or Durable Object storage.
+| Area | Files |
+|---|---|
+| capability encoding and deterministic retry material | `ticket-capability.ts` |
+| HMAC/HKDF/AES-GCM and AAD domains | `keys.ts`, `hmac.ts`, `hkdf.ts`, `aes-gcm.ts`, `envelope.ts` |
+| blind contact/block/report tags | `blind-tags.ts` |
+| ticket creation and compensation | `create-sealed-ticket.ts` |
+| unread capability sealing | `unread-capability.ts` |
+| inbox claim/drain/delivery/orphan handling | `inbox.ts` |
+| notification Queue enqueue | `inbox-notification.ts` |
+| callback resolution and ownership verification | `resolve-ticket-action.ts`, `service.ts` |
+| reply/block/unblock/nickname/report handlers | `actions.ts` |
+| message/deep-link handlers | `handlers.ts` |
+| lifecycle and limits | `ticket-lifecycle.ts`, `inbox-constants.ts` |
+| Telegram payload validation/normalization | `payload.ts` |
+
+## Non-negotiable invariants
+
+- TicketVault never stores the raw capability.
+- UserState unread never stores ticket hash, message body, route, or sender account id.
+- notification Queue jobs contain account/event only and read live count at send time.
+- every accepted message creates an independent ticket and notification event.
+- `/inbox` and `ib:d` drain current actor state; no inbox list or pagination.
+- temporary failures release/retry; unknown errors are not destructive.
+- orphan cleanup must own the exact unread attempt before deleting TicketVault.
+- Outbox delivery uses `ticket-delivery:{ticketHash}` idempotency.
+- block/pause/Safety gates run for direct message, reply, and accepted request delivery.
+- blind tags remain domain separated.
+- payload is cleared only after successful Telegram send.
+- route/meta actions expire after 30 days.
+- no plaintext anonymous transcript or peer graph in D1 or KV.

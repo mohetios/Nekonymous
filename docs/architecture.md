@@ -2,304 +2,310 @@
 
 **Status:** canonical architecture for the current `master` branch.
 
-Nekonymous is a Telegram-bot-only Cloudflare Worker. It has no public application API, authenticated web UI, plugin surface, or general route system. The static GitHub Pages site is an introduction page and is not part of the Worker runtime.
+Nekonymous is a Telegram-only Cloudflare Worker. The static site under `site/` is an introduction page and is not part of the Worker runtime.
 
 ## Runtime surface
 
-The Worker has three responsibilities:
+The Worker has three entry responsibilities:
 
 ```text
 fetch()
-  → validate and process Telegram POST /bot
+  → accept Telegram POST /bot
+  → validate Telegram webhook secret
+  → run grammY middleware and handlers
 
 queue()
-  → dispatch known Cloudflare Queue batches
+  → dispatch neko-outbox
+  → dispatch neko-stats
+  → dispatch neko-profile-index
 
 Durable Object exports
-  → expose stateful storage and coordination classes
+  → expose bound stateful classes required by Wrangler
 ```
 
-Unknown HTTP paths return `404`. Unknown queue names throw and fail the batch; they are not routed to another consumer.
-
-The bot is wired statically with grammY. Handler order is explicit because middleware and callback registration order affect behavior.
+Unknown HTTP routes return `404`. Unknown queue names fail explicitly.
 
 ## System map
 
 ```text
-                         ┌───────────────────────┐
-                         │   Telegram Bot API    │
-                         └───────────┬───────────┘
-                                     │ webhook
-                                     ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Cloudflare Worker                                                │
-│                                                                  │
-│ POST /bot → grammY middleware → commands / messages / callbacks  │
-│ queue()  → outbox | stats | profile-index                       │
-│ exports  → Durable Object classes                               │
-└───────────┬──────────────┬──────────────┬──────────────┬─────────┘
-            │              │              │              │
-            ▼              ▼              ▼              ▼
-           D1        Durable Objects      KV         Vectorize
-            │              │              │              │
-            └──────────────┴───────┬──────┴──────────────┘
-                                    │
-                                    ▼
-                         Telegram outbox delivery
+┌───────────────────────┐
+│ Telegram Bot API      │
+└───────────┬───────────┘
+            │ webhook
+            ▼
+┌─────────────────────────────────────────────────────────────┐
+│ Cloudflare Worker                                            │
+│ POST /bot → grammY → commands / messages / callbacks         │
+│ queue()   → outbox / stats / profile-index                    │
+│ exports   → Durable Object classes                            │
+└──────┬───────────────┬───────────────┬─────────────┬─────────┘
+       │               │               │             │
+       ▼               ▼               ▼             ▼
+      D1         Durable Objects       KV         Vectorize
+                       │
+                       ▼
+               Telegram outbox
+                       │
+                       ▼
+               Telegram Bot API
 ```
 
 ## Cloudflare planes
 
 | Plane | Authority | Must not become |
 |---|---|---|
-| D1 | identity structure, public links, daily aggregate statistics | anonymous transcript store or plaintext social graph |
-| UserState DO | recipient-local state and short-lived workflow state | global user database |
-| TicketVault DO | sealed anonymous message tickets | plaintext message table |
-| ProfileVault DO | encrypted conversation profiles and index routing | D1-compatible profile graph |
-| ConversationVault DO | sealed suggestions and requests | public relationship table |
-| PairLedger DO | blind pair locks, cooldowns, and blocks | reversible pair directory |
-| ReportLedger DO | blind report and abuse signals | sender-recipient report graph |
-| TelegramOutbox DO | idempotent Telegram delivery | unbounded delivery log |
-| KV | routing and short-lived cache | product source of truth |
-| Queues | asynchronous delivery, indexing, and aggregation | exactly-once authority |
-| Vectorize | bounded coarse candidate retrieval | final ranker or identity store |
+| D1 | active users, public links, aggregate daily statistics | anonymous transcript, profile store, pair graph |
+| UserState DO | recipient-local unread queue, drafts, blocks, labels, rate limits, active profile session, discoverability and exposure state | global user database or plaintext inbox |
+| TicketVault DO | encrypted route, payload, metadata, owner proof, ticket lifecycle | plaintext message table or per-user index |
+| SafetyState DO | blind report events and sanction state for one abuse subject | reversible reporter/subject graph |
+| ProfileVault DO | encrypted finalized profile and index routing state | D1-compatible profile graph |
+| ConversationVault DO | sealed suggestions, sealed requests, encrypted request intros | public relationship table |
+| PairLedger DO | blind pair locks, blocks, cooldowns, exposure state | reversible pair directory |
+| TelegramOutbox DO | per-chat paced, idempotent Telegram delivery with leases | unbounded delivery history |
+| KV | best-effort `tg:` and `link:` routing cache, short-lived stats cache | product source of truth |
+| Queues | asynchronous outbox, statistics aggregation, profile indexing | exactly-once authority |
+| Vectorize | bounded coarse candidate retrieval | final ranker, identity store, profile source of truth |
 
-Durable Objects coordinate atomic state changes. D1 remains the relational source of truth for structural account data. KV is never authoritative for inbox, profiles, suggestions, requests, or reports.
+Durable Objects own atomic state transitions. Queue and alarm delivery is at-least-once, so all consumers and durable mutations must be idempotent.
 
-## Main data flows
+## Anonymous message creation
 
-### Anonymous deep-link message
-
-```text
-/start {slug}
-  → resolve public link
-  → sender writes text
-  → create sealed ticket
-  → TicketVault stores encrypted route + payload
-  → recipient UserState stores an unread inbox item
-  → recipient receives an aggregated unread notice
-```
-
-The notice does not include the message body or ticket capability. UserState holds only authenticated ciphertext for undelivered items. After successful delivery, the unread row is deleted and the delivered Telegram message owns future ticket actions.
-
-### Inbox delivery
+The sender-facing hot path is intentionally bounded:
 
 ```text
-ib:n / ib:b
-  → claim unread item
-  → decrypt sealed capability in memory
-  → derive blind ticketHash from lookupNonce
-  → resolve and verify current actor/account ownership
-  → derive route/payload keys from keySeed
-  → decrypt and send the payload through Telegram
-  → clear payload only after successful send
-  → delete the unread UserState item
-  → keep route actions until expiry
+resolve sender identity and active draft
+  → resolve recipient from public slug
+  → createSealedTicket
+       safety decision
+       recipient pause/block gate
+       encrypt route/payload/meta
+       store TicketVault record
+       store sealed unread capability
+  → acknowledge sender
+  → defer notification enqueue and aggregate statistics
 ```
 
-`/inbox` renders the unread inbox control card. It is a bounded delivery queue, not a message archive. Delivered items disappear from UserState.
+The durable acceptance point is successful TicketVault storage plus successful unread insertion. Notification and statistics failures do not roll back an accepted ticket.
 
-### Anonymous reply and actions
+### Ticket and unread ownership
 
-Telegram callback data contains a short capability reference. The Worker derives a blind lookup key, verifies the current actor, decrypts the route capsule only when required, and performs reply, block, report, unblock, or private nickname behavior.
-
-Detailed protocol: [Sealed Ticketing](./sealed-ticketing.md).
-
-### Conversation profile and suggestions
+A ticket is independent. The recipient UserState does not store `ticketHash`, the plaintext capability, the message body, or a sender id. It stores:
 
 ```text
-25-question profile
-  → encrypted ProfileVault record
-  → profile-index queue
-  → coarse self/desired vectors in Vectorize
-  → bounded dual retrieval
-  → profile resolution from ProfileVault
-  → deterministic reciprocal ranker
-  → sealed suggestions
-  → sealed request
-  → accept creates normal sealed message ticket
+random unread item id
+sealed capability ciphertext
+blind dedupe tag
+delivery state, attempt id, and lease
+created and expiry timestamps
 ```
 
-Vectorize retrieves candidates only. TypeScript applies eligibility, reciprocal scoring, exposure controls, cooldowns, pair state, and final ordering.
+The unread capacity and one drain request are both bounded to 50 items.
 
-Detailed protocol: [Conversation Suggestions](./conversation-suggestions.md).
+## Unread notifications
 
-### Telegram outbound delivery
-
-Non-critical Telegram sends can enter the outbox queue. Jobs carry stable idempotency keys.
+Every newly accepted unread item creates one independent notification event.
 
 ```text
-Queue batch
-  → group by chat
-  → sequential order within one chat
-  → bounded concurrency across chats
-  → TelegramOutbox DO claims delivery lease
-  → call Telegram
-  → lease-guarded success or failure
-  → bounded retention cleanup
+new unread
+  → eventId returned by UserState
+  → inbox-notification queue job
+  → consumer loads current unread count from UserState
+  → if count > 0, send one fresh Telegram notification
+  → button callback: ib:d
 ```
 
-Cloudflare Queues and Durable Object alarms are at-least-once. Consumers, leases, state transitions, and cleanup operations are therefore idempotent.
+Properties:
 
-### Product statistics
+- the Queue job does not contain a ticket capability, ticket hash, message body, route, sender identity, or authoritative count;
+- the displayed count is read at send time;
+- duplicate Queue delivery is suppressed by an Outbox idempotency key based on account and event id;
+- if the inbox has already been drained and the current count is zero, the notification job is acknowledged without sending;
+- notifications are intentionally per accepted unread, not an editable aggregate message or an inbox cycle.
+
+This product choice can create multiple paced notifications during a burst. It does not join tickets in storage.
+
+## Inbox delivery
+
+`/inbox`, the main keyboard inbox entry, and `ib:d` all request a drain of the current actor's unread queue.
 
 ```text
-product event
-  → best-effort NEKO_STATS_QUEUE
-  → batched D1 aggregate upsert
-  → optional 60-second KV cache
-  → public aggregate stats message
+user requests inbox
+  → cleanup expired unread rows
+  → read live unread count
+  → if zero, show empty message
+  → enqueue inbox-drain job
+  → immediately acknowledge that delivery is starting
+
+inbox-drain consumer
+  → claim one unread row with a lease
+  → open sealed capability in memory
+  → resolve TicketVault record
+  → verify current actor + current internal account owner proof
+  → derive keys and decrypt route/payload/meta
+  → send through per-chat TelegramOutbox DO
+  → on success, clear ticket payload and mark viewed
+  → complete and delete unread row
+  → repeat, up to 50
 ```
 
-Statistics never scan TicketVault, UserState, ConversationVault, or ReportLedger.
+There is no inbox list, page, pagination, viewed shell, or durable delivered registry. The inbox is a bounded delivery queue.
 
-D1 aggregate tables:
+### Failure semantics
 
-- `platform_daily_stats`
-- `platform_daily_stats_by_key`
-- `platform_daily_unique_stats`
+- temporary Queue, DO, storage, cryptographic-runtime, or Telegram failures release the unread lease and retry;
+- permanent missing, expired, invalid, or unsupported tickets are completed as orphans;
+- orphan cleanup first proves ownership of the current unread attempt, then removes the vault record;
+- a stale attempt cannot delete a TicketVault record owned by a newer claim;
+- permanent Telegram rejection removes the unreachable unread and ticket record;
+- a successful Outbox idempotency key prevents logical duplicate delivery.
 
-Daily active users use a day-scoped blind hash. Public statistics do not expose top users, per-link owners, ticket details, message bodies, or user timelines.
+## Delivered ticket actions
 
-### Hard account reset
+The delivered Telegram message includes capability callbacks for reply, block/unblock, private nickname, and report.
+
+A callback is never trusted by itself:
 
 ```text
-freeze old identity
-  → disable discovery
-  → remove/revoke profile and vector state
-  → revoke conversation capabilities
-  → purge blind ticket slots
-  → purge UserState
-  → remove D1 identity and KV routes
-  → create new internal identity and public link
+callback capability
+  → parse canonical 43-character capability
+  → derive ticketHash from lookupNonce
+  → load TicketVault record
+  → verify owner proof for current actor/current account
+  → derive keys with keySeed
+  → decrypt only required capsule
+  → apply action policy
 ```
 
-The operation is retryable and idempotent. Ticket access is revoked immediately because owner proof includes the old internal account id; old encrypted ticket records physically expire through the bounded ticket lifecycle. See [Threat Model](./threat-model.md) for profile-record limits.
-
-## Bot interaction model
-
-### Commands
-
-| Command | Purpose |
-|---|---|
-| `/start` | create or resume account; show personal link; handle deep links |
-| `/inbox` | open the bounded inbox |
-| `/settings` | open settings |
-| `/assessment` | open conversation profile |
-| `/match` | open conversation suggestions |
-
-The source of truth for command registration is `src/bot/commands.ts`.
-
-### Keyboard layers
-
-The persistent reply keyboard is navigation only:
-
-```text
-🔗 لینک من
-📥 صندوق پیام‌ها
-🧭 پیشنهاد گفت‌وگو
-⚙️ تنظیمات
-```
-
-Inline keyboards perform actions on the current screen, ticket, suggestion, request, or confirmation.
-
-During text entry, the reply keyboard contains only:
-
-```text
-↩️ لغو
-```
-
-Draft input is processed before main-menu labels so navigation text cannot hijack an active compose, reply, nickname, display-name, or request-intro flow.
-
-### Callback families
+Callback families:
 
 | Prefix | Domain |
 |---|---|
+| `r:` | anonymous reply |
+| `b:` / `u:` | block / unblock |
+| `n:` | private nickname |
+| `rp:` | report |
+| `ib:d` | drain current unread inbox |
 | `st:` | settings and confirmations |
 | `t:` | conversation profile |
 | `m:` | conversation suggestion hub |
-| `s:` | sealed suggestion actions |
-| `q:` | sealed conversation-request actions |
-| `o:` | open a message ticket |
-| `r:` | reply to message ticket |
-| `b:` / `u:` | block and unblock |
-| `n:` | private nickname |
-| `rp:` | report |
-| `ib:` | inbox menu |
+| `s:` | sealed suggestion action |
+| `q:` | sealed request action |
 
-Callback data remains language-independent, bounded by Telegram limits, and free of raw Telegram IDs or plaintext route data. Unrecognized or expired callbacks return one generic unavailable response.
+Unknown or expired callbacks receive a generic unavailable response.
+
+## Blocking, labels, and safety
+
+Blind tags are domain separated:
+
+- `contactTag`: recipient current account + sender current account; nickname continuity ends when either account is reset;
+- `blockTag`: recipient current account + sender stable actor hash; sender reset does not bypass the block;
+- `abuseSubjectTag`: sender stable actor hash; sanctions survive sender account reset;
+- `reportEventTag`: ticket hash + reporter stable actor hash; prevents duplicate report of the same ticket by the same reporter;
+- `reporterSubjectTag`: abuse subject + reporter stable actor hash; counts distinct reporters without creating a global reporter identity.
+
+`checkCanReceive` is enforced for direct anonymous messages, replies, and conversation requests.
+
+Safety policy is centralized in `SafetyStateDO`:
+
+- 5 distinct reporters in 24 hours → 72-hour suspension;
+- then 30 days of probation;
+- 3 distinct reporters in 7 days during probation → indefinite ban;
+- a later full first-strike threshold after an earlier strike can also ban;
+- report events are retained for 90 days;
+- suspended or banned actors cannot initiate new anonymous contact, replies, or conversation requests.
+
+## Conversation profile and suggestions
+
+```text
+25-question profile
+  → encrypted active session in UserState
+  → encrypted finalized profile in ProfileVault
+  → sealed profile-index Queue job
+  → two 8-dimensional vectors in Vectorize
+  → bounded reciprocal retrieval
+  → deterministic TypeScript ranking
+  → sealed suggestion
+  → optional encrypted intro and sealed request
+  → accept creates a normal sealed message ticket
+```
+
+Vectorize retrieves candidates only. Final ordering, eligibility, cooldowns, pair state, and exposure rules are applied in code.
+
+Detailed protocol: [Conversation Suggestions](./conversation-suggestions.md).
+
+## Telegram outbox
+
+Outbox jobs use stable idempotency keys. The consumer groups work by chat and preserves FIFO order inside each chat while processing different chats concurrently.
+
+`TelegramOutboxDO` provides:
+
+- per-chat lease and lock;
+- first send without artificial pacing delay;
+- approximately one second between real sends in the same chat;
+- Telegram `retry_after` as authoritative backoff;
+- five-second generic retry for transient failures;
+- permanent rejection for non-retryable Telegram errors;
+- seven-day bounded idempotency retention;
+- alarm-based cleanup.
+
+Seen receipts are disabled by default to avoid doubling Outbox traffic.
+
+## Identity and hard reset
+
+D1 is authoritative for identity and public links. KV reads fall back to D1 and KV writes/deletes are best effort.
+
+User creation inserts the active user and public link in one D1 batch. A hard reset:
+
+```text
+disable and invalidate conversation profile state
+  → best-effort remove unread TicketVault records
+  → purge UserState
+  → hard-delete user and public links from D1
+  → remove routing cache entries
+  → create a new internal user and public link
+```
+
+The owner proof includes the internal account id, so old ticket actions stop working immediately after reset even if encrypted vault records remain until bounded cleanup.
+
+## Statistics
+
+Product events are best-effort Queue messages aggregated into D1 daily tables. Statistics do not scan TicketVault, UserState, ConversationVault, PairLedger, or SafetyState.
+
+Public statistics contain aggregate counts only. They do not expose top users, per-link activity, message bodies, ticket details, or timelines.
 
 ## Source boundaries
 
 ```text
 src/
-  index.ts      Worker entry, queue dispatch, Durable Object exports
-  bot/          Telegram composition, menus, keyboards, callbacks
-  features/     identity, ticketing, moderation, settings,
-                conversation profile and suggestions
-  storage/      Durable Objects, storage clients, sharding, idempotency
-  queues/       Telegram outbox and background consumers
-  stats/        event emitters, aggregation, readers, formatting
-  i18n/         Persian-first visible copy and language resources
-  utils/        small shared helpers
+  index.ts       Worker entry, queue dispatch, DO exports
+  bot/           grammY wiring, commands, keyboards, callbacks
+  contracts/     canonical domain and runtime contracts
+  features/      identity, ticketing, moderation, settings, conversation
+  storage/       Durable Objects and typed RPC clients
+  queues/        Queue consumers
+  stats/         aggregate event emission and readers
+  i18n/          Persian-first visible copy
+  utils/         small shared runtime helpers
 ```
 
 Rules:
 
-- Product handlers parse input, invoke product logic, and render a response.
-- Crypto and storage details do not belong in Telegram UI handlers.
-- Pure ranking and profile calculations do not receive the Worker `env`.
-- Durable Objects own atomic state transitions.
-- Queues handle non-critical asynchronous work.
-- Request-specific mutable state must not live in module-level globals.
-- Every promise is awaited, returned, or deliberately passed to `waitUntil`.
-- New abstractions require repeated, concrete behavior; no generic repository or plugin layer.
+- handlers parse Telegram input, invoke product logic, and render responses;
+- crypto and storage details stay outside UI handlers;
+- Durable Object clients are typed and centralized;
+- pure profile/ranking calculations do not receive `env`;
+- all loops, result sets, Queue batches, decryptions, and retention scans are bounded;
+- every promise is awaited, returned, or intentionally deferred through `waitUntil`;
+- no request-scoped mutable state lives at module scope.
 
-## Storage access
-
-Worker code talks to Durable Objects through typed storage clients in `src/storage/*-client.ts`. Each client resolves a shard stub and calls a public RPC method on the Durable Object class (for example `stub.getState()` or `stub.storeTicket(input)`). HTTP `fetch` routers inside Durable Objects are not used for internal Worker-to-DO calls.
-
-Fail-closed rules:
-
-- `UserStateDO` initialization runs only when `getState()` returns `null` (uninitialized), not on transient storage failures.
-- unknown queue names throw during `queue()` dispatch;
-- inbox-full and label-limit responses remain explicit at the client boundary.
-
-## Performance invariants
-
-- At most 10 unseen message payloads are decrypted per inbox request.
-- Viewed inbox shells never decrypt payloads.
-- Candidate retrieval and profile resolution are bounded.
-- Queue processing uses bounded concurrency.
-- No vault is globally scanned for statistics or dashboard data.
-- D1 queries use explicit limits and relevant indexes.
-- Encryption uses compact capsules, not one ciphertext per field.
-- Worker bindings are used directly instead of HTTP calls back to Cloudflare services.
-- Stats failures do not fail user operations.
-- Telegram delivery uses stable idempotency keys and leases.
-- Persistent Durable Object records have explicit retention or cleanup semantics.
-
-## Architecture checks
-
-The repository verification scripts enforce important parts of this document:
-
-- ticket storage boundaries;
-- webhook and outbox idempotency;
-- D1 schema restrictions;
-- bot command/callback flow;
-- conversation capability ownership;
-- profile and request storage privacy;
-- profile projection and indexing;
-- retrieval, ranking, and eligibility;
-- request race behavior;
-- release-hardening invariants.
-
-Run:
+## Architecture verification
 
 ```bash
-pnpm run check
+pnpm check
 pnpm audit:d1
+pnpm audit:ticket-storage
+pnpm audit:types
 pnpm test:workers
 ```
 
-`pnpm test:workers` runs Vitest inside the Workers runtime (`@cloudflare/vitest-pool-workers`) for webhook routing, queue dispatch, and typed Durable Object RPC smoke tests.
+The verification suite covers storage boundaries, ticket lifecycle, Queue and Outbox idempotency, UserState RPC behavior, Safety thresholds, request accept idempotency, profile indexing, retrieval/ranking, privacy leakage, reset hardening, and bot routing.

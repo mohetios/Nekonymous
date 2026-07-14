@@ -1,23 +1,12 @@
-# Architecture notes (legacy layout)
+# Historical Architecture Path
 
-**Status:** historical reference only.
+This directory is retained only so old links do not fail.
 
-These files describe earlier flat module paths (`features/messaging`, `features/conversation-profile`, `features/conversation-suggestions`, `bot/router.ts`) that were removed in the V2 reorganization.
-
-Canonical architecture lives in:
+There is no second or legacy architecture specification here. Current documentation lives in:
 
 - [`../architecture.md`](../architecture.md)
 - [`../sealed-ticketing.md`](../sealed-ticketing.md)
 - [`../conversation-suggestions.md`](../conversation-suggestions.md)
+- [`../threat-model.md`](../threat-model.md)
 
-Current source layout:
-
-```text
-src/features/ticketing/
-src/features/conversation/profile/
-src/features/conversation/suggestions/
-src/bot/webhook.ts
-src/bot/callback-data.ts
-```
-
-Do not use these legacy docs for new implementation work.
+Do not add new architecture documents under this directory. Update the canonical owning document instead.

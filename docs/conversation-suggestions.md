@@ -2,29 +2,25 @@
 
 **Status:** canonical specification for Conversation Suggestions V2.
 
-Conversation Suggestions is an optional, reciprocal discovery system based on how users describe their conversation style and what kind of conversation they currently want.
-
-It is not a personality test, psychological diagnosis, dating system, identity verifier, safety guarantee, or exact compatibility score.
+Conversation Suggestions is an optional discovery system based on how users describe their own conversation style and what kind of conversation they currently want. It is not a personality test, psychological diagnosis, identity verifier, safety guarantee, dating system, or exact compatibility score.
 
 ## Product loop
 
 ```text
 conversation profile
-  → opt-in discoverability
-  → candidate retrieval
+  → explicit discoverability opt-in
+  → bounded candidate retrieval
   → deterministic reciprocal ranking
   → sealed suggestion
-  → optional intro
-  → sealed request
+  → optional encrypted intro
+  → sealed conversation request
   → accept or decline
-  → accepted request becomes a standard sealed message ticket
+  → accepted request becomes a normal sealed ticket
 ```
 
-Discoverability is off by default. Completing a profile does not automatically expose a user to suggestions.
+Completing a profile does not make the user discoverable. Discoverability is off by default.
 
-## Profile V2
-
-Schema:
+## Profile schema
 
 ```text
 version: v2
@@ -32,26 +28,24 @@ questions: 25
 dimensions: 8
 ```
 
-Dimensions:
-
 | Dimension | Meaning |
 |---|---|
 | `depth` | preference for light or deeper conversation |
 | `replyPace` | preferred response rhythm |
 | `directness` | direct versus indirect communication |
-| `energy` | social and conversational energy |
+| `energy` | conversational and social energy |
 | `playfulness` | humor and lightness |
 | `supportStyle` | listening versus solution-oriented support |
 | `disclosurePace` | pace of opening personal topics |
-| `repairStyle` | handling misunderstandings and repair |
+| `repairStyle` | handling misunderstanding and repair |
 
 Question blocks:
 
 | Block | Count | Purpose |
 |---|---:|---|
 | self style | 16 | two behavior-focused items per dimension |
-| desired style | 8 | preferred conversation counterpart; can express no strong preference |
-| current intent | 1 | direct choice, not inferred |
+| desired style | 8 | desired counterpart style, including no strong preference |
+| current intent | 1 | explicit current conversation intent |
 
 Current intent values:
 
@@ -63,282 +57,221 @@ exploration
 open
 ```
 
-The system does not infer demographic, clinical, or identity attributes.
+The system does not infer demographic, clinical, political, religious, sexual, or identity attributes.
 
-## Profile construction
+## Active session and finalization
 
-Raw answers are held only in the active encrypted profile session. Finalization:
+Raw answers exist only in the active encrypted profile session in UserState.
 
-1. validates the complete session and schema version;
-2. normalizes self-style answers to `0..1`;
-3. records desired style and no-preference values;
+Finalization:
+
+1. validates profile version and complete answer count;
+2. normalizes self-style values to `0..1`;
+3. derives desired values and no-preference flags;
 4. derives per-dimension importance;
 5. calculates internal agreement/uncertainty for repeated self items;
-6. records current intent;
-7. builds a controlled profile summary;
+6. records explicit current intent;
+7. builds a controlled profile summary for product display;
 8. stores the finalized profile encrypted in ProfileVault;
-9. removes raw answer material from the active session;
-10. issues a sealed profile-index job.
+9. removes raw answer material from UserState;
+10. issues a sealed profile-index Queue job.
 
-A finalized profile has a monotonic revision. Stale queue jobs cannot overwrite a newer revision or restore a profile deleted by account reset.
+A finalized profile has a monotonically increasing revision. Stale Queue work cannot overwrite a newer revision or restore a profile removed by reset.
 
 ## Storage model
 
 | Plane | Stores | Does not store |
 |---|---|---|
-| D1 | account structure and aggregate statistics | answers, profiles, vectors, pair edges, suggestions, intros |
-| UserState DO | active profile session, discoverability preference, rate budget, exposure tokens | finalized plaintext profile or pair graph |
-| ProfileVault DO | encrypted finalized profile, vector routes, index-job capability | raw capability, plaintext profile, Telegram identity |
-| Vectorize | coarse 8-dimensional vectors in controlled namespaces | Telegram IDs, display names, answers, intros |
-| ConversationVault DO | sealed suggestion and request records, encrypted request intro | public candidate/requester IDs |
-| PairLedger DO | blind pair state, locks, cooldowns, pair blocks | reversible pair members |
-| Profile-index queue | action and sealed index-job reference | profile JSON, user ID, Telegram data |
+| D1 | account structure and aggregate statistics | raw answers, finalized profiles, vectors, pair edges, suggestions, request intros |
+| UserState DO | encrypted active session, discoverability preference, rate budget, exposure tokens, sealed profile capability | plaintext finalized profile or pair graph |
+| ProfileVault DO | encrypted finalized profile, revision, status, vector routing, sealed index-job authorization | raw capability, Telegram id, public profile graph |
+| Vectorize | controlled 8-dimensional self and desired vectors | Telegram ids, display names, raw answers, request intros |
+| ConversationVault DO | sealed suggestions, sealed requests, encrypted request intros, request accept lease/result | public requester/candidate relation |
+| PairLedger DO | blind pair locks, cooldowns, pair blocks, pair state | reversible pair members |
+| Profile-index Queue | action plus sealed index-job reference | profile JSON, user id, Telegram data |
 
-Vaults are sharded by bounded prefixes of blind lookup hashes. They are not global singletons and are not one Durable Object per user or suggestion.
+Vaults are sharded using bounded prefixes of blind lookup hashes. D1 is not a fallback profile or request database.
 
-## Vector projection
+## Indexing
 
-The profile produces controlled 8-dimensional vectors:
+A finalized or changed profile produces a sealed index job. The profile-index consumer:
+
+- resolves the sealed authorization;
+- loads the current ProfileVault revision;
+- rejects stale revisions;
+- projects two 8-dimensional vectors;
+- upserts or deletes controlled Vectorize records;
+- verifies index state before marking discoverability active.
+
+Vector metadata is minimal and excludes Telegram identity, public link, display name, raw answers, and request data.
+
+No Workers AI model is used. Vector values are calculated directly from the profile projection.
+
+## Retrieval
+
+Search performs two bounded retrievals:
 
 ```text
-self vector
-desired vector
+requester's self vector    → candidate desired namespace
+requester's desired vector → candidate self namespace
 ```
 
-Vectors contain normalized product values only. They are not embeddings generated from prose, and Workers AI is not used in this path.
+Results are intersected/merged into a bounded candidate set. Candidate profiles are resolved from ProfileVault in bounded batches.
 
-Vector IDs and routes are recoverable through encrypted ProfileVault state. Vectorize metadata remains minimal and non-identifying. Locale separation, when required, is handled through controlled namespace or filter design rather than exposing account identifiers.
+Vectorize similarity is not the final score and is not shown to users.
 
-## Dual retrieval
+## Eligibility filters
 
-For actor `A` and candidate `B`, reciprocal retrieval needs both directions:
+A candidate must satisfy all current product gates:
 
-```text
-A.self    near B.desired
-A.desired near B.self
-```
+- active profile version and revision;
+- discoverability enabled and index verified;
+- not the requester;
+- current profile/request capability ownership valid;
+- pair not blocked;
+- no active pair lock or cooldown preventing contact;
+- recipient can receive contact;
+- requester Safety decision allows initiation;
+- bounded search and exposure budgets;
+- no stale or terminal suggestion/request state.
 
-The system queries bounded candidate sets from the corresponding namespaces and intersects or combines them before loading authoritative encrypted profiles.
-
-Vectorize is a coarse retrieval layer only. A high vector similarity does not become the final score.
-
-## Eligibility
-
-Before ranking, candidates pass hard filters:
-
-- actor and candidate exist and are active;
-- both profiles use the current supported schema;
-- both users completed the profile;
-- discoverability is enabled;
-- vector/profile revisions are current;
-- candidate is not the actor;
-- no active block or pair block;
-- no conflicting pending request;
-- pair cooldown and exposure rules allow presentation;
-- rate and search budgets allow the operation.
-
-Hard filters override similarity.
+Hard filters override ranking.
 
 ## Deterministic reciprocal ranking
 
-The final ranker is pure TypeScript and receives resolved profile values, not Cloudflare bindings.
-
-Conceptually:
+Final ordering is pure TypeScript. It considers both directions:
 
 ```text
-A self → B desired distance
-B self → A desired distance
-importance weighting
-uncertainty adjustment
-intent adjustment
-exposure and cooldown policy
-deterministic tie-breaking
+requester self  ↔ candidate desired
+candidate self  ↔ requester desired
 ```
 
-Important rules:
+The ranker uses dimension importance, no-preference flags, confidence/uncertainty, current intent, exposure fairness, freshness, and hard policy constraints.
 
-- both directions matter;
-- no-preference dimensions contribute little or no weight;
-- uncertain self dimensions can receive lower effective weight;
-- current intent is a small adjustment or explicit incompatibility filter, not the whole score;
-- the score is an internal ordering signal, not a published compatibility percentage;
-- results are described as current nearby conversation options, not guaranteed good matches.
-
-The ranker is deterministic for the same inputs and policy version.
-
-## Sealed capability chain
-
-Conversation Suggestions follows the same capability philosophy as anonymous messages:
-
-```text
-Profile Capability
-  → Suggestion Capability
-  → Request Capability
-  → Message Ticket
-```
-
-Properties:
-
-- random short references appear only in Telegram;
-- storage uses blind HMAC lookup keys;
-- owner proofs bind actions to the current actor;
-- route and intro material is encrypted;
-- pair state uses blind tags;
-- records have bounded expiry;
-- raw capability references are not stored.
-
-Callback families:
-
-```text
-m:  suggestion hub
-s:  suggestion actions
-q:  request actions
-```
-
-Callbacks contain no candidate IDs, requester IDs, scores, profile values, or intro text.
+The product does not expose an exact compatibility percentage. Copy should describe current conversation options, not perfect matches.
 
 ## Suggestion lifecycle
 
-A search:
+A suggestion is a sealed capability addressed separately to requester and candidate state.
 
-1. consumes the bounded search budget;
-2. loads the actor profile and vector routes;
-3. performs dual bounded retrieval;
-4. resolves candidate profiles from ProfileVault;
-5. applies eligibility and pair state;
-6. runs deterministic reciprocal ranking;
-7. applies exposure policy;
-8. creates sealed suggestion capabilities for the top current options;
-9. renders controlled explanations without exposing full profiles.
-
-A suggestion can be viewed, dismissed, expire, or be converted into a request. The same operation is idempotent.
-
-## Request lifecycle
-
-The actor writes a bounded intro message. ConversationVault stores it encrypted.
-
-Conceptual state machine:
+Typical states:
 
 ```text
-pending
-  → accepting
-  → accepted(ticketHash)
-
-pending
-  → declined
-
-pending
-  → canceled
-
-pending
-  → expired
+active
+converted_to_request
+dismissed
+expired
+revoked
 ```
 
-Rules:
+Suggestion storage contains blind lookup/proof material and encrypted route/explanation data. It does not publish candidate account ids.
 
-- transitions are compare-and-set;
-- accept, decline, and cancel are mutually exclusive;
-- concurrent accepts create at most one intro message ticket;
-- an accept first claims `accepting(operationId)` before sealed-ticket creation;
-- accepted requests store the created `ticketHash` for idempotent retries;
-- retries return the same durable result;
-- stable request-derived operation keys deduplicate ticket creation;
-- notification delivery happens after durable request state is committed;
-- a Telegram notification failure does not roll back the product state.
+Dismissal and pair rules update PairLedger without creating a D1 relationship row.
 
-Accepting a request creates a normal sealed ticket. From that point onward, the participants use the standard anonymous inbox and reply flow. Nekonymous does not create a separate permanent chat transcript.
+## Creating a conversation request
 
-## Pair state and exposure
+A request is created only when the requester writes an intro.
 
-PairLedger stores blind pair tags for:
+Before storage, the service verifies:
 
-- request locks;
-- pending and accepted state coordination;
-- cooldowns;
-- dismiss/decline suppression;
-- pair blocks;
-- bounded repeated-exposure control.
+- requester and candidate profiles are still valid;
+- candidate is still discoverable;
+- requester Safety decision allows initiation;
+- candidate pause/block gate allows this requester;
+- a pending pair lock can be acquired;
+- intro text is non-empty and bounded.
 
-UserState stores actor-local exposure tokens where needed. Neither plane stores a reversible plaintext pair directory.
+Creation sequence:
 
-## Account reset
+1. acquire blind pending pair lock;
+2. create random request capability and blind request hash;
+3. create requester/candidate owner proofs;
+4. encrypt route capsule and intro;
+5. store request durably in ConversationVault;
+6. mark the source suggestion converted best effort;
+7. emit statistics and notification after durable store.
 
-Hard reset disables discoverability before identity recreation, removes or revokes profile and conversation capability state, deletes known Vectorize routes, and prevents stale profile-index jobs from restoring the old vector.
+A notification failure does not roll back a stored request.
 
-Known migration boundary:
+## Request actions
 
-Profiles indexed after release hardening retain the encrypted Vectorize routing information needed for complete automated deletion. Some older pre-hardening records may not contain that route and can require operator cleanup. The application must not claim stronger cleanup for those historical records than it can verify.
+### Cancel
 
-The new identity receives a new internal ID, public link, profile capability, and pair tags.
+Requester capability and owner proof are verified. The request becomes canceled and the pending pair lock is released. Repeated cancel is idempotent.
 
-## Rate and cost controls
+### Decline
 
-The exact constants live in code. The architecture requires:
+Candidate capability and current profile ownership are verified. The request becomes declined and PairLedger records a decline cooldown. Requester notification and statistics are non-authoritative side effects.
 
-- bounded search frequency;
-- bounded candidate retrieval;
-- bounded profile resolution;
-- bounded suggestions per search;
-- bounded request creation;
-- bounded pending request rendering;
-- pair cooldowns;
-- exposure limits;
-- no global vault scan;
-- no Workers AI call;
-- no D1 profile graph.
+### Accept
 
-These controls limit abuse, Worker CPU, subrequests, and Vectorize cost.
+Accept uses a durable claim/lease in ConversationVault:
 
-## Public language
+```text
+operationId = conversation-request:{requestHash}
+```
+
+The operation id is also passed as the sealed-ticket `dedupeKey`.
+
+Therefore:
+
+- the same request always derives the same ticket capability and `ticketHash`;
+- retry after a partial failure cannot create a second ticket;
+- TicketVault reports `created` or `existing`;
+- compensation never deletes an existing deterministic ticket;
+- the accept record stores the resulting `ticketHash`;
+- repeated accepted callbacks return success without another message.
+
+The accepted intro is delivered through the standard TicketVault + unread inbox pipeline. Conversation Suggestions does not maintain a separate messaging channel.
+
+## Blocking and Safety
+
+Conversation requests obey the same initiation policy as anonymous messages:
+
+- candidate block state is checked using a block tag derived from candidate current account and requester stable actor hash;
+- candidate pause state is checked;
+- suspended or banned requesters cannot create requests;
+- accepted intros still pass the standard `createSealedTicket` gates.
+
+This prevents suggestions from bypassing normal messaging controls.
+
+## Reset and revocation
+
+Hard reset must invalidate profile/discovery state before creating a new account. Old profile capabilities, suggestions, and requests fail ownership or status checks. Stale index jobs cannot re-enable deleted discovery state.
+
+Pair and request records follow bounded retention/cooldown rules and do not create a replacement account graph.
+
+## Performance bounds
+
+- profile contains exactly 25 answers and 8 dimensions;
+- vector projection is 8-dimensional;
+- Vectorize result counts are bounded;
+- ProfileVault resolution is batched and bounded;
+- final ranking is deterministic and CPU-bounded;
+- Queue payloads do not contain profile JSON;
+- no D1 candidate fallback or full vault scan;
+- exposure and rate budgets are recipient-local or pair-local.
+
+## Product language
 
 Use:
 
 ```text
-conversation profile
-conversation suggestions
-current nearby options
-conversation request
-intro message
+ارزیابی سبک گفت‌وگو
+پیشنهاد گفت‌وگو
+گزینه‌ی گفت‌وگو
+درخواست گفت‌وگو
+پیام شروع گفت‌وگو
+نمایش در پیشنهادها
 ```
 
-Avoid:
+Avoid positive claims such as:
 
 ```text
-personality test
-diagnosis
-compatibility percentage
-perfect match
-dating match
-AI personality inference
-```
-
-## Source map
-
-Current implementation areas:
-
-```text
-src/features/conversation/profile/
-src/features/conversation/suggestions/
-src/features/ticketing/conversation-*.ts
-src/storage/profile-vault/
-src/storage/conversation-vault/
-src/storage/pair-ledger/
-src/queues/profile-index-consumer.ts
-```
-
-## Verification
-
-```bash
-pnpm test:conversation-v2-resources
-pnpm test:conversation-capabilities
-pnpm test:conversation-privacy
-pnpm test:conversation-profile
-pnpm test:conversation-index
-pnpm test:conversation-retrieval
-pnpm test:conversation-ranking
-pnpm test:conversation-eligibility
-pnpm test:conversation-suggestions
-pnpm test:conversation-requests
-pnpm test:profile-index-idempotency
-pnpm run check
+تست شخصیت
+درصد سازگاری
+مچ کامل
+دوستیابی
+تشخیص روان‌شناختی
+تضمین امنیت یا مناسب‌بودن فرد
 ```
