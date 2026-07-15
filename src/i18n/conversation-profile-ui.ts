@@ -1,5 +1,5 @@
-import { PROFILE_QUESTION_COUNT } from "../features/conversation/profile/constants.ts";
-import type { ConversationDimension } from "../contracts/conversation/profile.ts";
+import { PROFILE_QUESTION_COUNT } from "../profile/profile-constants.ts";
+import type { ConversationDimension } from "../types/conversation.profile.ts";
 import { convertToPersianNumbers } from "../utils/text.ts";
 
 export type ProfileAnswerChoice = {

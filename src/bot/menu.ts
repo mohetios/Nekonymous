@@ -1,17 +1,17 @@
 import type { Context } from "grammy";
-import type { Environment } from "../contracts/runtime";
-import type { BotUser } from "../contracts/identity/model";
+import type { Environment } from "../types/runtime.env";
+import type { BotUser } from "../types/identity.model";
 import {
   OWNER_PAUSED_NOTE,
   USER_LINK_MESSAGE,
 } from "../i18n/messages";
 import { withHtml } from "../utils/text";
-import { buildUserDeepLink } from "../features/identity/user";
+import { buildUserDeepLink } from "../identity/identity-user";
 import { mainMenu } from "./keyboards";
 import { isMainMenuLabel, MENU } from "./menu-labels";
-import { handleInboxCommand } from "../features/ticketing/handlers";
-import { renderSettingsHome } from "../features/settings/render-stats-page";
-import { renderSuggestionHub } from "../features/conversation/suggestions/suggestion-hub";
+import { handleInboxCommand } from "../ticketing/handlers";
+import { renderSettingsHome } from "../settings/render-stats-page";
+import { renderSuggestionHub } from "../suggestions/suggestion-hub";
 
 export { MENU, isMainMenuLabel, isReservedDisplayName } from "./menu-labels";
 

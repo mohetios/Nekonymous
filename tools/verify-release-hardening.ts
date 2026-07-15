@@ -12,7 +12,7 @@ import {
 
 const read = readRepoFile;
 
-const ticketVault = read("src/storage/ticket-vault/ticket-vault.do.ts");
+const ticketVault = read("src/storage/ticket-vault.do.ts");
 assertIncludes(ticketVault, "route_enc = NULL", "expired tickets must clear route_enc");
 assertIncludes(ticketVault, "meta_enc = NULL", "expired tickets must clear meta_enc");
 assertIncludes(ticketVault, "async alarm()", "TicketVault must sweep expiry by alarm");
@@ -22,27 +22,27 @@ assertIncludes(ticketVault, "isTicketHashConflict", "ticket insert must only tre
 assertIncludes(ticketVault, 'status: "created"', "storeTicket must report created ownership");
 assertIncludes(ticketVault, 'status: "existing"', "storeTicket must report existing ownership");
 assertIncludes(
-  read("src/contracts/ticketing/lifecycle.ts"),
+  read("src/types/ticketing.lifecycle.ts"),
   '"active"',
   "ticket lifecycle must include active"
 );
 assertIncludes(
-  read("src/contracts/ticketing/lifecycle.ts"),
+  read("src/types/ticketing.lifecycle.ts"),
   '"viewed" | "replied"',
   "ticket transitions must be lifecycle-only (viewed/replied)"
 );
 assertNotIncludes(
-  read("src/contracts/ticketing/lifecycle.ts"),
+  read("src/types/ticketing.lifecycle.ts"),
   '"blocked"',
   "ticket status must not include blocked"
 );
 assertNotIncludes(
-  read("src/contracts/ticketing/lifecycle.ts"),
+  read("src/types/ticketing.lifecycle.ts"),
   '"reported"',
   "ticket status must not include reported"
 );
 
-const userState = read("src/storage/user-state-do.ts");
+const userState = read("src/storage/user-state.do.ts");
 assertIncludes(userState, "unread_inbox_items", "inbox admission must use unread delivery queue rows");
 assertIncludes(userState, "sealed_capability_enc BLOB NOT NULL", "unread capability must be stored as ciphertext");
 assertIncludes(userState, "isUnreadDedupeConflict", "unread insert must only dedupe on unique constraint conflicts");
@@ -81,7 +81,7 @@ assertNotIncludes(userState, `addInbox${"Pointer"}`, "inbox pointer RPC must sta
 assertNotIncludes(userState, `inbox${"Page"}`, "inbox page RPC must stay absent");
 assertNotIncludes(userState, `markInbox${"Status"}`, "inbox status RPC must stay absent");
 
-const createSealedTicket = read("src/features/ticketing/create-sealed-ticket.ts");
+const createSealedTicket = read("src/ticketing/create-sealed-ticket.ts");
 assertIncludes(createSealedTicket, "checkCanReceive", "new tickets must enforce recipient receive gates");
 assertNotIncludes(
   createSealedTicket,
@@ -136,7 +136,7 @@ assertNotIncludes(createSealedTicket, "reportSeeds", "RouteCapsule must not stor
 assertNotIncludes(createSealedTicket, `addInbox${"Pointer"}`, "ticket creation must not write inbox pointers");
 assertNotIncludes(createSealedTicket, `addInboxCapability${"Slot"}`, "ticket creation must not use temporary slots");
 
-const blindTags = read("src/features/ticketing/blind-tags.ts");
+const blindTags = read("src/ticketing/blind-tags.ts");
 for (const token of [
   "nekonymous:contact",
   "nekonymous:block",
@@ -148,7 +148,7 @@ for (const token of [
   assertIncludes(blindTags, token, `blind-tags must include ${token}`);
 }
 
-const safetyState = read("src/storage/safety-state/safety-state.do.ts");
+const safetyState = read("src/storage/safety-state.do.ts");
 assertIncludes(safetyState, "report_events", "SafetyState must store report events");
 assertIncludes(safetyState, "sanction_state", "SafetyState must store sanction state");
 assertIncludes(safetyState, "COUNT(*) AS count FROM", "SafetyState must count distinct reporters");
@@ -163,11 +163,11 @@ assertIncludes(
   "SafetyState must persist clear-phase start on first countable report"
 );
 
-const safetyClient = read("src/storage/safety-state/safety-state.client.ts");
+const safetyClient = read("src/storage/safety-state.client.ts");
 assertIncludes(safetyClient, "`safety:${abuseSubjectTag}`", "SafetyState must be keyed by full abuse subject tag");
 assertNotIncludes(safetyClient, "shardNameForLookupHash(\"safety\"", "SafetyState must not use prefix sharding");
 
-const requestService = read("src/features/conversation/suggestions/request-service.ts");
+const requestService = read("src/suggestions/request-service.ts");
 assertIncludes(requestService, "getSafetyDecision", "conversation requests must check safety state");
 assertIncludes(requestService, "checkCanReceive", "conversation requests must enforce recipient block/pause");
 assertIncludes(requestService, "createBlockTag", "conversation requests must derive block tags");
@@ -182,13 +182,13 @@ assertIncludes(
 );
 assertIncludes(requestService, "candidateProfile?.status === \"discoverable\"", "request creation must reject non-discoverable candidates");
 
-const resolver = read("src/features/ticketing/resolve-ticket-action.ts");
+const resolver = read("src/ticketing/resolve-ticket-action.ts");
 assertIncludes(resolver, "parseTicketCapability(ticketRef)", "ticket resolver must parse canonical capabilities");
 assertIncludes(resolver, "createOwnerProofTag", "resolver must bind owner proof to account generation");
 assertIncludes(resolver, "deriveTicketKeys", "resolver must require keySeed-backed keys");
 assertIncludes(resolver, "actorUserId", "owner proof must include current internal account id");
 
-const identity = read("src/features/identity/identity-service.ts");
+const identity = read("src/identity/identity-service.ts");
 assertIncludes(identity, "invalidateUserConversationProfile", "reset must invalidate profile vault state");
 assertIncludes(identity, "isTelegramUserHashConflict", "user insert must only treat unique telegram hash as duplicate");
 assertIncludes(identity, "kvGet", "identity KV reads must fail open to D1");
@@ -209,16 +209,16 @@ assertIncludes(identity, "error.status === 404", "user state init must only run 
 assertNotIncludes(identity, "state.labels", "toBotUser must not bulk-load contact labels");
 assertNotIncludes(identity, "contactLabels:", "BotUser must not carry bulk contactLabels");
 
-const contact = read("src/features/ticketing/contact.ts");
+const contact = read("src/ticketing/contact.ts");
 assertIncludes(contact, "getContactLabel", "nicknames must decrypt one contact label at a time");
 assertIncludes(contact, "getContactLabelCiphertext", "nickname lookup must fetch a single ciphertext");
 
-const ticketingService = read("src/features/ticketing/ticketing-service.ts");
+const ticketingService = read("src/ticketing/ticketing-service.ts");
 assertIncludes(ticketingService, "export const encryptScopedPayload", "scoped payload encrypt must be canonical");
 assertIncludes(ticketingService, "export const decryptScopedPayload", "scoped payload decrypt must be canonical");
 assertNotIncludes(ticketingService, "MatchIntro", "MatchIntro helpers must stay removed");
 
-const requestNotify = read("src/features/conversation/suggestions/request-notify.ts");
+const requestNotify = read("src/suggestions/request-notify.ts");
 if (/idempotencyKey:\s*`request-notify:\$\{requestRef\}`/.test(requestNotify)) {
   fail("request notification idempotency must not store raw request refs");
 }
@@ -227,7 +227,7 @@ const keyboards = read("src/bot/keyboards.ts");
 assertIncludes(keyboards, "inline_keyboard", "message action keyboards must be plain Telegram payloads");
 assertNotIncludes(keyboards, "InlineKeyboard", "message action keyboards must not use Grammy InlineKeyboard class across DO RPC");
 
-const outbox = read("src/storage/telegram-outbox-do.ts");
+const outbox = read("src/storage/telegram-outbox.do.ts");
 assertIncludes(outbox, "Pace only after a prior", "first outbox send must skip artificial pacing");
 assertIncludes(outbox, "async sendJob(job: TelegramOutboxJob)", "outbox must expose typed RPC sendJob");
 assertNotIncludes(outbox, `ticket-${"capability"}`, "outbox must not deliver raw ticket capabilities");
@@ -278,7 +278,7 @@ assertNotIncludes(outboxConsumer, "markInboxNotificationSent", "notification cyc
 assertNotIncludes(outboxConsumer, "closeInboxNotificationCycle", "notification cycle close must stay absent");
 assertNotIncludes(outboxConsumer, "cycleId", "inbox notification consumer must not use cycle ids");
 
-const inboxEvents = read("src/contracts/inbox/events.ts");
+const inboxEvents = read("src/types/inbox.events.ts");
 assertIncludes(inboxEvents, "eventId: InboxNotificationEventId", "notification jobs must carry eventId");
 assertIncludes(inboxEvents, "Object.keys(value).length === 3", "notification jobs must reject extra fields");
 assertNotIncludes(inboxEvents, "cycleId", "notification jobs must not carry cycleId");
@@ -291,10 +291,10 @@ assertIncludes(index, "Unknown queue:", "unknown queues must fail loudly");
 assertIncludes(index, "SafetyStateDurableObject", "SafetyState DO must be exported");
 assertNotIncludes(index, `Report${"Ledger"}`, "retired report ledger DO must stay absent");
 
-const outboxClient = read("src/storage/telegram-outbox-client.ts");
+const outboxClient = read("src/storage/telegram-outbox.client.ts");
 assertIncludes(outboxClient, "stub.sendJob(job)", "outbox client must use typed DO RPC");
 
-const ticketVaultClient = read("src/storage/ticket-vault/ticket-vault.client.ts");
+const ticketVaultClient = read("src/storage/ticket-vault.client.ts");
 assertIncludes(ticketVaultClient, ".storeTicket(input)", "ticket vault client must use typed DO RPC");
 assertIncludes(ticketVaultClient, ".getTicket(ticketHash)", "ticket vault client must use typed DO RPC");
 assertIncludes(
@@ -305,7 +305,7 @@ assertIncludes(
 assertNotIncludes(ticketVaultClient, "markTicketBlocked", "TicketVault must not mark blocked status");
 assertNotIncludes(ticketVaultClient, "markTicketRecordReported", "TicketVault must not mark reported status");
 
-const inbox = read("src/features/ticketing/inbox.ts");
+const inbox = read("src/ticketing/inbox.ts");
 assertIncludes(
   inbox,
   'return { outcome: "retryable-failure", delaySeconds: 5 };',
@@ -357,7 +357,7 @@ if (
   }
 }
 
-const userStateClient = read("src/storage/user-state-client.ts");
+const userStateClient = read("src/storage/user-state.client.ts");
 assertIncludes(userStateClient, ".getState()", "user state client must use typed DO RPC");
 assertIncludes(userStateClient, "DurableObjectCallError(404", "user state client must preserve fail-closed 404 semantics");
 assertIncludes(userStateClient, "claimNextUnreadItem", "user state client must expose unread claim RPC");
@@ -378,7 +378,7 @@ assertNotIncludes(userStateClient, "purgeUnreadInbox", "unused purgeUnreadInbox 
 assertNotIncludes(userStateClient, `addInbox${"Pointer"}`, "user state client must not expose inbox pointers");
 assertNotIncludes(userStateClient, `listInbox${"Page"}`, "user state client must not expose inbox pages");
 
-const ticketCapability = read("src/features/ticketing/ticket-capability.ts");
+const ticketCapability = read("src/ticketing/ticket-capability.ts");
 assertIncludes(ticketCapability, "TICKET_CAPABILITY_BYTES =\n  TICKET_CAPABILITY_NONCE_BYTES + TICKET_CAPABILITY_KEY_SEED_BYTES", "ticket capability must be 16-byte nonce plus 16-byte keySeed");
 assertIncludes(ticketCapability, "TICKET_CAPABILITY_CHARS = 43", "encoded ticket capability must be 43 chars");
 assertIncludes(
@@ -390,9 +390,9 @@ assertNotIncludes(ticketCapability, `TicketCapability${"V" + "2"}`, "versioned t
 assertNotIncludes(ticketCapability, `${"Leg" + "acy"}Ticket${"Capability"}`, "removed ticket capability type must stay absent");
 
 for (const [path, source] of [
-  ["src/features/ticketing/keys.ts", read("src/features/ticketing/keys.ts")],
-  ["src/features/ticketing/resolve-ticket-action.ts", resolver],
-  ["src/features/ticketing/create-sealed-ticket.ts", createSealedTicket],
+  ["src/ticketing/keys.ts", read("src/ticketing/keys.ts")],
+  ["src/ticketing/resolve-ticket-action.ts", resolver],
+  ["src/ticketing/create-sealed-ticket.ts", createSealedTicket],
 ]) {
   for (const token of [
     `create${"Leg" + "acy"}`,
@@ -407,7 +407,7 @@ for (const [path, source] of [
   }
 }
 
-const profileVaultClient = read("src/storage/profile-vault/profile-vault.client.ts");
+const profileVaultClient = read("src/storage/profile-vault.client.ts");
 assertIncludes(profileVaultClient, ".storeProfile(input)", "profile vault client must use typed DO RPC");
 
 const logs = read("src/utils/logs.ts");

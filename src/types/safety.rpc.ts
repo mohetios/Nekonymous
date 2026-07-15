@@ -1,0 +1,25 @@
+import type {
+  AbuseSubjectTag,
+  ReportEventTag,
+  ReporterSubjectTag,
+} from "./primitives";
+import type { ReportReasonCode, SafetyDecision } from "./safety.model";
+
+export type SafetyReportEvent = Readonly<{
+  eventTag: ReportEventTag;
+  reporterSubjectTag: ReporterSubjectTag;
+  reasonCode: ReportReasonCode;
+}>;
+
+export type SafetyReportResult = Readonly<{
+  ok: boolean;
+  duplicate: boolean;
+  decision: SafetyDecision;
+}>;
+
+export type GetSafetyDecisionInput = Readonly<{
+  abuseSubjectTag: AbuseSubjectTag;
+}>;
+
+export type SubmitReportInput = SafetyReportEvent;
+export type OperatorClearSanctionInput = GetSafetyDecisionInput;

@@ -1,10 +1,10 @@
 import { webhookCallback } from "grammy";
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import {
   claimProcessedEvent,
   completeProcessedEvent,
   failProcessedEvent,
-} from "../storage/user-state-client";
+} from "../storage/user-state.client";
 import { logBotError } from "../utils/logs";
 import { timingSafeEqual } from "../utils/timing-safe-equal";
 import { createBot } from "./create-bot";

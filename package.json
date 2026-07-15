@@ -41,6 +41,7 @@
     "wrangler": "4.111.0"
   },
   "private": true,
+  "packageManager": "pnpm@11.13.0",
   "scripts": {
     "dev": "wrangler dev --local --port 8787",
     "db:migrations:apply:local": "wrangler d1 migrations apply DB --local",
@@ -80,8 +81,8 @@
     "flush:remote": "./tools/flush-remote.sh",
     "flush:remote:local": "./tools/flush-remote.sh --local",
     "bot:profile": "./tools/set-telegram-bot-profile.sh",
-    "test": "pnpm run test:verify && pnpm run test:workers",
-    "check": "pnpm run types:check && pnpm run typecheck && pnpm run lint && pnpm run knip && pnpm run test && pnpm run audit:ticket-storage && pnpm run audit:types"
+    "test": "npm run test:verify && npm run test:workers",
+    "check": "npm run types:check && npm run typecheck && npm run lint && npm run knip && npm run test && npm run audit:ticket-storage && npm run audit:types"
   },
   "dependencies": {
     "grammy": "^1.44.0"

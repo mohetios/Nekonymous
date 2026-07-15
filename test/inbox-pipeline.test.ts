@@ -1,16 +1,16 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it, vi } from "vitest";
-import type { TelegramOutboxJob } from "../src/contracts/telegram/outbox";
+import type { TelegramOutboxJob } from "../src/types/telegram.outbox";
 import {
   isInboxDrainJob,
   isInboxNotificationJob,
-} from "../src/contracts/inbox/events";
+} from "../src/types/inbox.events";
 import { handleOutboxBatch } from "../src/queues/outbox-consumer";
 import {
   createDeterministicTicketCapability,
   encodeTicketCapability,
   parseTicketCapability,
-} from "../src/features/ticketing/ticket-capability";
+} from "../src/ticketing/ticket-capability";
 
 describe("inbox queue validators", () => {
   it("accepts canonical drain jobs", () => {

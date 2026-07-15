@@ -20,7 +20,7 @@ Repository-level documents:
 - [`SECURITY.md`](../SECURITY.md): private vulnerability reporting;
 - [`CONTRIBUTING.md`](../CONTRIBUTING.md): contribution workflow and quality bar;
 - [`AGENTS.md`](../AGENTS.md): coding-agent and maintainer constraints;
-- [`src/features/ticketing/README.md`](../src/features/ticketing/README.md): implementation-local ticketing map;
+- [`src/ticketing/README.md`](../src/ticketing/README.md): implementation-local ticketing map;
 - [`LICENSE`](../LICENSE): MIT license.
 
 ## Source-of-truth order

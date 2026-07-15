@@ -1,12 +1,12 @@
 import { Keyboard, type Context } from "grammy";
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import { INPUT_CANCELLED_MESSAGE } from "../i18n/messages";
 import {
   DRAFT_CANCEL_LABEL,
   INPUT_PLACEHOLDERS,
 } from "../i18n/labels";
 import { withHtml } from "../utils/text";
-import { clearDraft } from "../storage/user-state-client";
+import { clearDraft } from "../storage/user-state.client";
 import { mainMenu } from "./keyboards";
 
 export { DRAFT_CANCEL_LABEL, INPUT_PLACEHOLDERS };

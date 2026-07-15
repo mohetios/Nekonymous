@@ -1,8 +1,8 @@
 import {
   resolveProcessedEventClaim,
   type ProcessedEventSnapshot,
-} from "../src/storage/processed-events-policy.ts";
-import { isInboxNotificationJob } from "../src/contracts/inbox/events.ts";
+} from "../src/storage/processed-events.policy.ts";
+import { isInboxNotificationJob } from "../src/types/inbox.events.ts";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {

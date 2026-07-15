@@ -1,12 +1,12 @@
 import type { Context, NextFunction } from "grammy";
-import type { Environment } from "../contracts/runtime";
-import { resolveOrCreateUser } from "../features/identity/identity-service";
+import type { Environment } from "../types/runtime.env";
+import { resolveOrCreateUser } from "../identity/identity-service";
 import {
   RATE_LIMIT_CALLBACK_ALERT,
   RATE_LIMIT_MESSAGE,
   HuhMessage,
 } from "../i18n/messages";
-import { consumeUserRateLimit } from "../storage/user-state-client";
+import { consumeUserRateLimit } from "../storage/user-state.client";
 import { emitUserActive } from "../stats/emit-user-active";
 import { logBotError } from "../utils/logs";
 import { setResolvedUser, type NekoContext } from "./context";

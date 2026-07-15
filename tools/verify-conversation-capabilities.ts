@@ -3,7 +3,7 @@
  * Run: pnpm test:conversation-capabilities
  */
 
-import { encryptEnvelope } from "../src/features/ticketing/envelope.ts";
+import { encryptEnvelope } from "../src/ticketing/envelope.ts";
 import {
   CapabilityExpiredError,
   CapabilityInvalidError,
@@ -16,7 +16,7 @@ import {
   type ConversationRequestTicketRecord,
   type ConversationSuggestionTicketRecord,
   type ProfileVectorRouteRecord,
-} from "../src/features/ticketing/conversation-capabilities.ts";
+} from "../src/ticketing/conversation-capabilities.ts";
 import {
   createConversationOwnerProofTag,
   createIndexJobLookupHash,
@@ -43,15 +43,15 @@ import {
   suggestionExplanationAad,
   suggestionRouteAad,
   vectorRouteAad,
-} from "../src/features/ticketing/conversation-keys.ts";
+} from "../src/ticketing/conversation-keys.ts";
 import {
   resolveIndexJobCapability,
   resolveProfileCapability,
   resolveRequestCapability,
   resolveSuggestionCapability,
   resolveVectorRoute,
-} from "../src/features/ticketing/conversation-resolvers.ts";
-import { hmacTelegramUserId } from "../src/features/ticketing/ticketing-service.ts";
+} from "../src/ticketing/conversation-resolvers.ts";
+import { hmacTelegramUserId } from "../src/ticketing/ticketing-service.ts";
 
 const appMasterKey = "test-app-master-key-local-32bytes!";
 const pepper = "test-hmac-pepper-local-32bytes!!";

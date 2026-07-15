@@ -72,7 +72,7 @@ const MAIN_MENU_LABELS = new Set<string>([
 
 export const isMainMenuLabel = (text: string): boolean => MAIN_MENU_LABELS.has(text);
 
-export const MATCH_BUTTON = {
+export const SUGGESTION_BUTTON = {
   search: "🔎 دیدن پیشنهادها",
   pending: "📥 درخواست‌های گفت‌وگو",
   accept: "✅ پذیرفتن",

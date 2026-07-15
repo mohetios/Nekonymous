@@ -7,10 +7,10 @@ import {
   canTransitionSuggestionStatus,
   effectiveSuggestionStatus,
   isTerminalSuggestionStatus,
-} from "../src/storage/conversation-vault/suggestion-transitions.ts";
-import { parseSuggestionCallback } from "../src/features/conversation/suggestions/suggestion-callbacks.ts";
-import { SUGGESTION_CALLBACK } from "../src/features/conversation/suggestions/constants.ts";
-import { randomSuggestionRef } from "../src/features/ticketing/conversation-keys.ts";
+} from "../src/storage/conversation-suggestion.transitions.ts";
+import { parseSuggestionCallback } from "../src/suggestions/suggestion-callbacks.ts";
+import { SUGGESTION_CALLBACK } from "../src/suggestions/suggestion-constants.ts";
+import { randomSuggestionRef } from "../src/ticketing/conversation-keys.ts";
 
 const fail = (message: string): never => {
   console.error(message);

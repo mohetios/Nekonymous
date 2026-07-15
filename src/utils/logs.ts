@@ -1,4 +1,4 @@
-import type { LogErrorMeta } from "../contracts/logging";
+import type { LogErrorMeta } from "../types/logging.meta";
 
 export const logBotError = (
   context: string,

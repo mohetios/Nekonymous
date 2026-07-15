@@ -1,5 +1,5 @@
-import type { Environment } from "../contracts/runtime";
-import type { StatsEventName } from "../contracts/stats/events";
+import type { Environment } from "../types/runtime.env";
+import type { StatsEventName } from "../types/stats.events";
 
 const safeStatKey = (statKey?: string): string | undefined => {
   if (!statKey) {

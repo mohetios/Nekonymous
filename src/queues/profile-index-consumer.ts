@@ -1,11 +1,11 @@
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import {
   shouldAckIndexJobEarly,
   shouldSkipUpsertForDiscoverableProfile,
   shouldSkipVerifyForDiscoverableProfile,
 } from "./profile-index-policy.ts";
-import { PROFILE_INDEX_SCHEMA_VERSION } from "../contracts/conversation/profile-index";
-import type { ProfileIndexJob } from "../contracts/conversation/profile-index";
+import { PROFILE_INDEX_SCHEMA_VERSION } from "../types/conversation.profile-index";
+import type { ProfileIndexJob } from "../types/conversation.profile-index";
 import { recordProfileIndexed, recordProfileIndexFailed } from "../stats/product-events";
 import {
   createIndexJobLookupHash,
@@ -20,14 +20,14 @@ import {
   profileRouteAad,
   randomVectorRef,
   vectorRouteAad,
-} from "../features/ticketing/conversation-keys.ts";
-import { decryptEnvelope, encryptEnvelope } from "../features/ticketing/envelope.ts";
+} from "../ticketing/conversation-keys.ts";
+import { decryptEnvelope, encryptEnvelope } from "../ticketing/envelope.ts";
 import type {
   IndexJobRouteCapsule,
   IndexJobVectorsCapsule,
   ProfileRouteCapsule,
   VectorRouteCapsule,
-} from "../features/ticketing/conversation-capabilities.ts";
+} from "../ticketing/conversation-capabilities.ts";
 import {
   getIndexJobRecord,
   getProfileRecord,
@@ -35,19 +35,19 @@ import {
   setProfileStatus,
   storeVectorRouteRecord,
   updateProfileRouteEnc,
-} from "../storage/profile-vault/profile-vault.client";
+} from "../storage/profile-vault.client";
 import type {
   ProfileIndexJobRecord,
   ProfileVaultRecord,
   VectorRouteRole,
-} from "../contracts/conversation/profile-vault";
-import type { ConversationProfile } from "../contracts/conversation/profile";
+} from "../types/conversation.profile-vault";
+import type { ConversationProfile } from "../types/conversation.profile";
 import {
   namespaceFor,
   padVectorForIndex,
   projectDesiredVector,
   projectSelfVector,
-} from "../features/conversation/profile/vector-projection.ts";
+} from "../profile/profile-vector-projection.ts";
 
 const MAX_INDEX_ATTEMPTS = 5;
 const VERIFY_DELAY_SECONDS = 10;

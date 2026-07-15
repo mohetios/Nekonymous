@@ -1,6 +1,6 @@
 import { MENU } from "../src/i18n/labels.ts";
-import { SETTINGS_CALLBACK } from "../src/features/settings/constants.ts";
-import { STAT_EVENTS } from "../src/contracts/stats/events.ts";
+import { SETTINGS_CALLBACK } from "../src/settings/settings-constants.ts";
+import { STAT_EVENTS } from "../src/types/stats.events.ts";
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) {
@@ -69,14 +69,14 @@ const [
 ] = await Promise.all([
   readSource("../src/stats/stats-format.ts"),
   readSource("../src/stats/stats-reader.ts"),
-  readSource("../src/features/settings/render-stats-page.ts"),
-  readSource("../src/features/settings/keyboards.ts"),
+  readSource("../src/settings/render-stats-page.ts"),
+  readSource("../src/settings/settings-keyboards.ts"),
   readSource("../src/stats/stats-consumer.ts"),
   readSource("../src/stats/emit-stat.ts"),
   readSource("../src/stats/product-events.ts"),
-  readSource("../src/features/conversation/profile/profile-handlers.ts"),
-  readSource("../src/features/ticketing/handlers.ts"),
-  readSource("../src/features/ticketing/inbox.ts"),
+  readSource("../src/profile/profile-handlers.ts"),
+  readSource("../src/ticketing/handlers.ts"),
+  readSource("../src/ticketing/inbox.ts"),
 ]);
 
 // 4) empty stats state copy exists in formatter source
@@ -161,7 +161,7 @@ assert(
 
 // 9) stats page renderer must not import durable object clients
 assert(
-  !renderSource.includes("user-state-client") &&
+  !renderSource.includes("user-state.client") &&
     !renderSource.includes("ticket-vault") &&
     !renderSource.includes("safety-state"),
   "stats page render must not call DO storage clients"

@@ -11,7 +11,7 @@ import {
 import type {
   ProfileIndexJobRecord,
   ProfileVaultRecord,
-} from "../src/contracts/conversation/profile-vault";
+} from "../src/types/conversation.profile-vault";
 
 const fail = (message: string): never => {
   console.error(message);

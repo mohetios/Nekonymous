@@ -9,11 +9,11 @@ import {
   completeRequestAccept,
   getRequestRecord,
   storeRequestRecord,
-} from "../src/storage/conversation-vault/conversation-vault.client";
+} from "../src/storage/conversation-vault.client";
 import {
   operatorClearSanction,
   refreshExpiredSanction,
-} from "../src/storage/safety-state/safety-state.client";
+} from "../src/storage/safety-state.client";
 
 const safeTicketHash = "a".repeat(43);
 

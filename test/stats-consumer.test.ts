@@ -1,7 +1,7 @@
 import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { handleStatsBatch } from "../src/stats/stats-consumer";
-import { STAT_EVENTS, type StatsEvent } from "../src/contracts/stats/events";
+import { STAT_EVENTS, type StatsEvent } from "../src/types/stats.events";
 
 const TEST_DAY = "2026-01-02";
 const TEST_AT = Date.parse(`${TEST_DAY}T00:00:00.000Z`);

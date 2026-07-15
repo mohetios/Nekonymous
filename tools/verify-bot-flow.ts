@@ -7,12 +7,12 @@ import {
 import {
   createTicketCapability,
   encodeTicketCapability,
-} from "../src/features/ticketing/ticket-capability.ts";
+} from "../src/ticketing/ticket-capability.ts";
 import { MENU, isMainMenuLabel } from "../src/i18n/labels.ts";
 import {
   SUGGESTION_HUB_CALLBACK,
   suggestionHubCallbackQueryRegex,
-} from "../src/features/conversation/suggestions/constants.ts";
+} from "../src/suggestions/suggestion-constants.ts";
 import { BOT_COMMANDS, BOT_COMMAND_DEFINITIONS } from "../src/bot/commands.ts";
 import { readdir } from "node:fs/promises";
 import { join, relative } from "node:path";
@@ -129,24 +129,24 @@ const [
   queueContractsSource,
 ] = await Promise.all([
   readSource("../src/bot/register-handlers.ts"),
-  readSource("../src/features/ticketing/resolve-ticket-action.ts"),
-  readSource("../src/features/ticketing/inbox.ts"),
-  readSource("../src/features/ticketing/handlers.ts"),
+  readSource("../src/ticketing/resolve-ticket-action.ts"),
+  readSource("../src/ticketing/inbox.ts"),
+  readSource("../src/ticketing/handlers.ts"),
   readSource("../src/i18n/labels.ts"),
-  readSource("../src/features/identity/user.ts"),
+  readSource("../src/identity/identity-user.ts"),
   readSource("../src/bot/keyboards.ts"),
-  readSource("../src/features/settings/keyboards.ts"),
-  readSource("../src/features/conversation/suggestions/keyboards.ts"),
+  readSource("../src/settings/settings-keyboards.ts"),
+  readSource("../src/suggestions/suggestion-keyboards.ts"),
   readSource("../src/bot/input-navigation.ts"),
-  readSource("../src/features/conversation/suggestions/suggestion-handlers.ts"),
+  readSource("../src/suggestions/suggestion-handlers.ts"),
   readSource("../src/bot/commands.ts"),
   readSource("../src/bot/menu.ts"),
-  readSource("../src/features/conversation/suggestions/suggestion-hub.ts"),
+  readSource("../src/suggestions/suggestion-hub.ts"),
   readSource("../tools/set-telegram-bot-profile.sh"),
-  readSource("../src/features/ticketing/inbox-notification.ts"),
+  readSource("../src/ticketing/inbox-notification.ts"),
   readSource("../src/queues/outbox-consumer.ts"),
-  readSource("../src/contracts/inbox/events.ts"),
-  readSource("../src/contracts/queues/events.ts"),
+  readSource("../src/types/inbox.events.ts"),
+  readSource("../src/types/queue.events.ts"),
 ]);
 
 for (const action of ["reply", "block", "unblock", "nickname", "report"]) {

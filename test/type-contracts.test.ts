@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { UnreadInboxItemRow } from "../src/contracts/inbox/model";
+import type { UnreadInboxItemRow } from "../src/types/inbox.model";
 import type {
   InboxDrainJob,
   InboxNotificationJob,
-} from "../src/contracts/inbox/events";
+} from "../src/types/inbox.events";
 import type {
   AbuseSubjectTag,
   BlockTag,
@@ -13,7 +13,7 @@ import type {
   InternalAccountId,
   TicketHash,
   UnixMillis,
-} from "../src/contracts/primitives";
+} from "../src/types/primitives";
 
 declare const contactTag: ContactTag;
 declare const blockTag: BlockTag;
@@ -30,7 +30,7 @@ const acceptEncodedCapability = (_value: EncodedTicketCapability): void =>
   undefined;
 const acceptUnixMillis = (_value: UnixMillis): void => undefined;
 
-describe("canonical type contracts", () => {
+describe("canonical runtime types", () => {
   it("keeps runtime test harness active", () => {
     expect(true).toBe(true);
   });

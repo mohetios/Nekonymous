@@ -91,14 +91,13 @@ Avoid positive use of:
 src/
   index.ts
   bot/
-  contracts/
-  features/
-    identity/
-    ticketing/
-    moderation/
-    settings/
-    conversation/profile/
-    conversation/suggestions/
+  types/
+  identity/
+  ticketing/
+  moderation/
+  settings/
+  profile/
+  suggestions/
   storage/
   queues/
   stats/

@@ -1,18 +1,18 @@
-import { UserStateDurableObject as UserStateDurableObjectBase } from "./storage/user-state-do";
-import { TelegramOutboxDurableObject as TelegramOutboxDurableObjectBase } from "./storage/telegram-outbox-do";
-import { TicketVaultDurableObject as TicketVaultDurableObjectBase } from "./storage/ticket-vault/ticket-vault.do";
-import { SafetyStateDurableObject as SafetyStateDurableObjectBase } from "./storage/safety-state/safety-state.do";
-import { ProfileVaultShardDurableObject as ProfileVaultShardDurableObjectBase } from "./storage/profile-vault/profile-vault.do";
-import { ConversationVaultShardDurableObject as ConversationVaultShardDurableObjectBase } from "./storage/conversation-vault/conversation-vault.do";
-import { PairLedgerShardDurableObject as PairLedgerShardDurableObjectBase } from "./storage/pair-ledger/pair-ledger.do";
-import type { Environment } from "./contracts/runtime";
+import { UserStateDurableObject as UserStateDurableObjectBase } from "./storage/user-state.do";
+import { TelegramOutboxDurableObject as TelegramOutboxDurableObjectBase } from "./storage/telegram-outbox.do";
+import { TicketVaultDurableObject as TicketVaultDurableObjectBase } from "./storage/ticket-vault.do";
+import { SafetyStateDurableObject as SafetyStateDurableObjectBase } from "./storage/safety-state.do";
+import { ProfileVaultShardDurableObject as ProfileVaultShardDurableObjectBase } from "./storage/profile-vault.do";
+import { ConversationVaultShardDurableObject as ConversationVaultShardDurableObjectBase } from "./storage/conversation-vault.do";
+import { PairLedgerShardDurableObject as PairLedgerShardDurableObjectBase } from "./storage/pair-ledger.do";
+import type { Environment } from "./types/runtime.env";
 import { handleWebhook } from "./bot/webhook";
 import { handleOutboxBatch } from "./queues/outbox-consumer";
-import type { OutboxQueueJob, QueueEvent } from "./contracts/queues/events";
+import type { OutboxQueueJob, QueueEvent } from "./types/queue.events";
 import { handleProfileIndexBatch } from "./queues/profile-index-consumer";
-import type { ProfileIndexJob } from "./contracts/conversation/profile-index";
+import type { ProfileIndexJob } from "./types/conversation.profile-index";
 import { handleStatsBatch } from "./stats/stats-consumer";
-import type { StatsEvent } from "./contracts/stats/events";
+import type { StatsEvent } from "./types/stats.events";
 
 export class UserStateDurableObject extends UserStateDurableObjectBase {}
 export class TelegramOutboxDurableObject extends TelegramOutboxDurableObjectBase {}

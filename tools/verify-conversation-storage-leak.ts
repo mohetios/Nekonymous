@@ -3,7 +3,7 @@
  * Run: pnpm test:conversation-privacy
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -41,9 +41,9 @@ const forbiddenFixtureKeys = [
 ];
 
 const schemaSources = [
-  `${root}/src/storage/profile-vault/profile-vault.do.ts`,
-  `${root}/src/storage/conversation-vault/conversation-vault.do.ts`,
-  `${root}/src/storage/pair-ledger/pair-ledger.do.ts`,
+  `${root}/src/storage/profile-vault.do.ts`,
+  `${root}/src/storage/conversation-vault.do.ts`,
+  `${root}/src/storage/pair-ledger.do.ts`,
 ];
 
 const scanSqlColumns = (source: string, content: string): void => {
@@ -60,7 +60,7 @@ for (const source of schemaSources) {
 }
 
 const queueTypes = readFileSync(
-  `${root}/src/contracts/conversation/profile-index.ts`,
+  `${root}/src/types/conversation.profile-index.ts`,
   "utf8"
 );
 if (/userId|profileRef|telegram/i.test(queueTypes)) {
@@ -123,16 +123,10 @@ for (const [index, fixture] of fixtureSamples.entries()) {
   walkFixture(fixture, `fixture-${index}`);
 }
 
-const storageDir = `${root}/src/storage`;
-for (const dir of ["profile-vault", "conversation-vault", "pair-ledger"]) {
-  for (const file of readdirSync(`${storageDir}/${dir}`)) {
-    if (!file.endsWith(".do.ts")) {
-      continue;
-    }
-    const content = readFileSync(`${storageDir}/${dir}/${file}`, "utf8");
-    if (/profile_ref|user_id|candidate_id|requester_id/i.test(content)) {
-      fail(`${dir}/${file}: forbidden linkage field in DO source`);
-    }
+for (const source of schemaSources) {
+  const content = readFileSync(source, "utf8");
+  if (/profile_ref|user_id|candidate_id|requester_id/i.test(content)) {
+    fail(`${source}: forbidden linkage field in DO source`);
   }
 }
 

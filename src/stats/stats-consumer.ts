@@ -1,5 +1,5 @@
-import type { Environment } from "../contracts/runtime";
-import { isStatsEventName, type StatsEvent } from "../contracts/stats/events";
+import type { Environment } from "../types/runtime.env";
+import { isStatsEventName, type StatsEvent } from "../types/stats.events";
 
 const STATS_RECEIPT_RETENTION_MS = 35 * 24 * 60 * 60 * 1000;
 const STATS_RECEIPT_CLEANUP_LIMIT = 500;

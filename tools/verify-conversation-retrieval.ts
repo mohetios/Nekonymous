@@ -7,15 +7,15 @@ import {
   RETRIEVAL_MAX_MERGED_VECTOR_HITS,
   RETRIEVAL_MAX_PROFILES_AFTER_DEDUPE,
   RETRIEVAL_TOP_K_PER_CHANNEL,
-} from "../src/features/conversation/suggestions/constants.ts";
-import { mergeVectorHits } from "../src/features/conversation/suggestions/retrieval-utils.ts";
+} from "../src/suggestions/suggestion-constants.ts";
+import { mergeVectorHits } from "../src/suggestions/retrieval-utils.ts";
 import {
   dedupeResolvedHits,
   expectedRoleForChannel,
   passesRetrievalFilter,
   roleMatchesChannel,
-} from "../src/features/conversation/suggestions/retrieval-utils.ts";
-import type { ResolvedVectorHit, VectorHit } from "../src/contracts/conversation/retrieval";
+} from "../src/suggestions/retrieval-utils.ts";
+import type { ResolvedVectorHit, VectorHit } from "../src/types/conversation.retrieval";
 
 const fail = (message: string): never => {
   console.error(message);

@@ -2,7 +2,7 @@ import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import worker from "../src/index";
 import { handleWebhook } from "../src/bot/webhook";
-import type { Environment } from "../src/contracts/runtime";
+import type { Environment } from "../src/types/runtime.env";
 import { DurableObjectCallError } from "../src/storage/durable-object-call-error";
 
 const webhookEventShardName = (eventKey: string): string => {

@@ -59,27 +59,27 @@ export const SETTINGS_CLEAR_BLOCKS_DONE_MESSAGE =
 export const SETTINGS_CLEAR_BLOCKS_CANCELLED_MESSAGE =
   "لغو شد.\n\nفهرست مسدودی‌ها تغییری نکرد.";
 
-export const SETTINGS_RESET_MATCH_WARNING_MESSAGE =
+export const SETTINGS_RESET_SUGGESTION_WARNING_MESSAGE =
   "بازنشانی پیشنهادهای گفت‌وگو\n\n" +
   "الان REQUEST_COUNT درخواست گفت‌وگو و BLOCK_COUNT گزینه‌ی کنارگذاشته‌شده داری.\n\n" +
   "اگه تأیید کنی، این تاریخچه پاک می‌شه و ممکنه دوباره همون افراد رو در پیشنهادها ببینی.\n\n" +
   "پروفایل گفت‌وگو، وضعیت نمایش و پیام‌های ناشناست تغییری نمی‌کنن.";
 
-export const SETTINGS_RESET_MATCH_DONE_MESSAGE =
+export const SETTINGS_RESET_SUGGESTION_DONE_MESSAGE =
   "تاریخچه‌ی پیشنهادها پاک شد.\n\n" +
   "DETAIL_LINES\n\n" +
   "حالا می‌تونی دوباره از بخش پیشنهاد گفت‌وگو، گزینه‌های تازه رو ببینی.";
 
-export const SETTINGS_RESET_MATCH_CANCELLED_MESSAGE =
+export const SETTINGS_RESET_SUGGESTION_CANCELLED_MESSAGE =
   "لغو شد.\n\nتاریخچه‌ی پیشنهادها تغییری نکرد.";
 
-export const SETTINGS_RESET_MATCH_REQUESTS_CLEARED =
+export const SETTINGS_RESET_SUGGESTION_REQUESTS_CLEARED =
   "• COUNT درخواست گفت‌وگو پاک شد";
 
-export const SETTINGS_RESET_MATCH_BLOCKS_CLEARED =
+export const SETTINGS_RESET_SUGGESTION_BLOCKS_CLEARED =
   "• COUNT گزینه‌ی کنارگذاشته‌شده پاک شد";
 
 export const SETTINGS_PAUSE_DONE_CALLBACK = "دریافت پیام متوقف شد.";
 export const SETTINGS_RESUME_DONE_CALLBACK = "دریافت پیام دوباره فعاله 🐾";
 export const SETTINGS_BLOCK_LIST_EMPTY_CALLBACK = "فهرست مسدودی‌ها خالیه.";
-export const SETTINGS_RESET_MATCH_EMPTY_CALLBACK = "چیزی برای بازنشانی نیست.";
+export const SETTINGS_RESET_SUGGESTION_EMPTY_CALLBACK = "چیزی برای بازنشانی نیست.";

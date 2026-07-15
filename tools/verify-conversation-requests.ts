@@ -8,15 +8,15 @@ import {
   effectiveRequestStatus,
   isTerminalRequestStatus,
   shouldClearRequestIntro,
-} from "../src/storage/conversation-vault/request-transitions.ts";
+} from "../src/storage/conversation-request.transitions.ts";
 import {
   evaluateAcquirePairPending,
   isActiveBlockingPairState,
-} from "../src/storage/pair-ledger/pair-pending.ts";
-import type { PairStateRecord } from "../src/storage/pair-ledger/pair-ledger.types.ts";
-import { parseRequestCallback } from "../src/features/conversation/suggestions/request-callbacks.ts";
-import { REQUEST_CALLBACK } from "../src/features/conversation/suggestions/constants.ts";
-import { randomRequestRef } from "../src/features/ticketing/conversation-keys.ts";
+} from "../src/storage/pair-ledger.pending.ts";
+import type { PairStateRecord } from "../src/storage/pair-ledger.types.ts";
+import { parseRequestCallback } from "../src/suggestions/request-callbacks.ts";
+import { REQUEST_CALLBACK } from "../src/suggestions/suggestion-constants.ts";
+import { randomRequestRef } from "../src/ticketing/conversation-keys.ts";
 
 const fail = (message: string): never => {
   console.error(message);

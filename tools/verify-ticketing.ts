@@ -10,16 +10,16 @@ import {
   decryptTelegramChatId,
   generateOpaqueId,
   hmacTelegramUserId,
-} from "../src/features/ticketing/ticketing-service.ts";
+} from "../src/ticketing/ticketing-service.ts";
 import {
   createOwnerProofTag,
   createTicketHash,
   deriveTicketKeys,
   payloadAad,
   routeAad,
-} from "../src/features/ticketing/keys.ts";
-import { encryptEnvelope, decryptEnvelope } from "../src/features/ticketing/envelope.ts";
-import { constantTimeEqual } from "../src/features/ticketing/hmac.ts";
+} from "../src/ticketing/keys.ts";
+import { encryptEnvelope, decryptEnvelope } from "../src/ticketing/envelope.ts";
+import { constantTimeEqual } from "../src/ticketing/hmac.ts";
 import {
   createTicketCapability,
   encodeTicketCapability,
@@ -27,14 +27,14 @@ import {
   TICKET_CAPABILITY_CHARS,
   validateTicketCapability,
   type TicketCapability,
-} from "../src/features/ticketing/ticket-capability.ts";
+} from "../src/ticketing/ticket-capability.ts";
 import {
   createAbuseSubjectTag,
   createBlockTag,
   createContactTag,
   createReporterSubjectTag,
   createReportEventTag,
-} from "../src/features/ticketing/blind-tags.ts";
+} from "../src/ticketing/blind-tags.ts";
 import { INBOX_CALLBACK } from "../src/bot/callback-data.ts";
 
 const appMasterKey = "test-app-master-key-local-32bytes!";

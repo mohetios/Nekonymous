@@ -8,7 +8,7 @@ import {
   DIMENSION_IMPORTANCE_WEIGHT,
   NO_PREFERENCE_VALUE,
   PROFILE_QUESTION_COUNT,
-} from "../src/features/conversation/profile/constants.ts";
+} from "../src/profile/profile-constants.ts";
 import {
   PROFILE_DESIRED_GUIDES,
   PROFILE_SELF_ANSWER_CHOICES,
@@ -17,23 +17,23 @@ import {
   assertProfileQuestionBank,
   buildConversationProfile,
   profileHasSafetyState,
-} from "../src/features/conversation/profile/profile-builder.ts";
+} from "../src/profile/profile-builder.ts";
 import {
   profileRouteHasIndexVectors,
   profileRouteIsSearchReady,
   profileStatusAllowsSearch,
-} from "../src/features/conversation/profile/profile-readiness.ts";
-import { PROFILE_QUESTIONS } from "../src/features/conversation/profile/question-bank.ts";
+} from "../src/profile/profile-readiness.ts";
+import { PROFILE_QUESTIONS } from "../src/profile/profile-question-bank.ts";
 import {
   hasCompleteAnswers,
   validateAnswerForQuestion,
   validateDesiredAnswer,
   validateSelfAnswer,
-} from "../src/features/conversation/profile/validation.ts";
+} from "../src/profile/profile-validation.ts";
 import type {
   ConversationIntent,
   ProfileAnswers,
-} from "../src/contracts/conversation/profile";
+} from "../src/types/conversation.profile";
 
 const fail = (message: string): never => {
   console.error(message);

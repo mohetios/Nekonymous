@@ -1,25 +1,25 @@
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import type {
   InboxDrainJob,
   InboxNotificationJob,
-} from "../contracts/inbox/events";
+} from "../types/inbox.events";
 import {
   isInboxDrainJob,
   isInboxNotificationJob,
-} from "../contracts/inbox/events";
-import type { OutboxQueueJob } from "../contracts/queues/events";
+} from "../types/inbox.events";
+import type { OutboxQueueJob } from "../types/queue.events";
 import type {
   OrderedOutboxLaneWork,
   OutboxLaneWork,
-} from "../contracts/queues/outbox-lanes";
-import type { TelegramOutboxJob } from "../contracts/telegram/outbox";
-import { sendViaOutboxDo } from "../storage/telegram-outbox-client";
-import { drainUnreadInbox } from "../features/ticketing/inbox";
+} from "../types/queue.outbox-lanes";
+import type { TelegramOutboxJob } from "../types/telegram.outbox";
+import { sendViaOutboxDo } from "../storage/telegram-outbox.client";
+import { drainUnreadInbox } from "../ticketing/inbox";
 import { INBOX_MENU_CALLBACK } from "../bot/callback-data";
 import { DELIVER_INBOX_BUTTON } from "../i18n/labels";
 import { inboxFreshNoticeMessage } from "../i18n/messages";
-import { getUserById } from "../features/identity/identity-service";
-import { getUnreadSummary } from "../storage/user-state-client";
+import { getUserById } from "../identity/identity-service";
+import { getUnreadSummary } from "../storage/user-state.client";
 import { logBotError } from "../utils/logs";
 
 const OUTBOX_CHAT_CONCURRENCY = 4;

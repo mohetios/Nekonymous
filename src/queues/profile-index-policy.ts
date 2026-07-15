@@ -1,7 +1,7 @@
 import type {
   ProfileIndexJobRecord,
   ProfileVaultRecord,
-} from "../contracts/conversation/profile-vault";
+} from "../types/conversation.profile-vault";
 
 /** Queue consumer must ack without side effects (at-least-once delivery). */
 export const shouldAckIndexJobEarly = (

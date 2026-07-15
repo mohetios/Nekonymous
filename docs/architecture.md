@@ -279,8 +279,13 @@ Public statistics contain aggregate counts only. They do not expose top users, p
 src/
   index.ts       Worker entry, queue dispatch, DO exports
   bot/           grammY wiring, commands, keyboards, callbacks
-  contracts/     canonical domain and runtime contracts
-  features/      identity, ticketing, moderation, settings, conversation
+  types/         canonical shared runtime types
+  identity/      user resolution, public links, display names, reset
+  ticketing/     sealed anonymous tickets, inbox, replies, block/report
+  settings/      settings screens, privacy controls, statistics
+  moderation/    report creation helpers
+  profile/       conversation-style assessment and profile lifecycle
+  suggestions/   conversation suggestions and requests
   storage/       Durable Objects and typed RPC clients
   queues/        Queue consumers
   stats/         aggregate event emission and readers

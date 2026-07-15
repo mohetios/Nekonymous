@@ -1,7 +1,7 @@
 import {
   TICKET_CAPABILITY_PATTERN,
   validateTicketCapability,
-} from "../features/ticketing/ticket-capability.ts";
+} from "../ticketing/ticket-capability.ts";
 
 /**
  * Shared Telegram callback_data contracts for inbox ticket actions.

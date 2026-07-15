@@ -1,6 +1,6 @@
 import type { Bot, Context } from "grammy";
 import type { Message } from "grammy/types";
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import { EXPIRED_CALLBACK_MESSAGE, UNKNOWN_COMMAND_MESSAGE } from "../i18n/messages";
 import { mainMenu } from "./keyboards";
 import {
@@ -9,31 +9,31 @@ import {
   handleReportAction,
   handleReplyAction,
   handleUnblockAction,
-} from "../features/ticketing/actions";
+} from "../ticketing/actions";
 import {
   handleInboxCommand,
   handleMessage,
   handleStartCommand,
-} from "../features/ticketing/handlers";
+} from "../ticketing/handlers";
 import {
   handleInboxDeliverCallback,
-} from "../features/ticketing/inbox";
-import { handleSettingsCommand, handleSettingsCallback } from "../features/settings/settings-handlers";
+} from "../ticketing/inbox";
+import { handleSettingsCommand, handleSettingsCallback } from "../settings/settings-handlers";
 import {
   handleAssessmentCallback,
   handleAssessmentCommand,
-} from "../features/conversation/profile/profile-handlers";
+} from "../profile/profile-handlers";
 import {
   handleMatchCallback,
   handleMatchCommand,
   handleSuggestionCallback,
-} from "../features/conversation/suggestions/suggestion-handlers";
-import { handleRequestCallback } from "../features/conversation/suggestions/request-handlers";
+} from "../suggestions/suggestion-handlers";
+import { handleRequestCallback } from "../suggestions/request-handlers";
 import {
   requestCallbackQueryRegex,
   suggestionCallbackQueryRegex,
   suggestionHubCallbackQueryRegex,
-} from "../features/conversation/suggestions/constants";
+} from "../suggestions/suggestion-constants";
 import { isBotCommand } from "./commands";
 import {
   INBOX_MENU_CALLBACK,

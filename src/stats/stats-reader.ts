@@ -1,5 +1,5 @@
-import type { Environment } from "../contracts/runtime";
-import { STAT_EVENTS } from "../contracts/stats/events";
+import type { Environment } from "../types/runtime.env";
+import { STAT_EVENTS } from "../types/stats.events";
 
 const PUBLIC_STATS_CACHE_TTL_SECONDS = 60;
 

@@ -1,7 +1,7 @@
 import type { Context } from "grammy";
-import type { D1User } from "../contracts/identity/model";
-import type { Environment } from "../contracts/runtime";
-import { resolveOrCreateUser } from "../features/identity/identity-service";
+import type { D1User } from "../types/identity.model";
+import type { Environment } from "../types/runtime.env";
+import { resolveOrCreateUser } from "../identity/identity-service";
 
 export type DeferWork = (promise: Promise<unknown>) => void;
 

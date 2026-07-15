@@ -1,6 +1,6 @@
-import type { Environment } from "../contracts/runtime";
+import type { Environment } from "../types/runtime.env";
 import { emitStat } from "./emit-stat";
-import { STAT_EVENTS } from "../contracts/stats/events";
+import { STAT_EVENTS } from "../types/stats.events";
 
 /** Product-level stat recordings used across features. Failures are best-effort. */
 

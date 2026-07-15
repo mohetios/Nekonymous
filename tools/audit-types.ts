@@ -56,20 +56,20 @@ for (const file of sourceFiles) {
     fail(`exported enum is forbidden: ${path}`);
   }
 
-  if (path.startsWith("src/contracts/")) {
+  if (path.startsWith("src/types/")) {
     if (/\bany\b/.test(source)) {
-      fail(`contract file must not use any: ${path}`);
+      fail(`type file must not use any: ${path}`);
     }
     if (/as\s+unknown\s+as|as\s+any/.test(source)) {
-      fail(`contract file must not use double/any assertions: ${path}`);
+      fail(`type file must not use double/any assertions: ${path}`);
     }
   }
 
   if (
     /(?:interface|type)\s+(?:Env|CloudflareBindings)\b/.test(source) &&
-    path !== "src/contracts/runtime.ts"
+    path !== "src/types/runtime.env.ts"
   ) {
-    fail(`manual Env/binding declaration outside runtime contract: ${path}`);
+    fail(`manual Env/binding declaration outside runtime type file: ${path}`);
   }
 }
 
@@ -151,14 +151,14 @@ const mustBeUnique = [
 
 for (const name of mustBeUnique) {
   const files = exportedDeclarations.get(name) ?? [];
-  if (files.length !== 1 || !files[0].startsWith("src/contracts/")) {
-    fail(`${name} must have exactly one exported owner under src/contracts`);
+  if (files.length !== 1 || !files[0].startsWith("src/types/")) {
+    fail(`${name} must have exactly one exported owner under src/types`);
   }
 }
 
 try {
-  read(join(root, "src/contracts/index.ts"));
-  fail("root contract mega-barrel is forbidden: src/contracts/index.ts");
+  read(join(root, "src/types/index.ts"));
+  fail("root type mega-barrel is forbidden: src/types/index.ts");
 } catch {
   // expected: no root barrel
 }
@@ -166,17 +166,17 @@ try {
 for (const path of [
   "src/types.ts",
   "src/status.ts",
-  "src/features/conversation/profile/types.ts",
-  "src/storage/profile-vault/profile-vault.types.ts",
-  "src/storage/conversation-vault/conversation-vault.types.ts",
-  "src/storage/ticket-vault/ticket-vault.types.ts",
-  "src/storage/safety-state/safety-state.types.ts",
+  "src/profile/types.ts",
+  "src/storage/profile-vault.types.ts",
+  "src/storage/conversation-vault.types.ts",
+  "src/storage/ticket-vault.types.ts",
+  "src/storage/safety-state.types.ts",
   "src/queues/telegram-outbox.types.ts",
   "src/queues/profile-index.types.ts",
 ]) {
   try {
     read(join(root, path));
-    fail(`fit type shim is forbidden: ${path}`);
+    fail(`type shim is forbidden: ${path}`);
   } catch {
     // expected: removed fit shim
   }
