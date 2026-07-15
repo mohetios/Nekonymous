@@ -183,6 +183,8 @@ const runUpsert = async (
     profileEncAad(profile.profileHash)
   );
 
+  await setProfileStatus(env, profile.profileHash, "indexing", profile.revision);
+
   await saveVectorRoute(
     env,
     vectors.selfVectorizeId,
@@ -215,8 +217,6 @@ const runUpsert = async (
       metadata: { schemaVersion: PROFILE_INDEX_SCHEMA_VERSION },
     },
   ]);
-
-  await setProfileStatus(env, profile.profileHash, "indexing", profile.revision);
 
   await env.NEKO_PROFILE_INDEX_QUEUE.send(
     {

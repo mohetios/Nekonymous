@@ -43,6 +43,7 @@ import {
   recordDiscoverabilityDisabled,
   recordProfileIndexRequested,
 } from "../../../stats/product-events";
+import { profileRouteIsSearchReady } from "./profile-readiness.ts";
 
 const capabilityScope = (userId: string): string => `profile-capability:${userId}`;
 
@@ -253,14 +254,19 @@ export type RequesterProfileContext =
       profile: ConversationProfile;
       vaultStatus: ProfileVaultRecordStatus;
       revision: number;
+      searchReady: boolean;
     }
   | { ok: false; reason: "no_profile" | "profile_failed" };
 
+type SearchReadyProfileContext = Extract<
+  RequesterProfileContext,
+  { ok: true }
+> & { searchReady: true };
+
 export const isProfileSearchReady = (
   context: RequesterProfileContext
-): context is Extract<RequesterProfileContext, { ok: true }> =>
-  context.ok &&
-  (context.vaultStatus === "private" || context.vaultStatus === "discoverable");
+): context is SearchReadyProfileContext =>
+  context.ok && context.searchReady;
 
 export const loadRequesterProfileContext = async (
   env: Environment,
@@ -307,12 +313,25 @@ export const loadRequesterProfileContext = async (
     return { ok: false, reason: "profile_failed" };
   }
 
+  let route: ProfileRouteCapsule | null = null;
+  try {
+    const routeKey = await deriveProfileRouteKey(env.APP_MASTER_KEY, profileHash);
+    route = await decryptEnvelope<ProfileRouteCapsule>(
+      routeKey,
+      record.routeEnc,
+      profileRouteAad(profileHash)
+    );
+  } catch {
+    route = null;
+  }
+
   return {
     ok: true,
     profileHash,
     profile,
     vaultStatus: record.status,
     revision: record.revision,
+    searchReady: profileRouteIsSearchReady(record.status, route),
   };
 };
 

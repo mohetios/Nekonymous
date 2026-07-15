@@ -3,7 +3,6 @@ export const SUGGESTION_HUB_CALLBACK = {
   hub: "m:hub",
   search: "m:search",
   pending: "m:pending",
-  profile: "m:profile",
   enableDiscover: "m:disc:on",
   disableDiscover: "m:disc:off",
   assessment: "m:assess",
@@ -24,7 +23,7 @@ export const REQUEST_CALLBACK = {
 
 /** Active hub inline callbacks only. */
 export const suggestionHubCallbackQueryRegex = (): RegExp =>
-  /^m:(?:hub|search|pending|profile|disc:(?:on|off)|assess)$/;
+  /^m:(?:hub|search|pending|disc:(?:on|off)|assess)$/;
 
 export const suggestionCallbackQueryRegex = (): RegExp =>
   /^s:(?:d:|r:)?[A-Za-z0-9_-]{16,43}$/;

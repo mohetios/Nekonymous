@@ -7,6 +7,7 @@ import { HuhMessage } from "../../../i18n/messages";
 import {
   PROFILE_COMPLETION_NOTE,
   PROFILE_DASHBOARD_INTRO,
+  PROFILE_DASHBOARD_READY_INTRO,
   PROFILE_EXIT_SAVED,
   PROFILE_RESET_CONFIRM,
   PROFILE_RESULT_READY_TITLE,
@@ -88,8 +89,12 @@ export const sendProfileDashboard = async (
     answeredCount: progress.answered,
   });
 
+  const intro =
+    meta.hasProfile && !session
+      ? PROFILE_DASHBOARD_READY_INTRO
+      : PROFILE_DASHBOARD_INTRO;
   const text =
-    `${PROFILE_DASHBOARD_INTRO}\n\n` +
+    `${intro}\n\n` +
     `<b>${PROFILE_STATUS_HEADER}</b>\n${escapeHtml(status)}`;
 
   await renderScreen(ctx, {
@@ -228,21 +233,6 @@ export const handleAssessmentCallback = async (
 
     if (data === PROFILE_CALLBACK.submit) {
       await completeProfile(ctx, user.id, env, from.id);
-      return;
-    }
-
-    if (data === PROFILE_CALLBACK.result) {
-      const meta = await getProfileDashboardMeta(env, user.id);
-      if (!meta.hasProfile) {
-        await sendProfileDashboard(ctx, user.id, env);
-        return;
-      }
-      const session = await getProfileSession(env, user.id);
-      if (session && profileSessionIsReady(session)) {
-        await completeProfile(ctx, user.id, env, from.id);
-        return;
-      }
-      await sendProfileDashboard(ctx, user.id, env);
       return;
     }
 

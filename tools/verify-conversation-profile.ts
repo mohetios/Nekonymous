@@ -10,10 +10,19 @@ import {
   PROFILE_QUESTION_COUNT,
 } from "../src/features/conversation/profile/constants.ts";
 import {
+  PROFILE_DESIRED_GUIDES,
+  PROFILE_SELF_ANSWER_CHOICES,
+} from "../src/i18n/conversation-profile-ui.ts";
+import {
   assertProfileQuestionBank,
   buildConversationProfile,
   profileHasSafetyState,
 } from "../src/features/conversation/profile/profile-builder.ts";
+import {
+  profileRouteHasIndexVectors,
+  profileRouteIsSearchReady,
+  profileStatusAllowsSearch,
+} from "../src/features/conversation/profile/profile-readiness.ts";
 import { PROFILE_QUESTIONS } from "../src/features/conversation/profile/question-bank.ts";
 import {
   hasCompleteAnswers,
@@ -36,6 +45,49 @@ if (PROFILE_QUESTIONS.length !== PROFILE_QUESTION_COUNT) {
   fail("question bank must contain 25 questions");
 }
 
+const desiredQuestions = PROFILE_QUESTIONS.slice(16, 24);
+if (desiredQuestions.some((question) => question.kind !== "desired")) {
+  fail("questions 17-24 must use desired-style answer UI");
+}
+
+const finalQuestion = PROFILE_QUESTIONS[24];
+if (finalQuestion?.kind !== "intent") {
+  fail("question 25 must use intent answer UI");
+}
+
+if (profileRouteHasIndexVectors(null)) {
+  fail("missing profile route must not be search-ready");
+}
+if (
+  profileRouteHasIndexVectors({
+    revision: 1,
+    selfVectorizeId: "self-vector",
+  })
+) {
+  fail("partial profile route must not be search-ready");
+}
+if (
+  !profileRouteIsSearchReady("private", {
+    revision: 1,
+    selfVectorizeId: "self-vector",
+    desiredVectorizeId: "desired-vector",
+  })
+) {
+  fail("private profile with both vectors must be search-ready");
+}
+if (
+  profileRouteIsSearchReady("indexing", {
+    revision: 1,
+    selfVectorizeId: "self-vector",
+    desiredVectorizeId: "desired-vector",
+  })
+) {
+  fail("indexing profile must stay pending until verification completes");
+}
+if (profileStatusAllowsSearch("index_failed")) {
+  fail("failed profile index must not allow search");
+}
+
 for (const dimension of CONVERSATION_DIMENSIONS) {
   const selfCount = PROFILE_QUESTIONS.filter(
     (question) => question.kind === "self" && question.dimension === dimension
@@ -45,6 +97,23 @@ for (const dimension of CONVERSATION_DIMENSIONS) {
   ).length;
   if (selfCount !== 2 || desiredCount !== 1) {
     fail(`dimension coverage mismatch for ${dimension}`);
+  }
+
+  const guide = PROFILE_DESIRED_GUIDES[dimension];
+  for (let value = 1; value <= 5; value += 1) {
+    if (!guide.includes(`${value}`) && !guide.includes(String.fromCharCode(1776 + value))) {
+      fail(`desired guide must mention value ${value} for ${dimension}`);
+    }
+  }
+}
+
+if (PROFILE_SELF_ANSWER_CHOICES.length !== 5) {
+  fail("rating keyboards must contain five shared choices");
+}
+for (let index = 0; index < PROFILE_SELF_ANSWER_CHOICES.length; index += 1) {
+  const expectedValue = index + 1;
+  if (PROFILE_SELF_ANSWER_CHOICES[index]?.value !== expectedValue) {
+    fail("rating keyboard value mismatch");
   }
 }
 

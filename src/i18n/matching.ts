@@ -84,18 +84,21 @@ export const formatSuggestionHubMessage = (params: {
   discoverabilityLine: string;
   pendingLine: string;
   eligibilityLine: string;
+  profileSummaryHtml?: string;
 }): string =>
-  "پیشنهاد گفت‌وگو\n\n" +
-  `${params.assessmentLine}\n` +
-  `${params.discoverabilityLine}\n` +
-  `${params.pendingLine}\n` +
-  `${params.eligibilityLine}\n\n` +
-  "از دکمه‌های پایین انتخاب کن.";
+  "<b>پیشنهاد گفت‌وگو</b>\n\n" +
+  "<b>وضعیت</b>\n" +
+  `• ${params.assessmentLine}\n` +
+  `• ${params.discoverabilityLine}\n` +
+  `• ${params.pendingLine}\n` +
+  `• ${params.eligibilityLine}` +
+  (params.profileSummaryHtml
+    ? `\n\n<b>خلاصه‌ی پروفایل گفت‌وگو</b>\n${params.profileSummaryHtml}\n\n${MATCH_PROFILE_PRIVACY_NOTE}`
+    : "\n\n<b>خلاصه‌ی پروفایل گفت‌وگو</b>\nبرای شروع، ارزیابی سبک گفت‌وگو رو کامل کن.") +
+  "\n\n<b>اقدام بعدی</b>\nاز دکمه‌های پایین انتخاب کن.";
 
 export const MATCH_PROFILE_PRIVACY_NOTE =
-  "این پروفایل فقط برای خودته.\n\n" +
-  "اگه نمایش در پیشنهادها رو فعال کنی، از همین خلاصه برای پیدا کردن گزینه‌های ناشناس استفاده می‌شه؛ نتیجه‌ی کامل ارزیابیت به دیگران نمایش داده نمی‌شه.\n\n" +
-  "این فقط خلاصه‌ی ترجیحات گفت‌وگوت هست، نه تست شخصیت یا تعریف قطعی تو.";
+  "<i>این خلاصه فقط برای پیشنهاد گفت‌وگو استفاده می‌شه و نتیجه‌ی تست شخصیت یا تعریف قطعی تو نیست.</i>";
 
 export const MATCH_PROFILE_NO_ASSESSMENT =
   "هنوز پروفایل گفت‌وگو نداری.\n\n" +
@@ -109,7 +112,6 @@ export const MATCH_SEARCH_INDEX_PENDING =
   "دارم پروفایلت رو برای پیشنهادهای گفت‌وگو آماده می‌کنم.\n\n" +
   "کمی بعد دوباره سر بزن.";
 
-export const MATCH_PROFILE_HEADER = "👤 پروفایل گفت‌وگو";
 export const MATCH_CANDIDATES_HEADER = "میو، یه گزینه برای گفت‌وگو پیدا کردم 🐾";
 export const MATCH_CANDIDATES_WHY_FIT = "چیزهایی که بینتون نزدیکه:";
 export const MATCH_INCOMING_WHY_FIT = "چیزهایی که بینتون نزدیکه:";

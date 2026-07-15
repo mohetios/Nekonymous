@@ -23,6 +23,9 @@ export const renderSuggestionHub = async (
         discoverabilityLine: view.discoverabilityLine,
         pendingLine: view.pendingLine,
         eligibilityLine: view.eligibilityLine,
+        ...(view.profileSummaryHtml
+          ? { profileSummaryHtml: view.profileSummaryHtml }
+          : {}),
       }),
       replyMarkup: buildSuggestionHubKeyboard(view.keyboard),
     },

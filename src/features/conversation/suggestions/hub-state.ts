@@ -6,13 +6,15 @@ import {
 } from "../profile/profile-service.ts";
 import type { SuggestionHubMenuOptions } from "./types.ts";
 import { MATCH_HUB_STATUS } from "../../../i18n/matching.ts";
-import { MENU } from "../../../i18n/labels.ts";
+import { ASSESSMENT_BUTTON } from "../../../i18n/labels.ts";
+import { buildProfileHubSummaryHtml } from "../profile/profile-summary.ts";
 
 export type SuggestionHubView = {
   assessmentLine: string;
   discoverabilityLine: string;
   pendingLine: string;
   eligibilityLine: string;
+  profileSummaryHtml: string | null;
   keyboard: SuggestionHubMenuOptions & { showPending: boolean };
 };
 
@@ -36,7 +38,7 @@ export const buildSuggestionHubView = async (
     "default";
 
   if (meta.hasProfile) {
-    if (meta.discoverable) {
+    if (meta.discoverable && isProfileSearchReady(profileContext)) {
       discoverabilityLine = MATCH_HUB_STATUS.discoverabilityActive;
       discoverabilityVariant = "can_disable";
     } else if (isProfileSearchReady(profileContext)) {
@@ -47,34 +49,36 @@ export const buildSuggestionHubView = async (
     }
   }
 
-  const profileVaultStatus = profileContext.ok ? profileContext.vaultStatus : null;
-
   let eligibilityLine: string = MATCH_HUB_STATUS.searchNeedsAssessment;
   if (isProfileSearchReady(profileContext)) {
     eligibilityLine = MATCH_HUB_STATUS.searchReady;
-  } else if (profileVaultStatus === "indexing") {
-    eligibilityLine = MATCH_HUB_STATUS.searchVectorPending;
-  } else if (profileVaultStatus === "index_failed") {
-    eligibilityLine = MATCH_HUB_STATUS.searchUnavailable;
+  } else if (profileContext.ok) {
+    eligibilityLine =
+      profileContext.vaultStatus === "index_failed"
+        ? MATCH_HUB_STATUS.searchUnavailable
+        : MATCH_HUB_STATUS.searchVectorPending;
   } else if (!profileContext.ok && profileContext.reason === "profile_failed") {
     eligibilityLine = MATCH_HUB_STATUS.searchUnavailable;
   }
 
   const showFind = isProfileSearchReady(profileContext);
-  const showProfile = profileContext.ok;
-  const assessmentLabel = meta.hasProfile
-    ? MENU.matchAssessmentRetry
-    : MENU.matchAssessment;
+  const assessmentLabel = meta.hasActiveSession
+    ? ASSESSMENT_BUTTON.continue
+    : meta.hasProfile
+      ? ASSESSMENT_BUTTON.restart
+      : ASSESSMENT_BUTTON.start;
 
   return {
     assessmentLine,
     discoverabilityLine,
     pendingLine: MATCH_HUB_STATUS.pendingNone,
     eligibilityLine,
+    profileSummaryHtml: profileContext.ok
+      ? buildProfileHubSummaryHtml(profileContext.profile, "fa")
+      : null,
     keyboard: {
       assessmentLabel,
       showFind,
-      showProfile,
       showPending: false,
       discoverabilityVariant,
     },

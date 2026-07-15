@@ -12,13 +12,8 @@ export const buildSuggestionHubKeyboard = (
     keyboard.text(MATCH_BUTTON.search, SUGGESTION_HUB_CALLBACK.search).row();
   }
 
-  if (options.showPending || options.showProfile) {
-    if (options.showPending) {
-      keyboard.text(MATCH_BUTTON.pending, SUGGESTION_HUB_CALLBACK.pending);
-    }
-    if (options.showProfile) {
-      keyboard.text(MATCH_BUTTON.profile, SUGGESTION_HUB_CALLBACK.profile);
-    }
+  if (options.showPending) {
+    keyboard.text(MATCH_BUTTON.pending, SUGGESTION_HUB_CALLBACK.pending);
     keyboard.row();
   }
 

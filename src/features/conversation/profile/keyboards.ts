@@ -1,12 +1,13 @@
 import { InlineKeyboard } from "grammy";
 import { ASSESSMENT_BUTTON } from "../../../i18n/labels";
 import {
+  PROFILE_DESIRED_GUIDES,
   PROFILE_INTENT_OPTIONS,
-  PROFILE_NO_PREFERENCE_LABEL,
+  PROFILE_SELF_ANSWER_CHOICES,
   PROFILE_SUBMIT_BUTTON,
   formatProfileQuestionHeader,
   PROFILE_ANSWER_SCALE,
-  PROFILE_DESIRED_SCALE,
+  type ProfileAnswerChoice,
 } from "../../../i18n/conversation-profile-ui";
 import { escapeHtml } from "../../../utils/text";
 import { PROFILE_CALLBACK, PROFILE_QUESTION_COUNT } from "./constants.ts";
@@ -35,9 +36,7 @@ export const buildProfileDashboardKeyboard = (options: {
       .text(ASSESSMENT_BUTTON.continue, PROFILE_CALLBACK.continue)
       .text(ASSESSMENT_BUTTON.restart, PROFILE_CALLBACK.reset);
   } else if (options.hasProfile) {
-    keyboard
-      .text(ASSESSMENT_BUTTON.viewResult, PROFILE_CALLBACK.result)
-      .text(ASSESSMENT_BUTTON.restart, PROFILE_CALLBACK.reset);
+    keyboard.text(ASSESSMENT_BUTTON.restart, PROFILE_CALLBACK.reset);
   } else {
     keyboard.text(ASSESSMENT_BUTTON.start, PROFILE_CALLBACK.start);
   }
@@ -53,14 +52,17 @@ export const buildResetConfirmKeyboard = (): InlineKeyboard =>
 
 export const buildResultKeyboard = (): InlineKeyboard =>
   new InlineKeyboard()
-    .text(ASSESSMENT_BUTTON.viewResultAgain, PROFILE_CALLBACK.result)
     .text(ASSESSMENT_BUTTON.restart, PROFILE_CALLBACK.reset)
     .row()
     .text(ASSESSMENT_BUTTON.backToSuggestions, PROFILE_CALLBACK.hub);
 
-const likertRow = (keyboard: InlineKeyboard, index: number): InlineKeyboard => {
-  for (let value = 1; value <= 5; value += 1) {
-    keyboard.text(String(value), PROFILE_CALLBACK.answer(index, value));
+const answerRow = (
+  keyboard: InlineKeyboard,
+  index: number,
+  choices: ProfileAnswerChoice[]
+): InlineKeyboard => {
+  for (const choice of choices) {
+    keyboard.text(choice.label, PROFILE_CALLBACK.answer(index, choice.value));
   }
   return keyboard.row();
 };
@@ -84,14 +86,7 @@ export const buildQuestionKeyboard = (index: number): InlineKeyboard => {
     return keyboard;
   }
 
-  if (question.kind === "desired") {
-    likertRow(keyboard, index);
-    keyboard
-      .text(PROFILE_NO_PREFERENCE_LABEL, PROFILE_CALLBACK.answer(index, 0))
-      .row();
-  } else {
-    likertRow(keyboard, index);
-  }
+  answerRow(keyboard, index, PROFILE_SELF_ANSWER_CHOICES);
 
   if (index > 0) {
     keyboard.text(ASSESSMENT_BUTTON.previous, PROFILE_CALLBACK.previous);
@@ -108,8 +103,12 @@ export const formatQuestionMessage = (index: number): string => {
 
   const header = formatProfileQuestionHeader(index + 1, PROFILE_QUESTION_COUNT);
   const scale =
-    question.kind === "desired" ? PROFILE_DESIRED_SCALE : PROFILE_ANSWER_SCALE;
-  const scaleBlock = question.kind === "intent" ? "" : `\n\n${escapeHtml(scale)}`;
+    question.kind === "desired" && question.dimension
+      ? PROFILE_DESIRED_GUIDES[question.dimension]
+      : question.kind === "self"
+        ? PROFILE_ANSWER_SCALE
+        : "";
+  const scaleBlock = scale ? `\n\n${escapeHtml(scale)}` : "";
 
   return `<b>${escapeHtml(header)}</b>\n\n${escapeHtml(question.text)}${scaleBlock}`;
 };

@@ -15,9 +15,7 @@ import {
   MATCH_NO_CANDIDATES_COOLDOWN,
   MATCH_PENDING_EMPTY,
   MATCH_PROFILE_FAILED,
-  MATCH_PROFILE_HEADER,
   MATCH_PROFILE_NO_ASSESSMENT,
-  MATCH_PROFILE_PRIVACY_NOTE,
   MATCH_RECENT_PAIR_COOLDOWN,
   MATCH_REQUEST_LIMIT,
   MATCH_REQUEST_SENT,
@@ -39,7 +37,6 @@ import {
   loadRequesterProfileContext,
   setConversationDiscoverability,
 } from "../profile/profile-service";
-import { buildProfileSummaryText } from "../profile/profile-summary.ts";
 import { getUserById } from "../../identity/identity-service";
 import { setDraft } from "../../../storage/user-state-client";
 import { SUGGESTION_HUB_CALLBACK } from "./constants";
@@ -205,27 +202,6 @@ export const handleMatchCallback = async (
     if (data === SUGGESTION_HUB_CALLBACK.pending) {
       await ctx.answerCallbackQuery();
       await ctx.reply(MATCH_PENDING_EMPTY, withHtml({ reply_markup: mainMenu }));
-      return;
-    }
-
-    if (data === SUGGESTION_HUB_CALLBACK.profile) {
-      await ctx.answerCallbackQuery();
-      const profileContext = await loadRequesterProfileContext(env, user.id);
-      if (!profileContext.ok) {
-        await ctx.reply(
-          profileUnavailableMessage(profileContext.reason),
-          withHtml({ reply_markup: mainMenu })
-        );
-        return;
-      }
-
-      const summary = buildProfileSummaryText(profileContext.profile, "fa");
-      await ctx.reply(
-        `${MATCH_PROFILE_HEADER}\n\n` +
-          `${escapeHtml(summary)}\n\n` +
-          MATCH_PROFILE_PRIVACY_NOTE,
-        withHtml({ reply_markup: mainMenu })
-      );
       return;
     }
 

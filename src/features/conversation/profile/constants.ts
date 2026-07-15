@@ -42,7 +42,6 @@ export const PROFILE_CALLBACK = {
   start: "t:start",
   continue: "t:continue",
   submit: "t:submit",
-  result: "t:result",
   reset: "t:reset",
   resetYes: "t:reset_yes",
   resetNo: "t:reset_no",
