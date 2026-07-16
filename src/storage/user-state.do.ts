@@ -25,6 +25,8 @@ const SUGGESTION_SEARCH_SCOPE = "suggestion_search";
 const SUGGESTION_SEARCH_LIMIT = 50;
 const SUGGESTION_SEARCH_WINDOW_MS = 60 * 60 * 1000;
 const EXPOSURE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const EXPOSURE_TOKEN_BATCH_LIMIT = 10;
+const EXPOSURE_TOKEN_MAX = 500;
 
 type UserStateRow = {
   user_id: string;
@@ -37,6 +39,17 @@ type UserStateRow = {
   profile_capability_enc: string | null;
   created_at: number;
   updated_at: number;
+};
+
+type ContactEntryRow = {
+  paused: number;
+  display_name_ciphertext: string | null;
+  blocked: number;
+};
+
+type ReceiveGateRow = {
+  paused: number;
+  blocked: number;
 };
 
 type DraftRow = {
@@ -70,7 +83,6 @@ type ProfileSessionRow = {
   current_index: number;
   total_questions: number;
   answers_enc: string;
-  profile_capability_enc: string | null;
   started_at: number;
   updated_at: number;
   expires_at: number | null;
@@ -298,12 +310,32 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     ok: boolean;
     existing?: boolean;
   } {
-    if (!userId) {
+    if (
+      !userId ||
+      userId.length > 80 ||
+      (displayNameCiphertext !== undefined &&
+        (typeof displayNameCiphertext !== "string" ||
+          !displayNameCiphertext ||
+          displayNameCiphertext.length > 4096))
+    ) {
       return { ok: false };
     }
 
     const existing = this.getUserId();
     if (existing) {
+      if (existing !== userId) {
+        return { ok: false };
+      }
+      if (displayNameCiphertext) {
+        this.ctx.storage.sql.exec(
+          `UPDATE user_state
+           SET display_name_ciphertext = ?, updated_at = ?
+           WHERE user_id = ? AND display_name_ciphertext IS NULL`,
+          displayNameCiphertext,
+          Date.now(),
+          userId
+        );
+      }
       return { ok: true, existing: true };
     }
 
@@ -445,30 +477,111 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     this.ctx.storage.sql.exec("DELETE FROM drafts");
   }
 
-  checkCanReceive(blockTag: string): { ok: boolean; reason?: string } {
-    const state = this.ctx.storage.sql
-      .exec<UserStateRow>("SELECT paused FROM user_state LIMIT 1")
-      .toArray()[0];
+  private ensureAccountState(userId: string): boolean {
+    if (!userId || userId.length > 80) {
+      return false;
+    }
 
-    if (state?.paused) {
+    const existingUserId = this.getUserId();
+    if (!existingUserId) {
+      return this.initState(userId).ok;
+    }
+    return existingUserId === userId;
+  }
+
+  private getContactEntryRow(blockTag: string): ContactEntryRow | null {
+    return (
+      this.ctx.storage.sql
+        .exec<ContactEntryRow>(
+          `SELECT
+             paused,
+             display_name_ciphertext,
+             EXISTS (
+               SELECT 1 FROM blocks WHERE block_tag = ?
+             ) AS blocked
+           FROM user_state
+           LIMIT 1`,
+          blockTag
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  private getReceiveGateRow(blockTag: string): ReceiveGateRow | null {
+    return (
+      this.ctx.storage.sql
+        .exec<ReceiveGateRow>(
+          `SELECT
+             paused,
+             EXISTS (
+               SELECT 1 FROM blocks WHERE block_tag = ?
+             ) AS blocked
+           FROM user_state
+           LIMIT 1`,
+          blockTag
+        )
+        .toArray()[0] ?? null
+    );
+  }
+
+  checkCanReceive(
+    userId: string,
+    blockTag: string
+  ): { ok: boolean; reason?: string } {
+    if (
+      !blockTag ||
+      blockTag.length > 86 ||
+      !this.ensureAccountState(userId)
+    ) {
+      return { ok: false, reason: "invalid" };
+    }
+
+    const state = this.getReceiveGateRow(blockTag);
+    if (!state) {
+      return { ok: false, reason: "invalid" };
+    }
+
+    if (state.paused) {
       return { ok: false, reason: "paused" };
     }
 
-    const blocked = this.ctx.storage.sql
-      .exec<{ block_tag: string }>(
-        "SELECT block_tag FROM blocks WHERE block_tag = ?",
-        blockTag
-      )
-      .toArray();
-
-    if (blocked.length > 0) {
+    if (state.blocked) {
       return { ok: false, reason: "blocked" };
     }
 
     return { ok: true };
   }
 
-  consumeRateLimit(): { limited: boolean } {
+  getContactEntryState(userId: string, blockTag: string): {
+    paused: boolean;
+    blocked: boolean;
+    displayNameCiphertext: string | null;
+  } | null {
+    if (
+      !blockTag ||
+      blockTag.length > 86 ||
+      !this.ensureAccountState(userId)
+    ) {
+      return null;
+    }
+
+    const state = this.getContactEntryRow(blockTag);
+    if (!state) {
+      return null;
+    }
+
+    return {
+      paused: !!state.paused,
+      blocked: !!state.blocked,
+      displayNameCiphertext: state.display_name_ciphertext,
+    };
+  }
+
+  consumeRateLimit(userId: string): { limited: boolean } {
+    if (!this.ensureAccountState(userId)) {
+      return { limited: true };
+    }
+
     const now = Date.now();
     const row = this.ctx.storage.sql
       .exec<{ last_at: number }>(
@@ -624,38 +737,42 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     );
   }
 
-  cleanupExpiredUnreadItems(): { deleted: number; summary: UnreadSummary } {
-    const now = Date.now();
-    const rows = this.ctx.storage.sql
-      .exec<{ item_id: string }>(
-        `SELECT item_id FROM unread_inbox_items
+  private prepareUnreadInbox(now: number): void {
+    this.ctx.storage.sql.exec(
+      `DELETE FROM unread_inbox_items
+       WHERE item_id IN (
+         SELECT item_id
+         FROM unread_inbox_items
          WHERE expires_at <= ?
-         ORDER BY expires_at ASC
-         LIMIT ${INBOX_CLEANUP_LIMIT}`,
-        now
-      )
-      .toArray();
-    if (rows.length > 0) {
-      const placeholders = rows.map(() => "?").join(",");
-      this.ctx.storage.sql.exec(
-        `DELETE FROM unread_inbox_items WHERE item_id IN (${placeholders})`,
-        ...rows.map((row) => row.item_id)
-      );
-    }
+         ORDER BY expires_at ASC, item_id ASC
+         LIMIT ${INBOX_CLEANUP_LIMIT}
+       )`,
+      now
+    );
     this.recoverExpiredUnreadLeases(now);
-    return { deleted: rows.length, summary: this.getUnreadSummary() };
   }
 
-  private activeUnreadCount(): number {
-    this.recoverExpiredUnreadLeases();
+  private countActiveUnread(now: number): number {
     return this.ctx.storage.sql
       .exec<{ count: number }>(
         `SELECT COUNT(*) AS count FROM unread_inbox_items
          WHERE expires_at > ?
            AND delivery_state IN ('active', 'delivering')`,
-        Date.now()
+        now
       )
       .one().count;
+  }
+
+  cleanupExpiredUnreadItems(): UnreadSummary {
+    const now = Date.now();
+    this.prepareUnreadInbox(now);
+    return { unreadCount: this.countActiveUnread(now) };
+  }
+
+  private activeUnreadCount(): number {
+    const now = Date.now();
+    this.recoverExpiredUnreadLeases(now);
+    return this.countActiveUnread(now);
   }
 
   getUnreadSummary(): UnreadSummary {
@@ -664,20 +781,27 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     };
   }
 
-  addUnreadItem(body: {
-    itemId: string;
-    sealedCapabilityEnc: string;
-    dedupeTag: string;
-    createdAt: number;
-    expiresAt: number;
-  }): {
+  addUnreadItem(
+    userId: string,
+    body: {
+      itemId: string;
+      sealedCapabilityEnc: string;
+      dedupeTag: string;
+      createdAt: number;
+      expiresAt: number;
+    }
+  ): {
     ok: boolean;
     reason?: "full" | "invalid";
     unreadCount?: number;
     duplicate?: boolean;
     notification: { required: true; eventId: string } | { required: false };
   } {
+    const now = Date.now();
     if (
+      !userId ||
+      userId.length > 80 ||
+      this.getUserId() !== userId ||
       !body.itemId ||
       body.itemId.length > 80 ||
       !body.sealedCapabilityEnc ||
@@ -685,7 +809,8 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       body.dedupeTag.length > 86 ||
       !Number.isSafeInteger(body.createdAt) ||
       !Number.isSafeInteger(body.expiresAt) ||
-      body.expiresAt <= body.createdAt
+      body.expiresAt <= body.createdAt ||
+      body.expiresAt <= now
     ) {
       return {
         ok: false,
@@ -694,7 +819,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       };
     }
 
-    this.cleanupExpiredUnreadItems();
+    this.prepareUnreadInbox(now);
     const existing = this.ctx.storage.sql
       .exec<{ item_id: string }>(
         "SELECT item_id FROM unread_inbox_items WHERE dedupe_tag = ?",
@@ -702,16 +827,15 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       )
       .toArray()[0];
     if (existing) {
-      const summary = this.getUnreadSummary();
       return {
         ok: true,
         duplicate: true,
-        unreadCount: summary.unreadCount,
+        unreadCount: this.countActiveUnread(now),
         notification: { required: false },
       };
     }
 
-    const active = this.activeUnreadCount();
+    const active = this.countActiveUnread(now);
     if (active >= INBOX_MAX_UNREAD) {
       return {
         ok: false,
@@ -734,22 +858,20 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       );
     } catch (error) {
       if (isUnreadDedupeConflict(error)) {
-        const summary = this.getUnreadSummary();
         return {
           ok: true,
           duplicate: true,
-          unreadCount: summary.unreadCount,
+          unreadCount: this.countActiveUnread(now),
           notification: { required: false },
         };
       }
       throw error;
     }
 
-    const summary = this.getUnreadSummary();
     // One independent notice event per newly accepted unread (idempotency = eventId).
     return {
       ok: true,
-      unreadCount: summary.unreadCount,
+      unreadCount: active + 1,
       notification: {
         required: true,
         eventId: crypto.randomUUID(),
@@ -760,8 +882,7 @@ export class UserStateDurableObject extends DurableObject<Environment> {
   private claimUnreadRows(limit: number): UnreadDeliveryClaim[] {
     const cappedLimit = Math.min(5, Math.max(1, Math.floor(limit)));
     const now = Date.now();
-    this.cleanupExpiredUnreadItems();
-    this.recoverExpiredUnreadLeases(now);
+    this.prepareUnreadInbox(now);
     const rows = this.ctx.storage.sql
       .exec<UnreadInboxItemSqlRow>(
         `SELECT item_id, sealed_capability_enc, dedupe_tag, delivery_state,
@@ -984,10 +1105,26 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     };
   }
 
+  private deleteProfileSessionIfExpired(
+    row: Pick<ProfileSessionRow, "id" | "expires_at">
+  ): boolean {
+    if (row.expires_at === null || Date.now() <= row.expires_at) {
+      return false;
+    }
+    this.ctx.storage.sql.exec(
+      "DELETE FROM profile_sessions WHERE id = ?",
+      row.id
+    );
+    return true;
+  }
+
   private getActiveProfileSessionRow(): ProfileSessionRow | null {
     const rows = this.ctx.storage.sql
       .exec<ProfileSessionRow>(
-        `SELECT * FROM profile_sessions
+        `SELECT
+           id, version, status, current_index, total_questions,
+           answers_enc, started_at, updated_at, expires_at
+         FROM profile_sessions
          WHERE status IN ('active', 'ready_to_submit')
          ORDER BY updated_at DESC
          LIMIT 1`
@@ -999,20 +1136,31 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       return null;
     }
 
-    if (row.expires_at !== null && Date.now() > row.expires_at) {
-      this.ctx.storage.sql.exec("DELETE FROM profile_sessions WHERE id = ?", row.id);
+    if (this.deleteProfileSessionIfExpired(row)) {
       return null;
     }
 
     return row;
   }
 
-  startProfileSession(body: {
-      version: string;
-      totalQuestions: number;
-      answersEnc: string;
-    }): { ok: boolean } {
+  private hasActiveProfileSession(): boolean {
+    const row = this.ctx.storage.sql
+      .exec<Pick<ProfileSessionRow, "id" | "expires_at">>(
+        `SELECT id, expires_at
+         FROM profile_sessions
+         WHERE status IN ('active', 'ready_to_submit')
+         ORDER BY updated_at DESC
+         LIMIT 1`
+      )
+      .toArray()[0];
+    return !!row && !this.deleteProfileSessionIfExpired(row);
+  }
 
+  startProfileSession(body: {
+    version: string;
+    totalQuestions: number;
+    answersEnc: string;
+  }): { ok: boolean } {
     if (!body.version || !body.totalQuestions || !body.answersEnc) {
       return { ok: false };
     }
@@ -1059,17 +1207,21 @@ export class UserStateDurableObject extends DurableObject<Environment> {
   }
 
   updateProfileSession(body: {
-      answersEnc: string;
-      currentIndex: number;
-      status?: string;
-    }): { ok: boolean; reason?: "not_found" | "invalid" } {
-
+    answersEnc?: string;
+    currentIndex: number;
+    status?: string;
+  }):
+    | { ok: true; updatedAt: number }
+    | { ok: false; reason: "not_found" | "invalid" } {
     const row = this.getActiveProfileSessionRow();
     if (!row) {
       return { ok: false, reason: "not_found" };
     }
 
-    if (!body.answersEnc || !Number.isInteger(body.currentIndex)) {
+    if (
+      !Number.isInteger(body.currentIndex) ||
+      (body.answersEnc !== undefined && !body.answersEnc)
+    ) {
       return { ok: false, reason: "invalid" };
     }
 
@@ -1079,14 +1231,14 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       `UPDATE profile_sessions
        SET answers_enc = ?, current_index = ?, status = ?, updated_at = ?
        WHERE id = ?`,
-      body.answersEnc,
+      body.answersEnc ?? row.answers_enc,
       Math.max(0, Math.min(body.currentIndex, row.total_questions)),
       status,
       now,
       row.id
     );
 
-    return { ok: true };
+    return { ok: true, updatedAt: now };
   }
 
   deleteProfileSession(): void {
@@ -1097,7 +1249,6 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     discoverable: boolean;
     profileCapabilityEnc: string | null;
     hasActiveSession: boolean;
-    sessionStatus: string | null;
   } | null {
     const rows = this.ctx.storage.sql
       .exec<{
@@ -1113,13 +1264,10 @@ export class UserStateDurableObject extends DurableObject<Environment> {
       return null;
     }
 
-    const session = this.getActiveProfileSessionRow();
-
     return {
       discoverable: !!state.discoverable,
       profileCapabilityEnc: state.profile_capability_enc,
-      hasActiveSession: !!session,
-      sessionStatus: session?.status ?? null,
+      hasActiveSession: this.hasActiveProfileSession(),
     };
   }
 
@@ -1149,7 +1297,11 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     );
     const rows = this.ctx.storage.sql
       .exec<{ token_hash: string }>(
-        "SELECT token_hash FROM exposure_tokens WHERE expires_at > ?",
+        `SELECT token_hash
+         FROM exposure_tokens
+         WHERE expires_at > ?
+         ORDER BY expires_at DESC, token_hash ASC
+         LIMIT ${EXPOSURE_TOKEN_MAX}`,
         now
       )
       .toArray();
@@ -1157,20 +1309,54 @@ export class UserStateDurableObject extends DurableObject<Environment> {
     return { tokenHashes: rows.map((row) => row.token_hash) };
   }
 
-  recordExposureToken(tokenHash: string): void {
-    if (!tokenHash || tokenHash.length > 86) {
-      return;
+  recordExposureTokens(tokenHashes: string[]): {
+    ok: boolean;
+    recorded: number;
+  } {
+    if (
+      !Array.isArray(tokenHashes) ||
+      tokenHashes.length > EXPOSURE_TOKEN_BATCH_LIMIT ||
+      tokenHashes.some(
+        (tokenHash) =>
+          typeof tokenHash !== "string" ||
+          !tokenHash ||
+          tokenHash.length > 86
+      )
+    ) {
+      return { ok: false, recorded: 0 };
     }
 
     const now = Date.now();
     this.ctx.storage.sql.exec(
-      `INSERT INTO exposure_tokens (token_hash, created_at, expires_at)
-       VALUES (?, ?, ?)
-       ON CONFLICT(token_hash) DO UPDATE SET expires_at = excluded.expires_at`,
-      tokenHash,
-      now,
-      now + EXPOSURE_TOKEN_TTL_MS
+      "DELETE FROM exposure_tokens WHERE expires_at <= ?",
+      now
     );
+
+    const uniqueTokenHashes = [...new Set(tokenHashes)];
+    for (const tokenHash of uniqueTokenHashes) {
+      this.ctx.storage.sql.exec(
+        `INSERT INTO exposure_tokens (token_hash, created_at, expires_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(token_hash) DO UPDATE SET
+           created_at = excluded.created_at,
+           expires_at = excluded.expires_at`,
+        tokenHash,
+        now,
+        now + EXPOSURE_TOKEN_TTL_MS
+      );
+    }
+
+    this.ctx.storage.sql.exec(
+      `DELETE FROM exposure_tokens
+       WHERE token_hash IN (
+         SELECT token_hash
+         FROM exposure_tokens
+         ORDER BY created_at DESC, token_hash ASC
+         LIMIT -1 OFFSET ${EXPOSURE_TOKEN_MAX}
+       )`
+    );
+
+    return { ok: true, recorded: uniqueTokenHashes.length };
   }
 
   consumeSuggestionSearch(): { limited: boolean; remaining?: number } {

@@ -10,7 +10,6 @@ import type {
   TicketPayloadCapsule as PayloadCapsule,
 } from "../types/ticketing.model";
 import type { ResolvedTicketAction } from "../types/ticketing.actions";
-import { enqueueTelegramOutbox } from "../storage/telegram-outbox.client";
 import {
   markTicketViewed,
 } from "../storage/ticket-vault.client";
@@ -75,29 +74,6 @@ export const sendAnonymousMessage = async (
   input: SendMessageInput
 ): Promise<CreateSealedTicketResult> => createSealedTicket(env, input);
 
-export const notifyMessageSeenRoute = async (
-  env: Environment,
-  chatCiphertext: string,
-  chatHash: string,
-  idempotencyKey: string,
-  parentMessageId?: number
-): Promise<void> => {
-  const { YOUR_MESSAGE_SEEN_MESSAGE } = await import("../i18n/messages");
-
-  await enqueueTelegramOutbox(env, {
-    idempotencyKey,
-    chatCiphertext,
-    chatHash,
-    method: "sendMessage",
-    payload: {
-      text: YOUR_MESSAGE_SEEN_MESSAGE,
-      ...(parentMessageId ? { reply_to_message_id: parentMessageId } : {}),
-    },
-    priority: "low",
-    createdAt: Date.now(),
-  });
-};
-
 export const deliveryContextFromResolvedTicket = async (
   resolved: ResolvedTicketAction,
   senderLabel?: string
@@ -129,7 +105,6 @@ export const deliveryContextFromResolvedTicket = async (
 
 export const markResolvedTicketViewed = async (
   env: Environment,
-  _userId: string,
   resolved: ResolvedTicketAction
 ): Promise<void> => {
   await markTicketViewed(env, resolved.ticketHash);

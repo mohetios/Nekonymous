@@ -23,11 +23,15 @@ import {
   storeSuggestionRecord,
 } from "../storage/conversation-vault.client";
 import { upsertPairStateRecord } from "../storage/pair-ledger.client";
-import { recordExposureTokenHash } from "../storage/user-state.client";
+import { recordExposureTokenHashes } from "../storage/user-state.client";
 import type { Environment } from "../types/runtime.env";
 import { recordSuggestionDismissed } from "../stats/product-events";
 import type { RankedCandidate } from "./suggestion-ranking-types.ts";
-import { PAIR_DISMISS_COOLDOWN_MS } from "./suggestion-constants.ts";
+import {
+  MAX_SUGGESTION_RESULTS,
+  PAIR_DISMISS_COOLDOWN_MS,
+} from "./suggestion-constants.ts";
+import { mapBounded } from "../utils/concurrency.ts";
 
 export { parseSuggestionCallback } from "./suggestion-callbacks.ts";
 
@@ -46,66 +50,75 @@ const loadSuggestionRecord = async (
   suggestionHash: string
 ) => getSuggestionRecord(env, suggestionHash);
 
+const SUGGESTION_WRITE_CONCURRENCY = 4;
+
+const issueSuggestionTicket = async (
+  env: Environment,
+  actorHash: string,
+  candidate: RankedCandidate,
+  expiresAt: number
+): Promise<IssuedSuggestion> => {
+  const suggestionRef = randomSuggestionRef();
+  const suggestionHash = await createSuggestionLookupHash(
+    env.APP_MASTER_KEY,
+    suggestionRef
+  );
+  const requesterProofTag = await createConversationOwnerProofTag(
+    env.APP_MASTER_KEY,
+    actorHash,
+    suggestionHash
+  );
+
+  const routeKey = await deriveSuggestionRouteKey(
+    env.APP_MASTER_KEY,
+    suggestionHash
+  );
+  const candidateRouteEnc = await encryptEnvelope(
+    routeKey,
+    JSON.stringify({
+      candidateProfileHash: candidate.profileHash,
+    } satisfies SuggestionRouteCapsule),
+    suggestionRouteAad(suggestionHash)
+  );
+
+  const explanationKey = await deriveSuggestionExplanationKey(
+    env.APP_MASTER_KEY,
+    suggestionHash
+  );
+  const explanationEnc = await encryptEnvelope(
+    explanationKey,
+    JSON.stringify(candidate.explanation),
+    suggestionExplanationAad(suggestionHash)
+  );
+
+  await storeSuggestionRecord(env, {
+    suggestionHash,
+    requesterProofTag,
+    candidateRouteEnc,
+    pairTag: candidate.pairTag,
+    explanationEnc,
+    status: "created",
+    expiresAt,
+  });
+
+  return {
+    suggestionRef,
+    explanation: candidate.explanation,
+    pairTag: candidate.pairTag,
+  };
+};
+
 export const issueSuggestionTickets = async (
   env: Environment,
   actorHash: string,
   ranked: RankedCandidate[]
 ): Promise<IssuedSuggestion[]> => {
   const expiresAt = Date.now() + SUGGESTION_CAPABILITY_TTL_MS;
-  const issued: IssuedSuggestion[] = [];
-
-  for (const candidate of ranked) {
-    const suggestionRef = randomSuggestionRef();
-    const suggestionHash = await createSuggestionLookupHash(
-      env.APP_MASTER_KEY,
-      suggestionRef
-    );
-    const requesterProofTag = await createConversationOwnerProofTag(
-      env.APP_MASTER_KEY,
-      actorHash,
-      suggestionHash
-    );
-
-    const routeKey = await deriveSuggestionRouteKey(
-      env.APP_MASTER_KEY,
-      suggestionHash
-    );
-    const candidateRouteEnc = await encryptEnvelope(
-      routeKey,
-      JSON.stringify({
-        candidateProfileHash: candidate.profileHash,
-      } satisfies SuggestionRouteCapsule),
-      suggestionRouteAad(suggestionHash)
-    );
-
-    const explanationKey = await deriveSuggestionExplanationKey(
-      env.APP_MASTER_KEY,
-      suggestionHash
-    );
-    const explanationEnc = await encryptEnvelope(
-      explanationKey,
-      JSON.stringify(candidate.explanation),
-      suggestionExplanationAad(suggestionHash)
-    );
-
-    await storeSuggestionRecord(env, {
-      suggestionHash,
-      requesterProofTag,
-      candidateRouteEnc,
-      pairTag: candidate.pairTag,
-      explanationEnc,
-      status: "created",
-      expiresAt,
-    });
-
-    issued.push({
-      suggestionRef,
-      explanation: candidate.explanation,
-      pairTag: candidate.pairTag,
-    });
-  }
-
-  return issued;
+  return mapBounded(
+    ranked.slice(0, MAX_SUGGESTION_RESULTS),
+    SUGGESTION_WRITE_CONCURRENCY,
+    (candidate) => issueSuggestionTicket(env, actorHash, candidate, expiresAt)
+  );
 };
 
 export const recordSuggestionExposure = async (
@@ -113,10 +126,12 @@ export const recordSuggestionExposure = async (
   userId: string,
   pairTags: string[]
 ): Promise<void> => {
-  for (const pairTag of pairTags) {
-    const tokenHash = await createExposureTokenHash(env.APP_MASTER_KEY, pairTag);
-    await recordExposureTokenHash(env, userId, tokenHash);
-  }
+  const tokenHashes = await mapBounded(
+    pairTags.slice(0, MAX_SUGGESTION_RESULTS),
+    SUGGESTION_WRITE_CONCURRENCY,
+    (pairTag) => createExposureTokenHash(env.APP_MASTER_KEY, pairTag)
+  );
+  await recordExposureTokenHashes(env, userId, tokenHashes);
 };
 
 export const markSuggestionViewed = async (

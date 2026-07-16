@@ -13,6 +13,7 @@ import type {
   OutboxLaneWork,
 } from "../types/queue.outbox-lanes";
 import type { TelegramOutboxJob } from "../types/telegram.outbox";
+import type { D1User } from "../types/identity.model";
 import { sendViaOutboxDo } from "../storage/telegram-outbox.client";
 import { drainUnreadInbox } from "../ticketing/inbox";
 import { INBOX_MENU_CALLBACK } from "../bot/callback-data";
@@ -21,8 +22,11 @@ import { inboxFreshNoticeMessage } from "../i18n/messages";
 import { getUserById } from "../identity/identity-service";
 import { getUnreadSummary } from "../storage/user-state.client";
 import { logBotError } from "../utils/logs";
+import { mapBounded } from "../utils/concurrency";
 
 const OUTBOX_CHAT_CONCURRENCY = 4;
+const OUTBOX_ACCOUNT_CONCURRENCY = 4;
+type AccountUsers = ReadonlyMap<string, D1User | null>;
 
 const noticeReplyMarkup = {
   inline_keyboard: [
@@ -33,27 +37,6 @@ const noticeReplyMarkup = {
       },
     ],
   ],
-};
-
-const mapBounded = async <T>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<void>
-): Promise<void> => {
-  let index = 0;
-  const workerCount = Math.min(limit, items.length);
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (index < items.length) {
-        const current = index++;
-        const item = items[current];
-        if (item === undefined) {
-          continue;
-        }
-        await fn(item);
-      }
-    })
-  );
 };
 
 const retryMessage = (
@@ -135,7 +118,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const handleInboxNotificationMessage = async (
   message: Message<InboxNotificationJob>,
-  env: Environment
+  env: Environment,
+  accountUsers: AccountUsers
 ): Promise<void> => {
   if (!isInboxNotificationJob(message.body)) {
     logBotError(
@@ -149,14 +133,14 @@ const handleInboxNotificationMessage = async (
 
   try {
     const { accountId, eventId } = message.body;
-    const summary = await getUnreadSummary(env, accountId);
-    if (summary.unreadCount <= 0) {
+    const user = accountUsers.get(accountId);
+    if (!user) {
       message.ack();
       return;
     }
 
-    const user = await getUserById(accountId, env);
-    if (!user) {
+    const summary = await getUnreadSummary(env, accountId);
+    if (summary.unreadCount <= 0) {
       message.ack();
       return;
     }
@@ -196,7 +180,8 @@ const handleInboxNotificationMessage = async (
 
 const handleInboxDrainMessage = async (
   message: Message<InboxDrainJob>,
-  env: Environment
+  env: Environment,
+  accountUsers: AccountUsers
 ): Promise<void> => {
   if (!isInboxDrainJob(message.body)) {
     logBotError("queue:inbox-drain", new Error("Invalid inbox drain job"), {
@@ -207,7 +192,11 @@ const handleInboxDrainMessage = async (
   }
 
   try {
-    const result = await drainUnreadInbox(env, message.body.userId);
+    const result = await drainUnreadInbox(
+      env,
+      message.body.userId,
+      accountUsers.get(message.body.userId) ?? null
+    );
     if (result.status === "retry") {
       logBotError("queue:inbox-drain", new Error("Inbox drain retry"), {
         retryable: true,
@@ -226,24 +215,16 @@ const handleInboxDrainMessage = async (
   }
 };
 
-const resolveAccountChatHash = async (
-  env: Environment,
+const resolveAccountChatHash = (
   accountId: string,
-  cache: Map<string, string>
-): Promise<string> => {
-  const cached = cache.get(accountId);
-  if (cached) {
-    return cached;
-  }
-  const user = await getUserById(accountId, env);
-  const chatHash = user?.telegram_user_hash ?? `missing:${accountId}`;
-  cache.set(accountId, chatHash);
-  return chatHash;
-};
+  accountUsers: AccountUsers
+): string =>
+  accountUsers.get(accountId)?.telegram_user_hash ?? `missing:${accountId}`;
 
 const processChatLane = async (
   orderedWork: OrderedOutboxLaneWork[],
-  env: Environment
+  env: Environment,
+  accountUsers: AccountUsers
 ): Promise<void> => {
   const sorted = [...orderedWork].sort((left, right) => left.order - right.order);
   const telegramMessages: Message<TelegramOutboxJob>[] = [];
@@ -258,10 +239,14 @@ const processChatLane = async (
       telegramMessages.length = 0;
     }
     if (entry.work.type === "drain") {
-      await handleInboxDrainMessage(entry.work.message, env);
+      await handleInboxDrainMessage(entry.work.message, env, accountUsers);
       continue;
     }
-    await handleInboxNotificationMessage(entry.work.message, env);
+    await handleInboxNotificationMessage(
+      entry.work.message,
+      env,
+      accountUsers
+    );
   }
 
   if (telegramMessages.length > 0) {
@@ -273,8 +258,23 @@ export const handleOutboxBatch = async (
   batch: MessageBatch<OutboxQueueJob>,
   env: Environment
 ): Promise<void> => {
+  const accountIds = new Set<string>();
+  for (const message of batch.messages) {
+    if (isInboxDrainJob(message.body)) {
+      accountIds.add(message.body.userId);
+    } else if (isInboxNotificationJob(message.body)) {
+      accountIds.add(message.body.accountId);
+    }
+  }
+  const accountEntries = await mapBounded(
+    [...accountIds],
+    OUTBOX_ACCOUNT_CONCURRENCY,
+    async (accountId) =>
+      [accountId, await getUserById(accountId, env)] as const
+  );
+  const accountUsers: AccountUsers = new Map(accountEntries);
+
   const lanes = new Map<string, OrderedOutboxLaneWork[]>();
-  const accountChatHash = new Map<string, string>();
   let order = 0;
 
   const appendLaneWork = (chatHash: string, work: OutboxLaneWork): void => {
@@ -323,10 +323,9 @@ export const handleOutboxBatch = async (
         message.ack();
         continue;
       }
-      const chatHash = await resolveAccountChatHash(
-        env,
+      const chatHash = resolveAccountChatHash(
         drainMessage.body.userId,
-        accountChatHash
+        accountUsers
       );
       appendLaneWork(chatHash, { type: "drain", message: drainMessage });
       continue;
@@ -342,10 +341,9 @@ export const handleOutboxBatch = async (
         message.ack();
         continue;
       }
-      const chatHash = await resolveAccountChatHash(
-        env,
+      const chatHash = resolveAccountChatHash(
         notificationMessage.body.accountId,
-        accountChatHash
+        accountUsers
       );
       appendLaneWork(chatHash, {
         type: "notification",
@@ -367,6 +365,6 @@ export const handleOutboxBatch = async (
   }
 
   await mapBounded([...lanes.values()], OUTBOX_CHAT_CONCURRENCY, (orderedWork) =>
-    processChatLane(orderedWork, env)
+    processChatLane(orderedWork, env, accountUsers)
   );
 };

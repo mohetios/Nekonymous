@@ -1,4 +1,3 @@
-import type { Context } from "grammy";
 import type { Environment } from "../types/runtime.env";
 import { decryptEnvelope } from "./envelope";
 import {
@@ -8,7 +7,6 @@ import {
   routeAad,
 } from "./keys";
 import { constantTimeEqual } from "./hmac";
-import { hmacTelegramUserId } from "./ticketing-service";
 import {
   getTicketRecord,
   TicketExpiredError,
@@ -47,14 +45,11 @@ const isRouteCapsule = (value: unknown): value is RouteCapsule => {
 };
 
 export const resolveTicketAction = async (
-  ctx: Context | null,
   env: Environment,
   action: TicketActionKind,
   ticketRef: string,
-  actor?: { actorHash?: string; actorUserId?: string }
+  actor: { actorHash: string; actorUserId: string }
 ): Promise<ResolveTicketActionResult | null> => {
-  const from = ctx?.from;
-
   let capability;
   try {
     capability = parseTicketCapability(ticketRef);
@@ -62,21 +57,12 @@ export const resolveTicketAction = async (
     return null;
   }
 
-  const actorUserId = actor?.actorUserId;
-  if (!actorUserId) {
-    return null;
-  }
-  const resolvedActorHash =
-    actor?.actorHash ??
-    (from ? await hmacTelegramUserId(env.APP_HMAC_PEPPER, from.id) : null);
-  if (!resolvedActorHash) {
-    return null;
-  }
+  const { actorHash, actorUserId } = actor;
   const ticketHash = await createTicketHash(env.APP_HMAC_PEPPER, capability);
 
   const ownerProofCandidate = await createOwnerProofTag(
     env.APP_HMAC_PEPPER,
-    resolvedActorHash,
+    actorHash,
     actorUserId,
     ticketHash
   );
@@ -117,7 +103,7 @@ export const resolveTicketAction = async (
     action,
     ticketRef,
     ticketHash,
-    actorHash: resolvedActorHash,
+    actorHash,
     actorUserId,
     ticket,
     routeKey: keys.routeKey,

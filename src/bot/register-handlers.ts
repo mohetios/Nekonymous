@@ -39,6 +39,7 @@ import {
   INBOX_MENU_CALLBACK,
   inboxCallbackQueryRegex,
 } from "../bot/callback-data";
+import { answerCallbackSafely } from "./context";
 
 const isCommandMessage = (message: Message): boolean =>
   message.text?.startsWith("/") === true ||
@@ -124,7 +125,7 @@ export const registerHandlers = (bot: Bot, env: Environment): void => {
   );
 
   bot.callbackQuery(/.+/, async (ctx) => {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     await ctx.reply(EXPIRED_CALLBACK_MESSAGE, { reply_markup: mainMenu });
   });
 };

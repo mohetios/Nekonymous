@@ -1,15 +1,14 @@
 import type { Environment } from "../types/runtime.env";
 import {
-  getProfileDashboardMeta,
   isProfileSearchReady,
-  loadRequesterProfileContext,
+  loadProfileHubState,
 } from "../profile/profile-service.ts";
 import type { SuggestionHubMenuOptions } from "./suggestion-types.ts";
 import { SUGGESTION_HUB_STATUS } from "../i18n/conversation-suggestions-ui.ts";
 import { ASSESSMENT_BUTTON } from "../i18n/labels.ts";
 import { buildProfileHubSummaryHtml } from "../profile/profile-summary.ts";
 
-export type SuggestionHubView = {
+type SuggestionHubView = {
   assessmentLine: string;
   discoverabilityLine: string;
   pendingLine: string;
@@ -22,10 +21,7 @@ export const buildSuggestionHubView = async (
   env: Environment,
   userId: string
 ): Promise<SuggestionHubView> => {
-  const [meta, profileContext] = await Promise.all([
-    getProfileDashboardMeta(env, userId),
-    loadRequesterProfileContext(env, userId),
-  ]);
+  const { meta, profileContext } = await loadProfileHubState(env, userId);
 
   const assessmentLine = meta.hasActiveSession
     ? SUGGESTION_HUB_STATUS.assessmentInProgress

@@ -16,39 +16,11 @@ import { filterEligibleCandidates } from "./eligibility.ts";
 import { rerankWithExposure } from "./exposure-reranker.ts";
 import type { RetrievalRequest } from "../types/conversation.retrieval";
 import { logBotError } from "../utils/logs.ts";
+import { mapBounded } from "../utils/concurrency.ts";
 
 export type SuggestionSearchResult =
   | { ok: true; results: RankedCandidate[]; remainingSearches?: number }
   | { ok: false; reason: "search_limited" | "no_candidates" | "search_failed" };
-
-const mapBounded = async <T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> => {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const results: R[] = [];
-  let index = 0;
-  const workerCount = Math.min(limit, items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (index < items.length) {
-        const current = index++;
-        const item = items[current];
-        if (item === undefined) {
-          continue;
-        }
-        results.push(await fn(item));
-      }
-    })
-  );
-
-  return results;
-};
 
 const buildPairTagMap = async (
   env: Environment,

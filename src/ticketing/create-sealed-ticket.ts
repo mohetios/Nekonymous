@@ -11,7 +11,6 @@ import {
   routeAad,
 } from "./keys";
 import { createTicketCapability, createDeterministicTicketCapability, encodeTicketCapability } from "./ticket-capability";
-import { ensureUserStateInitialized } from "../identity/identity-service";
 import {
   addUnreadItem,
   checkCanReceive,
@@ -180,8 +179,6 @@ export const createSealedTicket = async (
 
   let unreadAccepted = false;
   try {
-    await ensureUserStateInitialized(env, input.recipient.id);
-
     const dedupeTag = await createUnreadInboxDedupeTag(
       env.APP_HMAC_PEPPER,
       ticketHash

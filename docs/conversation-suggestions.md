@@ -250,6 +250,8 @@ Pair and request records follow bounded retention/cooldown rules and do not crea
 - final ranking is deterministic and CPU-bounded;
 - Queue payloads do not contain profile JSON;
 - no D1 candidate retrieval or full vault scan;
+- each search records at most 5 exposure tokens in one UserState RPC;
+- active exposure history is capped at 500 token hashes per user;
 - exposure and rate budgets are recipient-local or pair-local.
 
 ## Product language

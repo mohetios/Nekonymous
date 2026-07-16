@@ -23,7 +23,7 @@ export const sanitizeDisplayName = (input: string): string | null => {
 };
 
 export const publicDisplayName = (
-  user: BotUser | null | undefined,
+  user: Pick<BotUser, "displayName"> | null | undefined,
   defaultName = DISPLAY_NAME_DEFAULT
 ): string => {
   const name = user?.displayName?.trim();

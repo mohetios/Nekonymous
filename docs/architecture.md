@@ -248,7 +248,7 @@ Outbox jobs use stable idempotency keys. The consumer groups work by chat and pr
 - seven-day bounded idempotency retention;
 - alarm-based cleanup.
 
-Seen receipts are disabled by default to avoid doubling Outbox traffic.
+Seen receipts are disabled and do not create Outbox traffic.
 
 ## Identity and hard reset
 

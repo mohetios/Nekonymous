@@ -29,6 +29,7 @@ import {
   setDiscoverable as setUserDiscoverable,
   setProfileCapabilityEnc as setUserProfileCapabilityEnc,
 } from "../storage/user-state.client";
+import type { ProfileMeta } from "../storage/user-state.client";
 import type { Environment } from "../types/runtime.env";
 import { INDEX_JOB_CAPABILITY_TTL_MS } from "../ticketing/conversation-capabilities";
 import type { ProfileRouteCapsule } from "../ticketing/conversation-capabilities";
@@ -46,6 +47,12 @@ import {
 import { profileRouteIsSearchReady } from "./profile-readiness.ts";
 
 const capabilityScope = (userId: string): string => `profile-capability:${userId}`;
+const READABLE_PROFILE_STATUSES = new Set<ProfileVaultRecordStatus>([
+  "private",
+  "indexing",
+  "discoverable",
+  "index_failed",
+]);
 
 const encryptProfileRef = async (
   userId: string,
@@ -85,23 +92,13 @@ const resolveNextRevision = async (
   return (record?.revision ?? 0) + 1;
 };
 
-export const prepareProfileRetake = async (
-  env: Environment,
-  userId: string
-): Promise<void> => {
-  await setUserDiscoverable(env, userId, false);
-  await clearProfileSession(env, userId);
-};
-
 export const finalizeProfileSession = async (
   env: Environment,
   userId: string,
   actorHash: string,
   locale: ProfileLocale
 ): Promise<{
-  profile: ConversationProfile;
   summaryText: string;
-  revision: number;
 }> => {
   const session = await getProfileSession(env, userId);
   if (!session || !hasCompleteAnswers(session.answers)) {
@@ -198,54 +195,27 @@ export const finalizeProfileSession = async (
   await clearProfileSession(env, userId);
 
   return {
-    profile: built.profile,
     summaryText: built.summaryText,
-    revision,
   };
 };
 
-export const getProfileDashboardMeta = async (
-  env: Environment,
-  userId: string
-): Promise<{
+type ProfileHubMeta = {
   hasProfile: boolean;
   discoverable: boolean;
   hasActiveSession: boolean;
-  sessionStatus: string | null;
-  revision: number | null;
-}> => {
-  const meta = await getUserProfileMeta(env, userId);
-  const profileRef = await decryptStoredProfileRef(
-    userId,
-    meta.profileCapabilityEnc,
-    env.APP_MASTER_KEY
-  );
-
-  let revision: number | null = null;
-  if (profileRef) {
-    const profileHash = await createProfileLookupHash(
-      env.APP_MASTER_KEY,
-      profileRef
-    );
-    const record = await getProfileRecord(env, profileHash);
-    revision = record?.revision ?? null;
-  }
-
-  return {
-    hasProfile: !!profileRef,
-    discoverable: meta.discoverable,
-    hasActiveSession: meta.hasActiveSession,
-    sessionStatus: meta.sessionStatus,
-    revision,
-  };
 };
 
-const READABLE_PROFILE_STATUSES = new Set<ProfileVaultRecordStatus>([
-  "private",
-  "indexing",
-  "discoverable",
-  "index_failed",
-]);
+const toProfileHubMeta = (meta: ProfileMeta): ProfileHubMeta => ({
+  hasProfile: meta.profileCapabilityEnc !== null,
+  discoverable: meta.discoverable,
+  hasActiveSession: meta.hasActiveSession,
+});
+
+export const hasFinalizedProfile = async (
+  env: Environment,
+  userId: string
+): Promise<boolean> =>
+  (await getUserProfileMeta(env, userId)).profileCapabilityEnc !== null;
 
 export type RequesterProfileContext =
   | {
@@ -268,11 +238,11 @@ export const isProfileSearchReady = (
 ): context is SearchReadyProfileContext =>
   context.ok && context.searchReady;
 
-export const loadRequesterProfileContext = async (
+const loadRequesterProfileContextFromMeta = async (
   env: Environment,
-  userId: string
+  userId: string,
+  meta: ProfileMeta
 ): Promise<RequesterProfileContext> => {
-  const meta = await getUserProfileMeta(env, userId);
   const profileRef = await decryptStoredProfileRef(
     userId,
     meta.profileCapabilityEnc,
@@ -335,15 +305,45 @@ export const loadRequesterProfileContext = async (
   };
 };
 
+export const loadRequesterProfileContext = async (
+  env: Environment,
+  userId: string
+): Promise<RequesterProfileContext> =>
+  loadRequesterProfileContextFromMeta(
+    env,
+    userId,
+    await getUserProfileMeta(env, userId)
+  );
+
+export const loadProfileHubState = async (
+  env: Environment,
+  userId: string
+): Promise<{
+  meta: ProfileHubMeta;
+  profileContext: RequesterProfileContext;
+}> => {
+  const userProfileMeta = await getUserProfileMeta(env, userId);
+  return {
+    meta: toProfileHubMeta(userProfileMeta),
+    profileContext: await loadRequesterProfileContextFromMeta(
+      env,
+      userId,
+      userProfileMeta
+    ),
+  };
+};
+
 const refreshProfileDeliveryRoute = async (
   env: Environment,
   profileHash: string,
   revision: number,
-  deliveryUserId: string | undefined
+  deliveryUserId: string | undefined,
+  currentRouteEnc?: string
 ): Promise<void> => {
-  const existing = await getProfileRecord(env, profileHash);
+  const existingRouteEnc =
+    currentRouteEnc ?? (await getProfileRecord(env, profileHash))?.routeEnc;
   let previousRoute: ProfileRouteCapsule | null = null;
-  if (existing) {
+  if (existingRouteEnc) {
     try {
       const existingRouteKey = await deriveProfileRouteKey(
         env.APP_MASTER_KEY,
@@ -351,7 +351,7 @@ const refreshProfileDeliveryRoute = async (
       );
       previousRoute = await decryptEnvelope<ProfileRouteCapsule>(
         existingRouteKey,
-        existing.routeEnc,
+        existingRouteEnc,
         profileRouteAad(profileHash)
       );
     } catch {
@@ -375,6 +375,39 @@ const refreshProfileDeliveryRoute = async (
     profileRouteAad(profileHash)
   );
   await updateProfileRouteEnc(env, profileHash, routeEnc);
+};
+
+export const prepareProfileRetake = async (
+  env: Environment,
+  userId: string
+): Promise<void> => {
+  const meta = await getUserProfileMeta(env, userId);
+  const profileRef = await decryptStoredProfileRef(
+    userId,
+    meta.profileCapabilityEnc,
+    env.APP_MASTER_KEY
+  );
+
+  if (profileRef) {
+    const profileHash = await createProfileLookupHash(
+      env.APP_MASTER_KEY,
+      profileRef
+    );
+    const record = await getProfileRecord(env, profileHash);
+    if (record && READABLE_PROFILE_STATUSES.has(record.status)) {
+      await setProfileStatus(env, profileHash, "private", record.revision);
+      await refreshProfileDeliveryRoute(
+        env,
+        profileHash,
+        record.revision,
+        undefined,
+        record.routeEnc
+      );
+    }
+  }
+
+  await setUserDiscoverable(env, userId, false);
+  await clearProfileSession(env, userId);
 };
 
 export const setConversationDiscoverability = async (

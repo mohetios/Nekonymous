@@ -1,6 +1,10 @@
 import type { Context } from "grammy";
 import type { Environment } from "../types/runtime.env";
-import { getResolvedUser } from "../bot/context";
+import {
+  answerCallbackSafely,
+  deferContextWork,
+  getResolvedUser,
+} from "../bot/context";
 import { createMessageKeyboard } from "../bot/keyboards";
 import {
   buildDraftCancelKeyboard,
@@ -25,7 +29,6 @@ import {
 import {
   getActiveSlugForUser,
   getUserByTelegramHash,
-  toBotUser,
 } from "../identity/identity-service";
 import {
   addBlock,
@@ -60,7 +63,7 @@ const loadAction = async (
   if (!ticketRef) {
     return null;
   }
-  return resolveTicketAction(ctx, env, action, ticketRef, actor);
+  return resolveTicketAction(env, action, ticketRef, actor);
 };
 
 const replyExpiredTicket = async (ctx: Context): Promise<void> => {
@@ -73,13 +76,13 @@ export const handleReplyAction = async (
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   if (callbackMessageId === undefined || !ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
 
+  await answerCallbackSafely(ctx);
   try {
     const d1User = await getResolvedUser(ctx, env);
-    const user = await toBotUser(d1User, env);
     const resolved = await loadAction(
       ctx,
       env,
@@ -89,25 +92,21 @@ export const handleReplyAction = async (
 
     if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (isExpiredTicketAction(resolved)) {
       await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (!resolved.route.replyPolicy.canReply) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (resolved.route.replyRouteTag === d1User.telegram_user_hash) {
       await ctx.reply(SELF_MESSAGE_DISABLE_MESSAGE);
-      await ctx.answerCallbackQuery();
       return;
     }
 
@@ -117,24 +116,22 @@ export const handleReplyAction = async (
     );
     if (!senderD1) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     const senderSlug = await getActiveSlugForUser(senderD1.id, env);
     if (!senderSlug) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     const senderLabel = await getContactLabel(
       env,
-      user.id,
+      d1User.id,
       resolved.route.contactTag
     );
 
-    await setDraft(env, user.id, {
+    await setDraft(env, d1User.id, {
       id: "primary",
       mode: "reply",
       toUserId: senderD1.id,
@@ -155,8 +152,6 @@ export const handleReplyAction = async (
   } catch (error) {
     logBotError("reply:action", error);
     await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };
 
@@ -167,13 +162,13 @@ export const handleBlockAction = async (
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const chatId = ctx.chat?.id;
   if (callbackMessageId === undefined || chatId === undefined || !ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
 
+  await answerCallbackSafely(ctx);
   try {
     const d1User = await getResolvedUser(ctx, env);
-    const user = await toBotUser(d1User, env);
     const resolved = await loadAction(
       ctx,
       env,
@@ -182,19 +177,21 @@ export const handleBlockAction = async (
     );
     if (!resolved) {
       await ctx.reply(HuhMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (isExpiredTicketAction(resolved)) {
       await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
       return;
     }
 
-    const { inserted } = await addBlock(env, user.id, resolved.route.blockTag);
+    const { inserted } = await addBlock(
+      env,
+      d1User.id,
+      resolved.route.blockTag
+    );
     if (inserted) {
-      await recordBlockCreated(env);
+      await deferContextWork(ctx, recordBlockCreated(env));
     }
 
     try {
@@ -212,8 +209,6 @@ export const handleBlockAction = async (
   } catch (error) {
     logBotError("block:action", error);
     await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };
 
@@ -224,13 +219,13 @@ export const handleUnblockAction = async (
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   const chatId = ctx.chat?.id;
   if (callbackMessageId === undefined || chatId === undefined || !ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
 
+  await answerCallbackSafely(ctx);
   try {
     const d1User = await getResolvedUser(ctx, env);
-    const user = await toBotUser(d1User, env);
     const resolved = await loadAction(
       ctx,
       env,
@@ -239,23 +234,23 @@ export const handleUnblockAction = async (
     );
     if (!resolved) {
       await ctx.reply(HuhMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (isExpiredTicketAction(resolved)) {
       await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
       return;
     }
 
-    if (!user.blockTags.includes(resolved.route.blockTag)) {
+    const { removed } = await removeBlock(
+      env,
+      d1User.id,
+      resolved.route.blockTag
+    );
+    if (!removed) {
       await ctx.reply(HuhMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
-
-    await removeBlock(env, user.id, resolved.route.blockTag);
 
     try {
       await ctx.api.sendMessage(
@@ -272,8 +267,6 @@ export const handleUnblockAction = async (
   } catch (error) {
     logBotError("unblock:action", error);
     await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };
 
@@ -283,13 +276,13 @@ export const handleNicknameAction = async (
 ): Promise<void> => {
   const callbackMessageId = ctx.callbackQuery?.message?.message_id;
   if (callbackMessageId === undefined || !ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
 
+  await answerCallbackSafely(ctx);
   try {
     const d1User = await getResolvedUser(ctx, env);
-    const user = await toBotUser(d1User, env);
     const resolved = await loadAction(
       ctx,
       env,
@@ -298,20 +291,18 @@ export const handleNicknameAction = async (
     );
     if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (isExpiredTicketAction(resolved)) {
       await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     const currentNick =
-      (await getContactLabel(env, user.id, resolved.route.contactTag)) ?? "-";
+      (await getContactLabel(env, d1User.id, resolved.route.contactTag)) ?? "-";
 
-    await setDraft(env, user.id, {
+    await setDraft(env, d1User.id, {
       id: "primary",
       mode: "nickname",
       pendingNicknameContactTag: resolved.route.contactTag,
@@ -328,8 +319,6 @@ export const handleNicknameAction = async (
   } catch (error) {
     logBotError("nickname:action", error);
     await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };
 
@@ -338,10 +327,11 @@ export const handleReportAction = async (
   env: Environment
 ): Promise<void> => {
   if (!ctx.from) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
 
+  await answerCallbackSafely(ctx);
   try {
     const d1User = await getResolvedUser(ctx, env);
     const resolved = await loadAction(
@@ -352,13 +342,11 @@ export const handleReportAction = async (
     );
     if (!resolved) {
       await ctx.reply(NoConversationFoundMessage);
-      await ctx.answerCallbackQuery();
       return;
     }
 
     if (isExpiredTicketAction(resolved)) {
       await replyExpiredTicket(ctx);
-      await ctx.answerCallbackQuery();
       return;
     }
 
@@ -369,7 +357,10 @@ export const handleReportAction = async (
       reasonCode: "inbox_report",
     });
     if (!report.duplicate) {
-      await recordReportCreated(env, "inbox_report");
+      await deferContextWork(
+        ctx,
+        recordReportCreated(env, "inbox_report")
+      );
     }
     try {
       await ctx.reply(REPORT_SUBMITTED_MESSAGE, withHtml());
@@ -379,7 +370,5 @@ export const handleReportAction = async (
   } catch (error) {
     logBotError("report:action", error);
     await ctx.reply(HuhMessage);
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };

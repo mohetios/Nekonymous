@@ -88,6 +88,10 @@ export type CreateConversationRequestInput = {
   suggestionRef?: string;
 };
 
+type ScheduleRequestSideEffects = (
+  work: Promise<unknown>
+) => Promise<void>;
+
 const REQUEST_ACCEPT_LEASE_MS = 30 * 1000;
 
 const requestAcceptOperationId = (requestHash: string): string =>
@@ -98,6 +102,17 @@ const loadRequestRecord = async (env: Environment, requestHash: string) =>
 
 const loadProfileRecord = async (env: Environment, profileHash: string) =>
   getProfileRecord(env, profileHash);
+
+const finishSideEffects = async (
+  work: Promise<unknown>,
+  schedule?: ScheduleRequestSideEffects
+): Promise<void> => {
+  if (schedule) {
+    await schedule(work);
+    return;
+  }
+  await work;
+};
 
 const profileCanCreateRequest = async (
   env: Environment,
@@ -131,7 +146,8 @@ const mapRequestError = (error: unknown): RequestActionResult => {
 
 export const createConversationRequest = async (
   env: Environment,
-  input: CreateConversationRequestInput
+  input: CreateConversationRequestInput,
+  scheduleSideEffects?: ScheduleRequestSideEffects
 ): Promise<RequestActionResult & { request?: IssuedRequest }> => {
   const introText = input.introText.trim();
   if (!introText) {
@@ -247,18 +263,22 @@ export const createConversationRequest = async (
     }
   }
 
-  // Stats and notification are deferred side effects after durable accept.
-  await recordRequestSent(env).catch((error) =>
-    logBotError("conversation-request:stats", error)
+  await finishSideEffects(
+    Promise.all([
+      recordRequestSent(env).catch((error) =>
+        logBotError("conversation-request:stats", error)
+      ),
+      notifyIncomingConversationRequest(
+        env,
+        candidateUserId,
+        requestRef,
+        requestHash,
+        introText,
+        input.explanation
+      ).catch((error) => logBotError("conversation-request:notify", error)),
+    ]),
+    scheduleSideEffects
   );
-  await notifyIncomingConversationRequest(
-    env,
-    input.candidateProfileHash,
-    requestRef,
-    requestHash,
-    introText,
-    input.explanation
-  ).catch((error) => logBotError("conversation-request:notify", error));
 
   return {
     ok: true,
@@ -269,7 +289,8 @@ export const createConversationRequest = async (
 export const cancelConversationRequest = async (
   env: Environment,
   requesterActorHash: string,
-  requestRef: string
+  requestRef: string,
+  scheduleSideEffects?: ScheduleRequestSideEffects
 ): Promise<RequestActionResult> => {
   try {
     const resolved = await resolveRequestCapability(
@@ -285,17 +306,22 @@ export const cancelConversationRequest = async (
     if (!resolved.route) {
       return { ok: false, reason: "invalid" };
     }
+    const route = resolved.route;
+    const { requestHash } = resolved;
 
     await setRequestStatus(
       env,
-      resolved.requestHash,
+      requestHash,
       "canceled",
       resolved.status,
       true
     );
-    await releasePairPendingLock(env, resolved.route.pairTag);
-    await recordRequestCanceled(env).catch((error) =>
-      logBotError("conversation-request:cancel-stats", error)
+    await releasePairPendingLock(env, route.pairTag);
+    await finishSideEffects(
+      recordRequestCanceled(env).catch((error) =>
+        logBotError("conversation-request:cancel-stats", error)
+      ),
+      scheduleSideEffects
     );
     return { ok: true };
   } catch (error) {
@@ -306,7 +332,8 @@ export const cancelConversationRequest = async (
 export const declineConversationRequest = async (
   env: Environment,
   candidateActorHash: string,
-  requestRef: string
+  requestRef: string,
+  scheduleSideEffects?: ScheduleRequestSideEffects
 ): Promise<RequestActionResult> => {
   try {
     const resolved = await resolveRequestForCandidate(
@@ -323,27 +350,40 @@ export const declineConversationRequest = async (
     if (!resolved.route) {
       return { ok: false, reason: "invalid" };
     }
+    const route = resolved.route;
+    const { requestHash } = resolved;
 
     await setRequestStatus(
       env,
-      resolved.requestHash,
+      requestHash,
       "declined",
       resolved.status,
       true
     );
     await upsertPairStateRecord(env, {
-      pairTag: resolved.route.pairTag,
+      pairTag: route.pairTag,
       state: "declined_cooldown",
       expiresAt: Date.now() + PAIR_DECLINED_COOLDOWN_MS,
     });
-    const requester = await getUserById(resolved.route.requesterUserId, env);
-    if (requester) {
-      await notifyRequesterDeclined(env, requester, resolved.requestHash).catch(
-        (error) => logBotError("conversation-request:decline-notify", error)
-      );
-    }
-    await recordRequestDeclined(env).catch((error) =>
-      logBotError("conversation-request:decline-stats", error)
+    await finishSideEffects(
+      (async () => {
+        const requester = await getUserById(route.requesterUserId, env);
+        await Promise.all([
+          requester
+            ? notifyRequesterDeclined(
+                env,
+                requester,
+                requestHash
+              ).catch((error) =>
+                logBotError("conversation-request:decline-notify", error)
+              )
+            : Promise.resolve(),
+          recordRequestDeclined(env).catch((error) =>
+            logBotError("conversation-request:decline-stats", error)
+          ),
+        ]);
+      })(),
+      scheduleSideEffects
     );
     return { ok: true };
   } catch (error) {
@@ -355,7 +395,8 @@ export const acceptConversationRequest = async (
   env: Environment,
   candidateUser: D1User,
   candidateActorHash: string,
-  requestRef: string
+  requestRef: string,
+  scheduleSideEffects?: ScheduleRequestSideEffects
 ): Promise<RequestActionResult> => {
   try {
     const resolved = await resolveRequestForCandidate(
@@ -445,11 +486,16 @@ export const acceptConversationRequest = async (
       expiresAt: Date.now() + PAIR_ACCEPTED_COOLDOWN_MS,
     });
 
-    await notifyRequesterAccepted(env, requester, resolved.requestHash).catch(
-      (error) => logBotError("conversation-request:accept-notify", error)
-    );
-    await recordRequestAccepted(env).catch((error) =>
-      logBotError("conversation-request:accept-stats", error)
+    await finishSideEffects(
+      Promise.all([
+        notifyRequesterAccepted(env, requester, resolved.requestHash).catch(
+          (error) => logBotError("conversation-request:accept-notify", error)
+        ),
+        recordRequestAccepted(env).catch((error) =>
+          logBotError("conversation-request:accept-stats", error)
+        ),
+      ]),
+      scheduleSideEffects
     );
     return { ok: true };
   } catch (error) {

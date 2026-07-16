@@ -5,40 +5,12 @@ import type {
   PairStateRecord,
   UpsertPairStateInput,
 } from "./pair-ledger.types";
+import { mapBounded } from "../utils/concurrency";
 
 const stub = (env: Environment, pairTag: string) =>
   env.PAIR_LEDGER_DO.get(
     env.PAIR_LEDGER_DO.idFromName(shardNameForLookupHash("pair", pairTag))
   );
-
-const mapBounded = async <T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>
-): Promise<R[]> => {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const results: R[] = [];
-  let index = 0;
-  const workerCount = Math.min(limit, items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (index < items.length) {
-        const current = index++;
-        const item = items[current];
-        if (item === undefined) {
-          continue;
-        }
-        results.push(await fn(item));
-      }
-    })
-  );
-
-  return results;
-};
 
 export const getPairStatesBatch = async (
   env: Environment,

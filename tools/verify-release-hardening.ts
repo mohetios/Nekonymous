@@ -116,6 +116,16 @@ assertIncludes(createSealedTicket, "createAbuseSubjectTag", "new tickets must de
 assertIncludes(createSealedTicket, "getSafetyDecision", "new tickets must check safety state");
 assertIncludes(createSealedTicket, "sealUnreadCapability", "new tickets must seal capability into unread row");
 assertIncludes(createSealedTicket, "addUnreadItem", "new tickets must create unread delivery queue item");
+assertNotIncludes(
+  createSealedTicket,
+  "ensureUserStateInitialized",
+  "ticket creation must not add a redundant UserState initialization RPC"
+);
+assertIncludes(
+  userState,
+  "this.getUserId() !== userId",
+  "unread admission must stay bound to the current internal account"
+);
 assertIncludes(createSealedTicket, "unreadAccepted = true", "ticket creation must mark unread acceptance before notification enqueue");
 assertIncludes(
   createSealedTicket,
@@ -204,8 +214,31 @@ assertNotIncludes(
 assertIncludes(identity, "listUnreadItemsForReset", "reset must inspect unread items before purging");
 assertIncludes(identity, "openUnreadCapability", "reset must decrypt unread capabilities in memory");
 assertIncludes(identity, "deleteTicketRecord", "reset must delete unread ticket records");
-assertIncludes(identity, "DurableObjectCallError", "user state init must fail closed on storage errors");
-assertIncludes(identity, "error.status === 404", "user state init must only run on explicit 404");
+assertIncludes(
+  identity,
+  "await initUserState(env, existing.id);",
+  "duplicate user creation must repair missing UserState before returning"
+);
+assertNotIncludes(
+  identity,
+  "ensureUserStateInitialized",
+  "single-use UserState initialization wrappers must stay removed"
+);
+assertNotIncludes(
+  identity.slice(identity.indexOf("export const resolveOrCreateUser")),
+  "initUserState(env, existing.id)",
+  "normal identity resolution must not add a redundant UserState read"
+);
+assertIncludes(
+  userState,
+  "return this.initState(userId).ok",
+  "hot-path UserState calls must recover missing state in the same RPC"
+);
+assertIncludes(
+  userState,
+  "return existingUserId === userId",
+  "hot-path UserState initialization must fail closed on account mismatch"
+);
 assertNotIncludes(identity, "state.labels", "toBotUser must not bulk-load contact labels");
 assertNotIncludes(identity, "contactLabels:", "BotUser must not carry bulk contactLabels");
 
@@ -322,10 +355,10 @@ assertIncludes(
   "inbox:finalization-stale",
   "payload-cleared but unread-completion miss must log finalization-stale"
 );
-assertIncludes(
+assertNotIncludes(
   inbox,
-  "SEEN_RECEIPTS_ENABLED",
-  "seen receipts must be gated behind an explicit product switch"
+  "seen:",
+  "disabled seen receipts must not create Telegram outbox traffic"
 );
 assertIncludes(
   inbox,

@@ -131,8 +131,6 @@ export const INBOX_DELIVERY_REQUESTED_MESSAGE =
 export const EXPIRED_TICKET_MESSAGE =
   "این پیام منقضی شده و دیگه در دسترس نیست.";
 
-export const YOUR_MESSAGE_SEEN_MESSAGE = "گیرنده پیامت رو دید.";
-
 export const RATE_LIMIT_MESSAGE =
   "یه کم آروم‌تر 😼\n\nچند ثانیه دیگه دوباره امتحان کن.";
 

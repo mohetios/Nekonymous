@@ -42,7 +42,7 @@ export const handleMainMenuCommand = async (
       await handleInboxCommand(ctx, env);
       return true;
     case MENU.matchSystem:
-      await renderSuggestionHub(ctx, env, user.id);
+      await renderSuggestionHub(ctx, env);
       return true;
     case MENU.settings:
       await renderSettingsHome(ctx, user);

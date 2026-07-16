@@ -11,12 +11,12 @@ import {
   hmacTelegramUserId,
 } from "../ticketing/ticketing-service";
 import {
+  getContactEntryState,
   getUserState,
   initUserState,
   listUnreadItemsForReset,
   purgeUserState,
 } from "../storage/user-state.client";
-import { isDurableObjectCallError } from "../storage/durable-object-call-error";
 import { invalidateUserConversationProfile } from "../profile/profile-service";
 import { deleteTicketRecord } from "../storage/ticket-vault.client";
 import { createTicketHash } from "../ticketing/keys";
@@ -73,21 +73,6 @@ const kvDelete = async (env: Environment, key: string): Promise<void> => {
     await env.NEKO_KV.delete(key);
   } catch (error) {
     logBotError("kv:delete", error);
-  }
-};
-
-export const ensureUserStateInitialized = async (
-  env: Environment,
-  userId: string
-): Promise<void> => {
-  try {
-    await getUserState(env, userId);
-  } catch (error) {
-    if (isDurableObjectCallError(error) && error.status === 404) {
-      await initUserState(env, userId);
-      return;
-    }
-    throw error;
   }
 };
 
@@ -352,7 +337,7 @@ export const createUserFromTelegram = async (
   if ((await insertUserAndLink()) === "duplicate") {
     const existing = await getUserByTelegramHash(telegramHash, env);
     if (existing) {
-      await ensureUserStateInitialized(env, existing.id);
+      await initUserState(env, existing.id);
       return refreshTelegramChatIdIfNeeded(ctx, existing, env);
     }
 
@@ -366,10 +351,11 @@ export const createUserFromTelegram = async (
     }
   }
 
-  await cacheUserRouting(env, userId, telegramHash, slug);
-  await initUserState(env, userId, displayCiphertext);
-  await recordUserCreated(env);
-  await recordLinkCreated(env);
+  await Promise.all([
+    cacheUserRouting(env, userId, telegramHash, slug),
+    initUserState(env, userId, displayCiphertext),
+  ]);
+  await Promise.all([recordUserCreated(env), recordLinkCreated(env)]);
 
   const user = await getUserById(userId, env);
   if (!user) {
@@ -393,7 +379,6 @@ export const resolveOrCreateUser = async (
   );
   const existing = await getUserByTelegramHash(telegramHash, env);
   if (existing) {
-    await ensureUserStateInitialized(env, existing.id);
     return refreshTelegramChatIdIfNeeded(ctx, existing, env);
   }
 
@@ -463,17 +448,10 @@ export const toBotUser = async (
     throw new Error("User has no active public link");
   }
 
-  let displayName = DISPLAY_NAME_EMPTY;
-  if (state.displayNameCiphertext) {
-    try {
-      displayName = await decryptDisplayName(
-        state.displayNameCiphertext,
-        env.APP_MASTER_KEY
-      );
-    } catch {
-      displayName = DISPLAY_NAME_EMPTY;
-    }
-  }
+  const displayName = await resolveDisplayName(
+    state.displayNameCiphertext,
+    env.APP_MASTER_KEY
+  );
 
   return {
     id: d1User.id,
@@ -488,5 +466,43 @@ export const toBotUser = async (
     ...(state.lastMessageAt !== undefined
       ? { lastMessageAt: state.lastMessageAt }
       : {}),
+  };
+};
+
+const resolveDisplayName = async (
+  ciphertext: string | null,
+  appMasterKey: string
+): Promise<string> => {
+  if (!ciphertext) {
+    return DISPLAY_NAME_EMPTY;
+  }
+  try {
+    return await decryptDisplayName(ciphertext, appMasterKey);
+  } catch {
+    return DISPLAY_NAME_EMPTY;
+  }
+};
+
+export const getPublicContactState = async (
+  env: Environment,
+  recipientUserId: string,
+  blockTag: string
+): Promise<{
+  displayName: string;
+  paused: boolean;
+  blocked: boolean;
+}> => {
+  const state = await getContactEntryState(env, recipientUserId, blockTag);
+  if (!state) {
+    throw new Error("Recipient state unavailable");
+  }
+
+  return {
+    displayName: await resolveDisplayName(
+      state.displayNameCiphertext,
+      env.APP_MASTER_KEY
+    ),
+    paused: state.paused,
+    blocked: state.blocked,
   };
 };

@@ -21,44 +21,13 @@ import {
 } from "./retrieval-utils.ts";
 import type { CandidateProfile, ResolvedVectorHit, RetrievalChannel, VectorHit } from "../types/conversation.retrieval";
 import type { VectorRouteRole } from "../types/conversation.profile-vault";
+import { mapBounded } from "../utils/concurrency.ts";
 
 export type ResolveCandidatesInput = {
   requesterProfileHash: string;
   requesterLocale: ProfileLocale;
   vectorHits: VectorHit[];
   expectedRoleForChannel: (channel: RetrievalChannel) => VectorRouteRole;
-};
-
-const mapBounded = async <T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R | null>
-): Promise<R[]> => {
-  if (items.length === 0) {
-    return [];
-  }
-
-  const results: R[] = [];
-  let index = 0;
-  const workerCount = Math.min(limit, items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (index < items.length) {
-        const current = index++;
-        const item = items[current];
-        if (item === undefined) {
-          continue;
-        }
-        const result = await fn(item);
-        if (result !== null) {
-          results.push(result);
-        }
-      }
-    })
-  );
-
-  return results;
 };
 
 const resolveVectorHit = async (
@@ -156,28 +125,32 @@ export const resolveCandidateProfiles = async (
     return [];
   }
 
-  const resolvedHits = await mapBounded(
-    input.vectorHits,
-    RETRIEVAL_MAX_CONCURRENT_VAULT_RESOLVES,
-    (hit) => resolveVectorHit(env, hit, input.expectedRoleForChannel)
-  );
+  const resolvedHits = (
+    await mapBounded(
+      input.vectorHits,
+      RETRIEVAL_MAX_CONCURRENT_VAULT_RESOLVES,
+      (hit) => resolveVectorHit(env, hit, input.expectedRoleForChannel)
+    )
+  ).filter((hit): hit is ResolvedVectorHit => hit !== null);
 
   const dedupedProfiles = dedupeResolvedHits(resolvedHits);
 
   const profileEntries = [...dedupedProfiles.entries()];
-  const candidates = await mapBounded(
-    profileEntries,
-    RETRIEVAL_MAX_CONCURRENT_VAULT_RESOLVES,
-    async ([profileHash, meta]) =>
-      loadCandidateProfile(
-        env,
-        profileHash,
-        meta.revision,
-        meta.channels,
-        input.requesterProfileHash,
-        input.requesterLocale
-      )
-  );
+  const candidates = (
+    await mapBounded(
+      profileEntries,
+      RETRIEVAL_MAX_CONCURRENT_VAULT_RESOLVES,
+      async ([profileHash, meta]) =>
+        loadCandidateProfile(
+          env,
+          profileHash,
+          meta.revision,
+          meta.channels,
+          input.requesterProfileHash,
+          input.requesterLocale
+        )
+    )
+  ).filter((candidate): candidate is CandidateProfile => candidate !== null);
 
   return candidates.sort((left, right) =>
     left.profileHash.localeCompare(right.profileHash)

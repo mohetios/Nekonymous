@@ -1,5 +1,6 @@
 import type { Context } from "grammy";
 import type { InlineKeyboard } from "grammy";
+import { answerCallbackSafely } from "./context";
 import { withHtml } from "../utils/text";
 
 export type RenderedScreen = {
@@ -20,15 +21,12 @@ const isBenignEditError = (error: unknown): boolean => {
 
 export const renderScreen = async (
   ctx: Context,
-  screen: RenderedScreen,
-  renderOptions?: { skipAnswer?: boolean }
+  screen: RenderedScreen
 ): Promise<void> => {
   const options = withHtml({ reply_markup: screen.replyMarkup });
 
   if (ctx.callbackQuery?.message) {
-    if (!renderOptions?.skipAnswer) {
-      await ctx.answerCallbackQuery();
-    }
+    await answerCallbackSafely(ctx);
     try {
       await ctx.editMessageText(screen.text, options);
       return;

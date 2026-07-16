@@ -2,7 +2,11 @@ import type { Context } from "grammy";
 import type { D1User } from "../types/identity.model";
 import type { Environment } from "../types/runtime.env";
 import type { MessagePayload } from "../types/telegram.delivery";
-import { getResolvedUser } from "../bot/context";
+import {
+  answerCallbackSafely,
+  deferContextWork,
+  getResolvedUser,
+} from "../bot/context";
 import { createMessageKeyboard, mainMenu } from "../bot/keyboards";
 import {
   HuhMessage,
@@ -16,7 +20,6 @@ import {
   deliveryContextFromResolvedTicket,
   hasDeliverablePayload,
   markResolvedTicketViewed,
-  notifyMessageSeenRoute,
 } from "./message-service";
 import {
   isExpiredTicketAction,
@@ -26,7 +29,6 @@ import {
   claimNextUnreadItem,
   cleanupExpiredUnreadItems,
   completeUnreadDelivery,
-  getUnreadSummary,
   getUserState,
   releaseUnreadDelivery,
 } from "../storage/user-state.client";
@@ -50,8 +52,6 @@ import {
   truncateUtf8,
 } from "../bot/telegram-limits";
 
-/** Product decision: skip per-delivery seen receipts to limit TelegramOutbox load. */
-const SEEN_RECEIPTS_ENABLED = false;
 import { INBOX_DELIVERY_LIMIT } from "../types/inbox.constants";
 
 const textWithLabel = (
@@ -353,7 +353,7 @@ const deliverClaim = async (
 
   let resolved;
   try {
-    resolved = await resolveTicketAction(null, env, "open", capability, {
+    resolved = await resolveTicketAction(env, "open", capability, {
       actorHash: d1User.telegram_user_hash,
       actorUserId: d1User.id,
     });
@@ -468,7 +468,7 @@ const deliverClaim = async (
     return { outcome: "unavailable" };
   }
 
-  await markResolvedTicketViewed(env, d1User.id, resolved);
+  await markResolvedTicketViewed(env, resolved);
   const completed = await completeUnreadDelivery(env, d1User.id, {
     itemId: claim.itemId,
     deliveryAttemptId: claim.deliveryAttemptId,
@@ -482,24 +482,18 @@ const deliverClaim = async (
   }
   await recordMessageDelivered(env);
 
-  if (SEEN_RECEIPTS_ENABLED) {
-    await notifyMessageSeenRoute(
-      env,
-      resolved.route.senderChatRoute,
-      resolved.route.replyRouteTag,
-      `seen:${resolved.ticketHash}:${resolved.route.parentMessageId ?? "none"}`,
-      resolved.route.parentMessageId
-    ).catch((error) => logBotError("inbox:seen", error));
-  }
-
   return { outcome: "delivered" };
 };
 
 export const drainUnreadInbox = async (
   env: Environment,
-  userId: string
+  userId: string,
+  preloadedUser?: D1User | null
 ): Promise<InboxDrainResult> => {
-  const d1User = await getUserById(userId, env);
+  const d1User =
+    preloadedUser === undefined
+      ? await getUserById(userId, env)
+      : preloadedUser;
   if (!d1User) {
     return { status: "completed", deliveredCount: 0 };
   }
@@ -539,8 +533,7 @@ export const requestUnreadDelivery = async (
     return;
   }
   const d1User = await getResolvedUser(ctx, env);
-  await cleanupExpiredUnreadItems(env, d1User.id);
-  const summary = await getUnreadSummary(env, d1User.id);
+  const summary = await cleanupExpiredUnreadItems(env, d1User.id);
   if (summary.unreadCount <= 0) {
     await ctx.reply(INBOX_EMPTY_MESSAGE, { reply_markup: mainMenu });
     return;
@@ -565,7 +558,7 @@ export const handleInboxDeliverCallback = async (
   env: Environment
 ): Promise<void> => {
   try {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     await requestUnreadDelivery(ctx, env);
   } catch (error) {
     logBotError("inbox:deliver", error);
@@ -578,7 +571,7 @@ export const renderInbox = async (
   env: Environment
 ): Promise<void> => {
   try {
-    await recordInboxOpened(env);
+    await deferContextWork(ctx, recordInboxOpened(env));
     await requestUnreadDelivery(ctx, env);
   } catch (error) {
     logBotError("renderInbox", error);

@@ -1,7 +1,11 @@
 import type { Context } from "grammy";
 import type { BotUser } from "../types/identity.model";
 import type { Environment } from "../types/runtime.env";
-import { getResolvedUser } from "../bot/context";
+import {
+  answerCallbackSafely,
+  deferContextWork,
+  getResolvedUser,
+} from "../bot/context";
 import { mainMenu } from "../bot/keyboards";
 import {
   buildDraftCancelKeyboard,
@@ -150,7 +154,7 @@ const resetMatchHistoryForUser = async (
 ): Promise<void> => {
   const cleared = await resetUserMatchHistory(user.id, env);
   await clearDraft(env, user.id);
-  await ctx.answerCallbackQuery();
+  await answerCallbackSafely(ctx);
   const detailLines: string[] = [];
   if (cleared.requests > 0) {
     detailLines.push(
@@ -201,7 +205,7 @@ export const handleSettingsCallback = async (
         id: "primary",
         mode: "display_name",
       });
-      await ctx.answerCallbackQuery();
+      await answerCallbackSafely(ctx);
       await ctx.reply(
         SETTINGS_EDIT_NAME_MESSAGE,
         withHtml({
@@ -213,9 +217,9 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.pause) {
       await setPaused(env, user.id, true);
-      await recordPauseEnabled(env);
-      const updated = await toBotUser(d1User, env);
-      await ctx.answerCallbackQuery({ text: SETTINGS_PAUSE_DONE_CALLBACK });
+      await deferContextWork(ctx, recordPauseEnabled(env));
+      const updated = { ...user, paused: true };
+      await answerCallbackSafely(ctx, { text: SETTINGS_PAUSE_DONE_CALLBACK });
       await ctx.editMessageText(
         formatSettingsHome(updated),
         withHtml({ reply_markup: buildSettingsHomeKeyboard(true) })
@@ -225,9 +229,9 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.resume) {
       await setPaused(env, user.id, false);
-      await recordPauseDisabled(env);
-      const updated = await toBotUser(d1User, env);
-      await ctx.answerCallbackQuery({ text: SETTINGS_RESUME_DONE_CALLBACK });
+      await deferContextWork(ctx, recordPauseDisabled(env));
+      const updated = { ...user, paused: false };
+      await answerCallbackSafely(ctx, { text: SETTINGS_RESUME_DONE_CALLBACK });
       await ctx.editMessageText(
         formatSettingsHome(updated),
         withHtml({ reply_markup: buildSettingsHomeKeyboard(false) })
@@ -250,7 +254,9 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.clearBlocks) {
       if (user.blockTags.length === 0) {
-        await ctx.answerCallbackQuery({ text: SETTINGS_BLOCK_LIST_EMPTY_CALLBACK });
+        await answerCallbackSafely(ctx, {
+          text: SETTINGS_BLOCK_LIST_EMPTY_CALLBACK,
+        });
         return;
       }
       await setDraft(env, user.id, {
@@ -271,7 +277,9 @@ export const handleSettingsCallback = async (
     if (data === SETTINGS_CALLBACK.resetMatch) {
       const history = await countUserMatchHistory(user.id, env);
       if (history.requests === 0 && history.blocks === 0) {
-        await ctx.answerCallbackQuery({ text: SETTINGS_RESET_SUGGESTION_EMPTY_CALLBACK });
+        await answerCallbackSafely(ctx, {
+          text: SETTINGS_RESET_SUGGESTION_EMPTY_CALLBACK,
+        });
         return;
       }
       await setDraft(env, user.id, {
@@ -334,12 +342,12 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.confirmClearBlocks) {
       if (user.pendingSettings !== "confirmClearBlockList") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackSafely(ctx);
         return;
       }
       await clearBlocks(env, user.id);
       await clearDraft(env, user.id);
-      await ctx.answerCallbackQuery();
+      await answerCallbackSafely(ctx);
       await ctx.reply(
         SETTINGS_CLEAR_BLOCKS_DONE_MESSAGE,
         withHtml({ reply_markup: mainMenu })
@@ -350,7 +358,7 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.confirmResetMatch) {
       if (user.pendingSettings !== "confirmResetMatchHistory") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackSafely(ctx);
         return;
       }
       await resetMatchHistoryForUser(ctx, user, env);
@@ -359,14 +367,14 @@ export const handleSettingsCallback = async (
 
     if (data === SETTINGS_CALLBACK.confirmClearData) {
       if (user.pendingSettings !== "confirmClearData") {
-        await ctx.answerCallbackQuery();
+        await answerCallbackSafely(ctx);
         return;
       }
       const freshD1 = await clearUserAccountAndRecreate(ctx, user.id, env);
-      await recordHardReset(env);
+      await deferContextWork(ctx, recordHardReset(env));
       const freshUser = await toBotUser(freshD1, env);
       await clearDraft(env, freshUser.id);
-      await ctx.answerCallbackQuery();
+      await answerCallbackSafely(ctx);
       await ctx.reply(
         SETTINGS_CLEAR_DATA_DONE_MESSAGE.replace(
           "UUID_USER_URL",

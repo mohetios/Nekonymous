@@ -9,7 +9,11 @@ import {
 import { consumeUserRateLimit } from "../storage/user-state.client";
 import { emitUserActive } from "../stats/emit-user-active";
 import { logBotError } from "../utils/logs";
-import { setResolvedUser, type NekoContext } from "./context";
+import {
+  answerCallbackSafely,
+  setResolvedUser,
+  type NekoContext,
+} from "./context";
 
 const isUserInputUpdate = (ctx: Context): boolean =>
   ctx.message !== undefined || ctx.callbackQuery !== undefined;
@@ -48,7 +52,7 @@ export const createUserRateLimitMiddleware =
 
 const replyRateLimited = async (ctx: Context): Promise<void> => {
   if (ctx.callbackQuery) {
-    await ctx.answerCallbackQuery({
+    await answerCallbackSafely(ctx, {
       text: RATE_LIMIT_CALLBACK_ALERT,
       show_alert: false,
     });
@@ -62,7 +66,7 @@ const replyRateLimited = async (ctx: Context): Promise<void> => {
 
 const replyTemporarilyUnavailable = async (ctx: Context): Promise<void> => {
   if (ctx.callbackQuery) {
-    await ctx.answerCallbackQuery({
+    await answerCallbackSafely(ctx, {
       text: HuhMessage,
       show_alert: false,
     });

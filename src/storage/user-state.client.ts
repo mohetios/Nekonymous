@@ -88,14 +88,27 @@ export const checkCanReceive = async (
   recipientUserId: string,
   blockTag: string
 ): Promise<{ ok: boolean; reason?: string }> =>
-  stub(env, recipientUserId).checkCanReceive(blockTag);
+  stub(env, recipientUserId).checkCanReceive(recipientUserId, blockTag);
+
+type ContactEntryState = {
+  paused: boolean;
+  blocked: boolean;
+  displayNameCiphertext: string | null;
+};
+
+export const getContactEntryState = (
+  env: Environment,
+  recipientUserId: string,
+  blockTag: string
+): Promise<ContactEntryState | null> =>
+  stub(env, recipientUserId).getContactEntryState(recipientUserId, blockTag);
 
 /** Atomically checks and records a user action; returns true when throttled. */
 export const consumeUserRateLimit = async (
   env: Environment,
   userId: string
 ): Promise<boolean> => {
-  const { limited } = await stub(env, userId).consumeRateLimit();
+  const { limited } = await stub(env, userId).consumeRateLimit(userId);
   return limited;
 };
 
@@ -138,7 +151,10 @@ export const addUnreadItem = async (
   recipientUserId: string,
   item: AddUnreadItemInput
 ): Promise<AddUnreadItemResult> => {
-  const result = await stub(env, recipientUserId).addUnreadItem(item);
+  const result = await stub(env, recipientUserId).addUnreadItem(
+    recipientUserId,
+    item
+  );
   if (!result.ok) {
     return {
       ok: false,
@@ -184,10 +200,8 @@ export const releaseUnreadDelivery = async (
 export const cleanupExpiredUnreadItems = async (
   env: Environment,
   userId: string
-): Promise<UnreadInboxSummary> => {
-  const result = await stub(env, userId).cleanupExpiredUnreadItems();
-  return result.summary;
-};
+): Promise<UnreadInboxSummary> =>
+  stub(env, userId).cleanupExpiredUnreadItems();
 
 export const listUnreadItemsForReset = (
   env: Environment,
@@ -274,7 +288,6 @@ export type ProfileMeta = {
   discoverable: boolean;
   profileCapabilityEnc: string | null;
   hasActiveSession: boolean;
-  sessionStatus: string | null;
 };
 
 export const startProfileSessionWire = async (
@@ -297,8 +310,8 @@ export const getActiveProfileSessionWire = async (
 export const updateProfileSessionWire = async (
   env: Environment,
   userId: string,
-  input: { answersEnc: string; currentIndex: number; status?: string }
-): Promise<void> => {
+  input: { answersEnc?: string; currentIndex: number; status?: string }
+): Promise<number> => {
   const result = await stub(env, userId).updateProfileSession(input);
   if (!result.ok) {
     throw new DurableObjectCallError(
@@ -306,6 +319,7 @@ export const updateProfileSessionWire = async (
       userStateOperation("/profile-session/update")
     );
   }
+  return result.updatedAt;
 };
 
 export const deleteProfileSessionWire = async (
@@ -350,12 +364,18 @@ export const getActiveExposureTokenHashes = async (
   return tokenHashes;
 };
 
-export const recordExposureTokenHash = async (
+export const recordExposureTokenHashes = async (
   env: Environment,
   userId: string,
-  tokenHash: string
+  tokenHashes: string[]
 ): Promise<void> => {
-  await stub(env, userId).recordExposureToken(tokenHash);
+  const result = await stub(env, userId).recordExposureTokens(tokenHashes);
+  if (!result.ok) {
+    throw new DurableObjectCallError(
+      400,
+      userStateOperation("/profile/exposure")
+    );
+  }
 };
 
 export const consumeSuggestionSearchBudget = async (

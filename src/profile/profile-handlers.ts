@@ -1,6 +1,10 @@
 import type { Context } from "grammy";
 import type { Environment } from "../types/runtime.env";
-import { getResolvedUser } from "../bot/context";
+import {
+  answerCallbackSafely,
+  deferContextWork,
+  getResolvedUser,
+} from "../bot/context";
 import { mainMenu } from "../bot/keyboards";
 import { renderScreen } from "../bot/render-screen";
 import { HuhMessage } from "../i18n/messages";
@@ -14,7 +18,6 @@ import {
   PROFILE_STATUS_HEADER,
   PROFILE_SUBMIT_READY,
 } from "../i18n/conversation-profile-ui";
-import { hmacTelegramUserId } from "../ticketing/ticketing-service";
 import {
   recordProfileStarted,
   recordProfileCompleted,
@@ -42,7 +45,7 @@ import {
 } from "./profile-session-service.ts";
 import {
   finalizeProfileSession,
-  getProfileDashboardMeta,
+  hasFinalizedProfile,
   prepareProfileRetake,
 } from "./profile-service.ts";
 import { PROFILE_QUESTION_BY_INDEX, PROFILE_QUESTIONS } from "./profile-question-bank.ts";
@@ -50,7 +53,6 @@ import {
   assertValidAnswerPatch,
   isConversationIntent,
 } from "./profile-validation.ts";
-import { buildProfileSummaryText } from "./profile-summary.ts";
 
 const parseAnswerCallback = (
   data: string
@@ -75,22 +77,22 @@ export const sendProfileDashboard = async (
   userId: string,
   env: Environment
 ): Promise<void> => {
-  const [session, meta] = await Promise.all([
+  const [session, hasProfile] = await Promise.all([
     getProfileSession(env, userId),
-    getProfileDashboardMeta(env, userId),
+    hasFinalizedProfile(env, userId),
   ]);
 
   const progress = session
     ? getProfileSessionProgress(session)
     : { answered: 0, total: 25 };
   const status = dashboardStatusLine({
-    hasProfile: meta.hasProfile,
+    hasProfile,
     hasSession: !!session,
     answeredCount: progress.answered,
   });
 
   const intro =
-    meta.hasProfile && !session
+    hasProfile && !session
       ? PROFILE_DASHBOARD_READY_INTRO
       : PROFILE_DASHBOARD_INTRO;
   const text =
@@ -100,22 +102,21 @@ export const sendProfileDashboard = async (
   await renderScreen(ctx, {
     text,
     replyMarkup: buildProfileDashboardKeyboard({
-      hasProfile: meta.hasProfile,
+      hasProfile,
       hasSession: !!session,
       readyToSubmit: session ? profileSessionIsReady(session) : false,
     }),
   });
 };
 
-const showQuestion = async (ctx: Context, index: number): Promise<void> => {
-  await renderScreen(ctx, {
+const showQuestion = async (ctx: Context, index: number): Promise<void> =>
+  renderScreen(ctx, {
     text: formatQuestionMessage(index),
     replyMarkup: buildQuestionKeyboard(index),
   });
-};
 
-const showSubmitPrompt = async (ctx: Context): Promise<void> => {
-  await renderScreen(ctx, {
+const showSubmitPrompt = async (ctx: Context): Promise<void> =>
+  renderScreen(ctx, {
     text: PROFILE_SUBMIT_READY,
     replyMarkup: buildProfileDashboardKeyboard({
       hasProfile: false,
@@ -123,7 +124,6 @@ const showSubmitPrompt = async (ctx: Context): Promise<void> => {
       readyToSubmit: true,
     }),
   });
-};
 
 const startNewProfileSession = async (
   ctx: Context,
@@ -132,7 +132,7 @@ const startNewProfileSession = async (
 ): Promise<void> => {
   await prepareProfileRetake(env, userId);
   await startProfileSession(env, userId);
-  await recordProfileStarted(env);
+  await deferContextWork(ctx, recordProfileStarted(env));
   await showQuestion(ctx, 0);
 };
 
@@ -140,13 +140,12 @@ const completeProfile = async (
   ctx: Context,
   userId: string,
   env: Environment,
-  telegramUserId: number
+  actorHash: string
 ): Promise<void> => {
-  const actorHash = await hmacTelegramUserId(env.APP_HMAC_PEPPER, telegramUserId);
   const result = await finalizeProfileSession(env, userId, actorHash, "fa");
-  await recordProfileCompleted(env);
+  await deferContextWork(ctx, recordProfileCompleted(env));
 
-  const summary = escapeHtml(buildProfileSummaryText(result.profile, "fa"));
+  const summary = escapeHtml(result.summaryText);
   const text =
     `${PROFILE_RESULT_READY_TITLE}\n\n${summary}${PROFILE_COMPLETION_NOTE}`;
 
@@ -181,15 +180,17 @@ export const handleAssessmentCallback = async (
   const from = ctx.from;
   const data = ctx.callbackQuery?.data;
   if (!from || !data) {
-    await ctx.answerCallbackQuery();
+    await answerCallbackSafely(ctx);
     return;
   }
+
+  await answerCallbackSafely(ctx);
 
   try {
     const user = await getResolvedUser(ctx, env);
 
     if (data === PROFILE_CALLBACK.hub) {
-      await renderSuggestionHub(ctx, env, from.id.toString());
+      await renderSuggestionHub(ctx, env);
       return;
     }
 
@@ -232,7 +233,7 @@ export const handleAssessmentCallback = async (
     }
 
     if (data === PROFILE_CALLBACK.submit) {
-      await completeProfile(ctx, user.id, env, from.id);
+      await completeProfile(ctx, user.id, env, user.telegram_user_hash);
       return;
     }
 
@@ -250,9 +251,8 @@ export const handleAssessmentCallback = async (
 
     const intent = parseIntentCallback(data);
     if (intent) {
-      const session = await getProfileSession(env, user.id);
       const question = PROFILE_QUESTIONS[PROFILE_QUESTIONS.length - 1];
-      if (!session || !question || !isConversationIntent(intent)) {
+      if (!question || !isConversationIntent(intent)) {
         await sendProfileDashboard(ctx, user.id, env);
         return;
       }
@@ -264,6 +264,10 @@ export const handleAssessmentCallback = async (
         intent,
         question.index
       );
+      if (!updated) {
+        await sendProfileDashboard(ctx, user.id, env);
+        return;
+      }
       if (profileSessionIsReady(updated)) {
         await showSubmitPrompt(ctx);
       } else {
@@ -275,8 +279,7 @@ export const handleAssessmentCallback = async (
     const answer = parseAnswerCallback(data);
     if (answer) {
       const question = PROFILE_QUESTION_BY_INDEX.get(answer.index);
-      const session = await getProfileSession(env, user.id);
-      if (!question || !session) {
+      if (!question) {
         await sendProfileDashboard(ctx, user.id, env);
         return;
       }
@@ -288,6 +291,10 @@ export const handleAssessmentCallback = async (
         answer.value,
         answer.index
       );
+      if (!updated) {
+        await sendProfileDashboard(ctx, user.id, env);
+        return;
+      }
       if (profileSessionIsReady(updated)) {
         await showSubmitPrompt(ctx);
       } else if (updated.currentIndex >= PROFILE_QUESTIONS.length) {
@@ -302,7 +309,5 @@ export const handleAssessmentCallback = async (
   } catch (error) {
     logBotError("profile.callback", error);
     await ctx.reply(HuhMessage, withHtml({ reply_markup: mainMenu }));
-  } finally {
-    await ctx.answerCallbackQuery();
   }
 };

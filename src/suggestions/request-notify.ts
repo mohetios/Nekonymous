@@ -2,6 +2,8 @@ import type { D1User } from "../types/identity.model";
 import type { Environment } from "../types/runtime.env";
 import { REQUEST_CALLBACK } from "./suggestion-constants.ts";
 import {
+  SUGGESTION_ACCEPTED_REQUESTER,
+  SUGGESTION_DECLINED_REQUESTER,
   SUGGESTION_INCOMING_ACCEPT_NOTE,
   SUGGESTION_INCOMING_INTRO_LABEL,
   SUGGESTION_INCOMING_WHY_FIT,
@@ -9,27 +11,18 @@ import {
 import { escapeHtml } from "../utils/text.ts";
 import { getUserById } from "../identity/identity-service.ts";
 import { enqueueTelegramOutbox } from "../storage/telegram-outbox.client.ts";
-import { resolveCandidateDeliveryUserId } from "../profile/profile-service.ts";
 
 const truncateIntro = (intro: string, max = 240): string =>
   intro.length <= max ? intro : `${intro.slice(0, max - 1)}…`;
 
 export const notifyIncomingConversationRequest = async (
   env: Environment,
-  candidateProfileHash: string,
+  candidateUserId: string,
   requestRef: string,
   requestHash: string,
   introText: string,
   explanation: string
 ): Promise<void> => {
-  const candidateUserId = await resolveCandidateDeliveryUserId(
-    env,
-    candidateProfileHash
-  );
-  if (!candidateUserId) {
-    return;
-  }
-
   const candidate = await getUserById(candidateUserId, env);
   if (!candidate) {
     return;
@@ -73,7 +66,6 @@ export const notifyRequesterAccepted = async (
   requester: D1User,
   requestHash: string
 ): Promise<void> => {
-  const { SUGGESTION_ACCEPTED_REQUESTER } = await import("../i18n/conversation-suggestions-ui.ts");
   await enqueueTelegramOutbox(env, {
     idempotencyKey: `request-accepted:${requestHash}`,
     chatCiphertext: requester.telegram_chat_ciphertext,
@@ -93,7 +85,6 @@ export const notifyRequesterDeclined = async (
   requester: D1User,
   requestHash: string
 ): Promise<void> => {
-  const { SUGGESTION_DECLINED_REQUESTER } = await import("../i18n/conversation-suggestions-ui.ts");
   await enqueueTelegramOutbox(env, {
     idempotencyKey: `request-declined:${requestHash}`,
     chatCiphertext: requester.telegram_chat_ciphertext,

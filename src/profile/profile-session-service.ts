@@ -96,33 +96,40 @@ export const saveProfileAnswer = async (
   questionId: string,
   value: number | ConversationIntent,
   currentIndex?: number
-): Promise<ProfileSession> => {
+): Promise<ProfileSession | null> => {
   const session = await getProfileSession(env, userId);
   if (!session) {
-    throw new Error("No active profile session");
+    return null;
   }
 
   const answers = { ...session.answers, [questionId]: value };
-  const nextIndex =
-    currentIndex !== undefined
-      ? currentIndex + 1
-      : Math.min(session.currentIndex + 1, PROFILE_QUESTION_COUNT);
+  const nextIndex = Math.max(
+    0,
+    Math.min(
+      PROFILE_QUESTION_COUNT,
+      currentIndex !== undefined
+        ? currentIndex + 1
+        : session.currentIndex + 1
+    )
+  );
   const status: ProfileSessionStatus = hasCompleteAnswers(answers)
     ? "ready_to_submit"
     : "active";
   const answersEnc = await encryptAnswers(userId, answers, env.APP_MASTER_KEY);
 
-  await updateProfileSessionWire(env, userId, {
+  const updatedAt = await updateProfileSessionWire(env, userId, {
     answersEnc,
     currentIndex: nextIndex,
     status,
   });
 
-  const updated = await getProfileSession(env, userId);
-  if (!updated) {
-    throw new Error("Profile session missing after save");
-  }
-  return updated;
+  return {
+    ...session,
+    answers,
+    currentIndex: nextIndex,
+    status,
+    updatedAt,
+  };
 };
 
 export const setProfileCurrentIndex = async (
@@ -130,20 +137,8 @@ export const setProfileCurrentIndex = async (
   userId: string,
   currentIndex: number
 ): Promise<void> => {
-  const session = await getProfileSession(env, userId);
-  if (!session) {
-    throw new Error("No active profile session");
-  }
-
-  const answersEnc = await encryptAnswers(
-    userId,
-    session.answers,
-    env.APP_MASTER_KEY
-  );
   await updateProfileSessionWire(env, userId, {
-    answersEnc,
     currentIndex: Math.max(0, Math.min(currentIndex, PROFILE_QUESTION_COUNT - 1)),
-    status: session.status,
   });
 };
 

@@ -8,7 +8,10 @@ import {
   restoreMainMenu,
 } from "../bot/input-navigation";
 import { handleMainMenuCommand } from "../bot/menu";
-import { getResolvedUser, type NekoContext } from "../bot/context";
+import {
+  deferContextWork,
+  getResolvedUser,
+} from "../bot/context";
 import { logBotError, logBotTiming } from "../utils/logs";
 import {
   HuhMessage,
@@ -42,6 +45,7 @@ import {
 import { enqueueInboxNotification } from "./inbox-notification";
 import {
   getActiveSlugForUser,
+  getPublicContactState,
   getUserByPublicSlug,
   toBotUser,
   getUserById,
@@ -57,7 +61,6 @@ import { renderInbox } from "./inbox";
 import { handleDisplayNameInput } from "../settings/settings-handlers";
 import { handleConversationIntroInput } from "../suggestions/suggestion-handlers";
 import { mainMenu } from "../bot/keyboards";
-import { hmacTelegramUserId } from "./ticketing-service";
 import type { UserDraft } from "../types/user-state.model";
 import {
   recordLinkOpened,
@@ -65,6 +68,7 @@ import {
   recordReplySent,
 } from "../stats/product-events";
 import { createBlockTag } from "./blind-tags";
+import { SUGGESTION_INTRO_TEXT_ONLY } from "../i18n/conversation-suggestions-ui";
 
 const isTextInputDraft = (
   draft: UserDraft | null | undefined
@@ -93,9 +97,9 @@ export const handleStartCommand = async (
 
   try {
     const d1User = await getResolvedUser(ctx, env);
-    const user = await toBotUser(d1User, env);
 
     if (!ctx.match) {
+      const user = await toBotUser(d1User, env);
       const welcome = WelcomeMessage.replace(
         "UUID_USER_URL",
         buildUserDeepLink(botUsername, user.slug)
@@ -119,22 +123,25 @@ export const handleStartCommand = async (
     }
 
     const recipientD1 = await getUserByPublicSlug(linkId, env);
-    if (!recipientD1 || recipientD1.id === user.id) {
+    if (!recipientD1 || recipientD1.id === d1User.id) {
       await ctx.reply(
         recipientD1 ? SELF_MESSAGE_DISABLE_MESSAGE : NoUserFoundMessage
       );
       return;
     }
 
-    const recipient = await toBotUser(recipientD1, env);
-
     const startBlockTag = await createBlockTag(
       env.APP_HMAC_PEPPER,
       recipientD1.id,
       d1User.telegram_user_hash
     );
+    const recipient = await getPublicContactState(
+      env,
+      recipientD1.id,
+      startBlockTag
+    );
 
-    if (recipient.blockTags.includes(startBlockTag)) {
+    if (recipient.blocked) {
       await ctx.reply(USER_IS_BLOCKED_MESSAGE);
       return;
     }
@@ -150,7 +157,7 @@ export const handleStartCommand = async (
       return;
     }
 
-    await recordLinkOpened(env);
+    await deferContextWork(ctx, recordLinkOpened(env));
 
     const prompt = await ctx.reply(
       StartConversationMessage.replace(
@@ -162,10 +169,10 @@ export const handleStartCommand = async (
       })
     );
 
-    await setDraft(env, user.id, {
+    await setDraft(env, d1User.id, {
       id: "primary",
       mode: "compose",
-      toUserId: recipient.id,
+      toUserId: recipientD1.id,
       linkSlug: linkId,
       parent_message_id: prompt.message_id,
     });
@@ -208,7 +215,6 @@ export const handleMessage = async (
 
       if (draft?.mode === "conversation_intro") {
         if (!message.text) {
-          const { SUGGESTION_INTRO_TEXT_ONLY } = await import("../i18n/conversation-suggestions-ui");
           await ctx.reply(
             SUGGESTION_INTRO_TEXT_ONLY,
             withHtml({
@@ -220,10 +226,6 @@ export const handleMessage = async (
           return;
         }
 
-        const actorHash = await hmacTelegramUserId(
-          env.APP_HMAC_PEPPER,
-          from.id
-        );
         const suggestionRef = draft.linkSlug;
         if (!suggestionRef) {
           await ctx.reply(HuhMessage, { reply_markup: mainMenu });
@@ -234,8 +236,7 @@ export const handleMessage = async (
         const handled = await handleConversationIntroInput(
           ctx,
           env,
-          d1User.id,
-          actorHash,
+          d1User,
           suggestionRef,
           message.text
         );
@@ -246,7 +247,6 @@ export const handleMessage = async (
       }
 
       if (draft?.pendingNicknameContactTag) {
-        const user = await toBotUser(d1User, env);
         if (!message.text) {
           await ctx.reply(
             NICKNAME_TEXT_ONLY_MESSAGE,
@@ -261,11 +261,11 @@ export const handleMessage = async (
           const nickname = sanitizeNickname(message.text);
           await setContactLabel(
             env,
-            user.id,
+            d1User.id,
             draft.pendingNicknameContactTag,
             nickname
           );
-          await clearDraft(env, user.id);
+          await clearDraft(env, d1User.id);
           await restoreMainMenu(
             ctx,
             nickname
@@ -378,8 +378,8 @@ export const handleMessage = async (
       });
       const afterAck = Date.now();
 
-      const nekoCtx = ctx as NekoContext;
-      nekoCtx.deferWork?.(
+      await deferContextWork(
+        ctx,
         (async () => {
           if (result.notify) {
             try {

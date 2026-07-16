@@ -42,16 +42,134 @@ describe("UserState typed RPC", () => {
     expect(state?.blockTags).toEqual([]);
   });
 
-  it("enforces the global action rate limit", async () => {
+  it("initializes missing state while enforcing the global action rate limit", async () => {
     const stub = env.USER_STATE_DO.get(
       env.USER_STATE_DO.idFromName("vitest-rate-limit")
     );
-    await stub.initState("vitest-rate-limit");
 
-    const first = await stub.consumeRateLimit();
-    const second = await stub.consumeRateLimit();
+    const first = await stub.consumeRateLimit("vitest-rate-limit");
+    const second = await stub.consumeRateLimit("vitest-rate-limit");
     expect(first.limited).toBe(false);
     expect(second.limited).toBe(true);
+    expect(await stub.getState()).not.toBeNull();
+  });
+
+  it("initializes missing state while checking the receive gate", async () => {
+    const stub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-receive-init")
+    );
+
+    expect(
+      await stub.checkCanReceive("vitest-receive-init", "block-tag-1")
+    ).toEqual({ ok: true });
+    expect((await stub.getState())?.displayNameCiphertext).toBeNull();
+
+    expect(
+      await stub.initState("vitest-receive-init", "display-name-ciphertext")
+    ).toEqual({ ok: true, existing: true });
+    expect((await stub.getState())?.displayNameCiphertext).toBe(
+      "display-name-ciphertext"
+    );
+
+    await stub.addBlock("block-tag-1");
+    expect(
+      await stub.checkCanReceive("vitest-receive-init", "block-tag-1")
+    ).toEqual({ ok: false, reason: "blocked" });
+
+    await stub.setPaused(true);
+    expect(
+      await stub.checkCanReceive("vitest-receive-init", "block-tag-2")
+    ).toEqual({ ok: false, reason: "paused" });
+    expect(await stub.initState("different-user")).toEqual({ ok: false });
+  });
+
+  it("loads only the recipient state needed to open a public contact", async () => {
+    const stub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-contact-entry")
+    );
+    await stub.initState("vitest-contact-entry", "display-name-ciphertext");
+
+    expect(
+      await stub.getContactEntryState("vitest-contact-entry", "block-tag-1")
+    ).toEqual({
+      paused: false,
+      blocked: false,
+      displayNameCiphertext: "display-name-ciphertext",
+    });
+
+    await stub.addBlock("block-tag-1");
+    await stub.setPaused(true);
+    expect(
+      await stub.getContactEntryState("vitest-contact-entry", "block-tag-1")
+    ).toEqual({
+      paused: true,
+      blocked: true,
+      displayNameCiphertext: "display-name-ciphertext",
+    });
+  });
+
+  it("updates the profile cursor without rewriting encrypted answers", async () => {
+    const stub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-profile-cursor")
+    );
+    await stub.initState("vitest-profile-cursor");
+    await stub.startProfileSession({
+      version: "current",
+      totalQuestions: 25,
+      answersEnc: "encrypted-answers",
+    });
+
+    const updated = await stub.updateProfileSession({ currentIndex: 4 });
+    expect(updated.ok).toBe(true);
+    const session = await stub.getActiveProfileSession();
+    expect(session?.currentIndex).toBe(4);
+    expect(session?.answersEnc).toBe("encrypted-answers");
+  });
+
+  it("returns only the profile metadata used by callers", async () => {
+    const stub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-profile-meta")
+    );
+    await stub.initState("vitest-profile-meta");
+
+    expect(await stub.getProfileMeta()).toEqual({
+      discoverable: false,
+      profileCapabilityEnc: null,
+      hasActiveSession: false,
+    });
+
+    await stub.startProfileSession({
+      version: "current",
+      totalQuestions: 25,
+      answersEnc: "encrypted-answers",
+    });
+    expect(await stub.getProfileMeta()).toEqual({
+      discoverable: false,
+      profileCapabilityEnc: null,
+      hasActiveSession: true,
+    });
+  });
+
+  it("records exposure tokens in one bounded RPC", async () => {
+    const stub = env.USER_STATE_DO.get(
+      env.USER_STATE_DO.idFromName("vitest-exposure-batch")
+    );
+    await stub.initState("vitest-exposure-batch");
+
+    const recorded = await stub.recordExposureTokens([
+      "exposure-token-1",
+      "exposure-token-2",
+      "exposure-token-1",
+    ]);
+    expect(recorded).toEqual({ ok: true, recorded: 2 });
+    expect(new Set((await stub.getActiveExposureTokens()).tokenHashes)).toEqual(
+      new Set(["exposure-token-1", "exposure-token-2"])
+    );
+
+    const oversized = await stub.recordExposureTokens(
+      Array.from({ length: 11 }, (_, index) => `exposure-${index}`)
+    );
+    expect(oversized.ok).toBe(false);
   });
 
   it("getState ignores expired drafts", async () => {
@@ -78,7 +196,29 @@ describe("UserState typed RPC", () => {
     await stub.initState("vitest-unread-item");
     const now = Date.now();
 
-    const added = await stub.addUnreadItem({
+    expect(await stub.cleanupExpiredUnreadItems()).toEqual({ unreadCount: 0 });
+
+    const expired = await stub.addUnreadItem("vitest-unread-item", {
+      itemId: "item-vitest-expired",
+      sealedCapabilityEnc: "sealed-capability-ciphertext",
+      dedupeTag: "dedupe-tag-vitest-expired",
+      createdAt: now - 2_000,
+      expiresAt: now - 1_000,
+    });
+    expect(expired.ok).toBe(false);
+    expect(expired.reason).toBe("invalid");
+
+    const mismatched = await stub.addUnreadItem("other-user", {
+      itemId: "item-vitest-mismatched",
+      sealedCapabilityEnc: "sealed-capability-ciphertext",
+      dedupeTag: "dedupe-tag-vitest-mismatched",
+      createdAt: now,
+      expiresAt: now + 60_000,
+    });
+    expect(mismatched.ok).toBe(false);
+    expect(mismatched.reason).toBe("invalid");
+
+    const added = await stub.addUnreadItem("vitest-unread-item", {
       itemId: "item-vitest-1",
       sealedCapabilityEnc: "sealed-capability-ciphertext",
       dedupeTag: "dedupe-tag-vitest-1234567890",
@@ -93,7 +233,7 @@ describe("UserState typed RPC", () => {
     }
     expect(added.notification.eventId.length).toBeGreaterThan(0);
 
-    const duplicate = await stub.addUnreadItem({
+    const duplicate = await stub.addUnreadItem("vitest-unread-item", {
       itemId: "item-vitest-duplicate",
       sealedCapabilityEnc: "other-sealed-capability-ciphertext",
       dedupeTag: "dedupe-tag-vitest-1234567890",
@@ -151,7 +291,7 @@ describe("UserState typed RPC", () => {
       expiresAt: now + 60_000,
     });
 
-    await userStub.addUnreadItem({
+    await userStub.addUnreadItem("vitest-stale-orphan", {
       itemId: "stale-orphan-item",
       sealedCapabilityEnc: "sealed-capability-ciphertext",
       dedupeTag: "dedupe-tag-stale-orphan-12345",
@@ -211,7 +351,7 @@ describe("UserState typed RPC", () => {
     await stub.initState("vitest-inbox-notify");
     const now = Date.now();
 
-    const first = await stub.addUnreadItem({
+    const first = await stub.addUnreadItem("vitest-inbox-notify", {
       itemId: "notify-item-1",
       sealedCapabilityEnc: "sealed-notify-1",
       dedupeTag: "notify-dedupe-1",
@@ -225,7 +365,7 @@ describe("UserState typed RPC", () => {
     const firstEventId = first.notification.eventId;
     expect(first.unreadCount).toBe(1);
 
-    const second = await stub.addUnreadItem({
+    const second = await stub.addUnreadItem("vitest-inbox-notify", {
       itemId: "notify-item-2",
       sealedCapabilityEnc: "sealed-notify-2",
       dedupeTag: "notify-dedupe-2",
@@ -239,7 +379,7 @@ describe("UserState typed RPC", () => {
     expect(second.notification.eventId).not.toBe(firstEventId);
     expect(second.unreadCount).toBe(2);
 
-    const third = await stub.addUnreadItem({
+    const third = await stub.addUnreadItem("vitest-inbox-notify", {
       itemId: "notify-item-3",
       sealedCapabilityEnc: "sealed-notify-3",
       dedupeTag: "notify-dedupe-3",
@@ -265,7 +405,7 @@ describe("UserState typed RPC", () => {
     }
     expect((await stub.getUnreadSummary()).unreadCount).toBe(0);
 
-    const afterDrain = await stub.addUnreadItem({
+    const afterDrain = await stub.addUnreadItem("vitest-inbox-notify", {
       itemId: "notify-item-4",
       sealedCapabilityEnc: "sealed-notify-4",
       dedupeTag: "notify-dedupe-4",
